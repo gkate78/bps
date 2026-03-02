@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Receipt</title>
+    <style>
+        @page {
+            size: 58mm auto;
+            margin: 3mm;
+        }
+        body {
+            font-family: "Courier New", monospace;
+            margin: 0;
+            color: #111;
+            width: 58mm;
+        }
+        .receipt {
+            width: 100%;
+            margin: 0 auto;
+            padding: 2mm 1mm;
+        }
+        .shop {
+            text-align: center;
+            margin-bottom: 2mm;
+        }
+        .shop h1 {
+            margin: 0;
+            font-size: 12px;
+            letter-spacing: 0.2px;
+            text-transform: uppercase;
+        }
+        .shop p {
+            margin: 0.5mm 0 0;
+            font-size: 9px;
+            text-transform: uppercase;
+            line-height: 1.2;
+        }
+        .line {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px dashed #bbb;
+            padding: 1.2mm 0;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+        .total {
+            font-weight: 700;
+            font-size: 11px;
+        }
+        .meta {
+            margin-top: 2mm;
+            font-size: 9px;
+            text-align: center;
+            text-transform: uppercase;
+        }
+        .sign {
+            margin-top: 7mm;
+            text-align: center;
+            font-size: 9px;
+            text-transform: uppercase;
+        }
+        .sign-line {
+            border-top: 1px solid #111;
+            margin: 0 auto 1.2mm;
+            width: 70%;
+        }
+        @media print {
+            body { margin: 0; }
+            .receipt { padding: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt">
+        <div class="shop">
+            <h1>DITTO DIGITAL PRINT SHOP</h1>
+            <p>KM. 38 PULONG BUHANGIN<br>SANTA MARIA BULACAN</p>
+        </div>
+        <div class="line"><span>REFERENCE</span><span>{{ record.reference or "-" }}</span></div>
+        <div class="line"><span>TXN DATE/TIME</span><span>{{ record.txn_datetime }}</span></div>
+        <div class="line"><span>ACCOUNT</span><span>{{ record.account }}</span></div>
+        <div class="line"><span>BILLER</span><span>{{ record.biller }}</span></div>
+        <div class="line"><span>NAME</span><span>{{ record.customer_name }}</span></div>
+        <div class="line"><span>BILL AMOUNT</span><span>{{ "%.2f"|format(record.bill_amt) }}</span></div>
+        <div class="line"><span>LATE CHARGE</span><span>{{ "%.2f"|format(record.amt2) }}</span></div>
+        <div class="line"><span>SERVICE CHARGE</span><span>{{ "%.2f"|format(record.charge) }}</span></div>
+        <div class="line total"><span>TOTAL</span><span>{{ "%.2f"|format(record.total) }}</span></div>
+        <div class="line"><span>CASH</span><span>{{ "%.2f"|format(record.cash) }}</span></div>
+        <div class="line"><span>CHANGE</span><span>{{ "%.2f"|format(record.change_amt) }}</span></div>
+        <div class="sign">
+            <div class="sign-line"></div>
+            <span>SIGNATURE</span>
+        </div>
+        <p class="meta">THANK YOU</p>
+    </div>
+    <script>
+        window.print();
+    </script>
+</body>
+</html>
