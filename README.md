@@ -50,8 +50,8 @@ Headers supported (case-sensitive):
 - `NAME`
 - `NUMBER` or `CP NUM`
 - `AMT` or `BILL AMT`
-- `AMT2`
-- `CHARGE` or `LATE CHARGE`
+- `AMT2` or `LATE CHARGE`
+- `CHARGE` or `SERVICE CHARGE`
 - `TOTAL`
 - `CASH`
 - `CHANGE`
