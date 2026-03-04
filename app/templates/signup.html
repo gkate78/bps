@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head><title>Sign Up</title></head>
+<body>
+<h1>Sign Up</h1>
+{% if error %}<p style="color:red">{{ error }}</p>{% endif %}
+<form method="post" action="/auth/signup">
+  <input name="first_name" placeholder="First name" value="{{ first_name or '' }}">
+  <input name="last_name" placeholder="Last name" value="{{ last_name or '' }}">
+  <input name="phone" placeholder="Phone" value="{{ phone or '' }}">
+  <input name="pin" type="password" placeholder="4-digit PIN">
+  <input name="pin_confirm" type="password" placeholder="Confirm PIN">
+  <button type="submit">Sign Up</button>
+</form>
+<form method="get" action="/auth/signin"><button>Sign In</button></form>
+</body>
+</html>

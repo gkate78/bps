@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html>
+<head><title>Customer Dashboard</title></head>
+<body>
+<h1>Customer Dashboard</h1>
+<p>Welcome {{ current_user.first_name }} {{ current_user.last_name }}</p>
+<form method="post" action="/auth/logout"><button>Logout</button></form>
+</body>
+</html>
