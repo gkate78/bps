@@ -1,0 +1,29 @@
+# Virtual environment
+venv/
+.venv/
+
+# Byte-compiled
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Git
+.git/
+.gitignore
+
+# Database (use volume in production)
+*.db
+
+# Environment
+.env
+.env.local
+
+# IDE
+.cursor/
+.vscode/
+*.swp
+*.swo
+
+# Misc
+README.md
+*.md
