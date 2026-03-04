@@ -1,14 +1,30 @@
-<!DOCTYPE html>
-<html>
-<head><title>Sign In</title></head>
-<body>
-<h1>Sign In</h1>
-{% if error %}<p style="color:red">{{ error }}</p>{% endif %}
-<form method="post" action="/auth/signin">
-  <input name="phone" placeholder="Phone" value="{{ phone or '' }}">
-  <input name="pin" type="password" placeholder="4-digit PIN">
-  <button type="submit">Sign In</button>
-</form>
-<form method="get" action="/auth/signup"><button>Sign Up</button></form>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Sign In | Bills Admin{% endblock %}
+{% block topbar_title %}Welcome Back{% endblock %}
+{% block topbar_subtitle %}Sign in with your phone number and 4-digit PIN.{% endblock %}
+{% block topbar_actions %}
+<a class="btn btn-secondary" href="/auth/signup">Sign Up</a>
+{% endblock %}
+
+{% block content %}
+<section class="panel auth-panel">
+    <div class="panel-head">
+        <h2>Sign In</h2>
+    </div>
+
+    {% if error %}
+    <div class="alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/auth/signin" class="auth-form">
+        <label>Phone Number
+            <input type="tel" name="phone" value="{{ phone }}" required maxlength="20" placeholder="09XXXXXXXXX">
+        </label>
+        <label>4-digit PIN
+            <input type="password" name="pin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
+        </label>
+        <button type="submit" class="btn btn-primary">Sign In</button>
+    </form>
+</section>
+{% endblock %}

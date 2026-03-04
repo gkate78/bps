@@ -1,15 +1,6 @@
-# Byte-compiled
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Virtual environment
 venv/
-.venv/
-
-# Database
+__pycache__/
+*.pyc
 *.db
-
-# Environment
 .env
-.env.local
+.DS_Store

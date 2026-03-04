@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Bills Admin{% endblock %}</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdn.datatables.net/2.0.8/css/dataTables.dataTables.min.css">
+    <link rel="stylesheet" href="/static/css/app.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <header class="topbar">
+        <div>
+            <h1>{% block topbar_title %}Bills Records Admin{% endblock %}</h1>
+            <p>{% block topbar_subtitle %}Manage imported billing rows with fast table tools.{% endblock %}</p>
+        </div>
+        <div class="topbar-actions">
+            {% block topbar_actions %}{% endblock %}
+        </div>
+    </header>
+
+    <main class="page-wrap">
+        {% block content %}{% endblock %}
+    </main>
+
+    <dialog id="appMessageDialog" class="app-dialog">
+        <div class="app-dialog-head">
+            <h3 id="appMessageTitle">Notice</h3>
+            <button type="button" class="btn btn-ghost" id="appMessageCloseBtn">Close</button>
+        </div>
+        <p id="appMessageText" class="app-dialog-text"></p>
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-primary" id="appMessageOkBtn">OK</button>
+        </div>
+    </dialog>
+
+    <dialog id="appConfirmDialog" class="app-dialog">
+        <div class="app-dialog-head">
+            <h3 id="appConfirmTitle">Please Confirm</h3>
+            <button type="button" class="btn btn-ghost" id="appConfirmCloseBtn">Close</button>
+        </div>
+        <p id="appConfirmText" class="app-dialog-text"></p>
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" id="appConfirmCancelBtn">Cancel</button>
+            <button type="button" class="btn btn-primary" id="appConfirmOkBtn">Continue</button>
+        </div>
+    </dialog>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

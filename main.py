@@ -23,7 +23,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "dev-only-change-me"),

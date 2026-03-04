@@ -25,11 +25,8 @@ def validate_pin(pin: str) -> bool:
 
 
 def hash_pin(pin: str, salt_hex: Optional[str] = None) -> tuple[str, str]:
-    if salt_hex:
-        salt = bytes.fromhex(salt_hex)
-    else:
-        salt = secrets.token_bytes(16)
-    pin_hash = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, 120000)
+    salt = bytes.fromhex(salt_hex) if salt_hex else secrets.token_bytes(16)
+    pin_hash = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, 120_000)
     return pin_hash.hex(), salt.hex()
 
 
@@ -42,10 +39,8 @@ def is_admin_phone(phone: str) -> bool:
     raw = os.getenv("ADMIN_PHONES", "")
     if not raw.strip():
         return False
-    admin_set = set()
-    for item in raw.split(","):
-        if item.strip():
-            admin_set.add(normalize_phone(item.strip()))
+
+    admin_set = {normalize_phone(item) for item in raw.split(",") if item.strip()}
     return phone in admin_set
 
 
@@ -53,10 +48,8 @@ def is_encoder_phone(phone: str) -> bool:
     raw = os.getenv("ENCODER_PHONES", "")
     if not raw.strip():
         return False
-    encoder_set = set()
-    for item in raw.split(","):
-        if item.strip():
-            encoder_set.add(normalize_phone(item.strip()))
+
+    encoder_set = {normalize_phone(item) for item in raw.split(",") if item.strip()}
     return phone in encoder_set
 
 
@@ -76,9 +69,7 @@ async def get_current_user(
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Please sign in")
 
-    result = await db.execute(
-        select(UserAccount).where(UserAccount.id == user_id)
-    )
+    result = await db.execute(select(UserAccount).where(UserAccount.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         request.session.clear()
@@ -94,52 +85,17 @@ async def get_current_user_optional(
     if not user_id:
         return None
 
-    result = await db.execute(
-        select(UserAccount).where(UserAccount.id == user_id)
-    )
+    result = await db.execute(select(UserAccount).where(UserAccount.id == user_id))
     return result.scalar_one_or_none()
 
 
-def require_admin(
-    current_user: UserAccount = Depends(get_current_user),
-) -> UserAccount:
+async def require_admin(current_user: UserAccount = Depends(get_current_user)) -> UserAccount:
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access only")
     return current_user
 
 
-def require_data_entry_access(
-    current_user: UserAccount = Depends(get_current_user),
-) -> UserAccount:
-    if current_user.role not in ("admin", "encoder"):
+async def require_data_entry_access(current_user: UserAccount = Depends(get_current_user)) -> UserAccount:
+    if current_user.role not in {"admin", "encoder"}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Data entry access only")
     return current_user
-
-
-_auth_app = None
-
-
-def _create_auth_app():
-    """Lazy app creation to avoid circular import with auth_routes."""
-    import os
-    from fastapi import FastAPI
-    from starlette.middleware.sessions import SessionMiddleware
-    from app.routes.auth_routes import router as auth_router
-    _app = FastAPI(title="BPS Auth")
-    _app.add_middleware(
-        SessionMiddleware,
-        secret_key=os.getenv("SESSION_SECRET", "dev-only-change-me"),
-        same_site="lax",
-    )
-    _app.include_router(auth_router)
-    return _app
-
-
-def __getattr__(name: str):
-    """Lazy-load app only when accessed (e.g. uvicorn app.auth:app)."""
-    if name == "app":
-        global _auth_app
-        if _auth_app is None:
-            _auth_app = _create_auth_app()
-        return _auth_app
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

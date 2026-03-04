@@ -18,15 +18,13 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db() -> None:
-    from app.models import BillRecord, UserAccount
+    from app.models import BillRecord, UserAccount  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-
-        result = await conn.execute(text("PRAGMA table_info(bill_records)"))
-        columns = result.fetchall()
+        # Lightweight migration: add txn_datetime for existing databases.
+        columns = (await conn.execute(text("PRAGMA table_info(bill_records)"))).fetchall()
         col_names = {row[1] for row in columns}
-
         if "txn_datetime" not in col_names:
             await conn.execute(text("ALTER TABLE bill_records ADD COLUMN txn_datetime DATETIME"))
             await conn.execute(
