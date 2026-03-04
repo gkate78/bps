@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}Payment Entry{% endblock %}
+{% block topbar_title %}Payment Entry{% endblock %}
+{% block topbar_subtitle %}Encode payments quickly with auto-compute and account lookup.{% endblock %}
+{% block topbar_actions %}
+{% if current_user.role == "admin" %}
+<a href="/admin/records" class="btn btn-secondary">Open Admin Table</a>
+{% endif %}
+<form method="post" action="/auth/logout" class="inline-action">
+    <button type="submit" class="btn btn-secondary">Logout</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <h2>Data Entry Form</h2>
+    </div>
+
+    <form id="entryForm" class="entry-form">
+        <datalist id="billerOptions">
+            {% for biller in billers %}
+            <option value="{{ biller }}"></option>
+            {% endfor %}
+        </datalist>
+
+        <div class="entry-meta">
+            <div class="meta-item">
+                <span class="meta-label">Current Date/Time</span>
+                <strong id="currentDateTime">-</strong>
+            </div>
+        </div>
+
+        <div class="form-grid form-grid-pro entry-grid-main">
+            <label>Account<input type="text" id="account" required></label>
+            <label>Biller<input type="text" id="biller" list="billerOptions" required></label>
+            <label>Name<input type="text" id="customerName" required></label>
+            <label>CP Number<input type="text" id="cpNumber"></label>
+            <label>Due Date<input type="date" id="dueDate" required></label>
+        </div>
+
+        <div class="form-grid form-grid-pro entry-grid-amounts">
+            <label>Bill Amount<input type="number" step="0.01" id="billAmt" min="0"></label>
+            <label>Service Charge<input type="number" step="0.01" id="charge" readonly></label>
+            <label>Late Charge<input type="number" step="0.01" id="amt2" readonly></label>
+            <label>Cash<input type="number" step="0.01" id="cash" min="0"></label>
+            <label>Total<input type="number" step="0.01" id="total" readonly></label>
+            <label>Change<input type="number" step="0.01" id="changeAmt" readonly></label>
+        </div>
+
+        <div class="dialog-actions entry-actions">
+            <button type="submit" class="btn btn-primary">Save Entry</button>
+            <button type="button" class="btn btn-secondary" id="printReceiptBtn" disabled>Print Receipt</button>
+            <button type="button" class="btn btn-secondary" id="clearEntryBtn">Clear</button>
+            <span id="saveStatus" class="status-text"></span>
+        </div>
+    </form>
+</section>
+
+<dialog id="confirmDialog" class="confirm-dialog">
+    <div class="confirm-head">
+        <h3>Confirm Before Save</h3>
+        <button type="button" class="btn btn-ghost" id="confirmCloseBtn">Close</button>
+    </div>
+    <p class="confirm-sub">Please review the details below.</p>
+    <div id="confirmSummary" class="confirm-summary"></div>
+    <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" id="confirmCancelBtn">Back</button>
+        <button type="button" class="btn btn-primary" id="confirmProceedBtn">Confirm Save</button>
+    </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.BILLER_CHARGES = {{ biller_charges | tojson }};
+window.BILLER_LATE_CHARGES = {{ biller_late_charges | tojson }};
+</script>
+<script src="/static/js/entry_form.js"></script>
+{% endblock %}
