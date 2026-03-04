@@ -1,9 +1,21 @@
-<!DOCTYPE html>
-<html>
-<head><title>Customer Dashboard</title></head>
-<body>
-<h1>Customer Dashboard</h1>
-<p>Welcome {{ current_user.first_name }} {{ current_user.last_name }}</p>
-<form method="post" action="/auth/logout"><button>Logout</button></form>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block title %}Customer Dashboard{% endblock %}
+{% block topbar_title %}Customer Dashboard{% endblock %}
+{% block topbar_subtitle %}Hello {{ current_user.first_name }} {{ current_user.last_name }}{% endblock %}
+{% block topbar_actions %}
+<form method="post" action="/auth/logout" class="inline-action">
+    <button type="submit" class="btn btn-secondary">Logout</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <h2>Account</h2>
+    </div>
+    <p><strong>Phone:</strong> {{ current_user.phone }}</p>
+    <p><strong>Role:</strong> {{ current_user.role }}</p>
+    <p class="status-text">Customer view is ready. Additional customer features can be added next.</p>
+</section>
+{% endblock %}
