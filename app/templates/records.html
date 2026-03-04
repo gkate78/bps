@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Bills Admin Dashboard{% endblock %}
+{% block topbar_title %}Bills Records Admin{% endblock %}
+{% block topbar_subtitle %}Manage imported billing rows with fast table tools.{% endblock %}
+{% block topbar_actions %}
+<a href="/entry/form" class="btn btn-primary">Add Record</a>
+<button type="button" class="btn btn-secondary" id="openUsersBtn">Users</button>
+<form method="post" action="/auth/logout" class="inline-action">
+    <button type="submit" class="btn btn-secondary">Logout</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <h2>Data Controls</h2>
+    </div>
+
+    <div class="controls-grid">
+        <div class="field">
+            <label for="billerFilter">Biller</label>
+            <select id="billerFilter">
+                <option value="">All billers</option>
+                {% for biller in billers %}
+                <option value="{{ biller }}">{{ biller }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="fromDateFilter">Txn Date From</label>
+            <input type="date" id="fromDateFilter">
+        </div>
+
+        <div class="field">
+            <label for="toDateFilter">Txn Date To</label>
+            <input type="date" id="toDateFilter">
+        </div>
+
+        <div class="field">
+            <label for="dueStatusFilter">Due Status</label>
+            <select id="dueStatusFilter">
+                <option value="">All</option>
+                <option value="overdue">Overdue</option>
+                <option value="due_today">Due Today</option>
+                <option value="upcoming">Upcoming</option>
+                <option value="no_due_date">No Due Date</option>
+            </select>
+        </div>
+
+        <div class="field field-actions">
+            <button type="button" class="btn btn-secondary" id="clearFiltersBtn">Clear Filters</button>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>CSV Import</h2>
+    </div>
+
+    <form id="importForm" class="inline-form" onsubmit="return false;">
+        <input type="file" id="csvFile" accept=".csv" required>
+        <button type="button" class="btn btn-primary" id="importCsvBtn">Import CSV</button>
+        <span id="importStatus" class="status-text"></span>
+    </form>
+</section>
+
+<section class="panel">
+    <table id="recordsTable" class="display" style="width:100%">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Txn Date/Time</th>
+                <th>Account</th>
+                <th>Biller</th>
+                <th>Name</th>
+                <th>Bill Amt</th>
+                <th>Due Date</th>
+                <th>Reference</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+    </table>
+</section>
+
+<dialog id="usersDialog" class="record-dialog users-dialog">
+    <div class="dialog-head">
+        <h3>Users</h3>
+        <button type="button" id="closeUsersBtn" class="btn btn-ghost">Close</button>
+    </div>
+    <table id="usersTable" class="display" style="width:100%">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>First Name</th>
+                <th>Last Name</th>
+                <th>Phone</th>
+                <th>Role</th>
+                <th>Created At</th>
+            </tr>
+        </thead>
+    </table>
+</dialog>
+
+<dialog id="recordDialog" class="record-dialog">
+    <form id="recordForm" onsubmit="return false;">
+        <div class="dialog-head">
+            <h3 id="dialogTitle">Payment Entry</h3>
+            <button type="button" id="closeDialogBtn" class="btn btn-ghost">Close</button>
+        </div>
+
+        <input type="hidden" id="recordId">
+        <datalist id="billerOptions">
+            {% for biller in billers %}
+            <option value="{{ biller }}"></option>
+            {% endfor %}
+        </datalist>
+
+        <div class="entry-meta">
+            <div class="meta-item">
+                <span class="meta-label">Current Date/Time</span>
+                <strong id="currentDateTime">-</strong>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Computed Charge Rule</span>
+                <strong>Biller-based + tier logic</strong>
+            </div>
+        </div>
+
+        <div class="form-grid form-grid-pro">
+            <label>Txn Date<input type="date" id="txnDate" required></label>
+            <label>Account<input type="text" id="account" required></label>
+            <label>Biller<input type="text" id="biller" list="billerOptions" required></label>
+            <label>Name<input type="text" id="customerName" required></label>
+            <label>CP Number<input type="text" id="cpNumber"></label>
+            <label>Due Date<input type="date" id="dueDate" required></label>
+            <label>Bill Amount<input type="number" step="0.01" id="billAmt" value="0" min="0"></label>
+            <label>Late Charge<input type="number" step="0.01" id="amt2" value="0" min="0"></label>
+            <label>Service Charge<input type="number" step="0.01" id="charge" value="0" readonly></label>
+            <label>Total<input type="number" step="0.01" id="total" value="0" readonly></label>
+            <label>Cash<input type="number" step="0.01" id="cash" value="0" min="0"></label>
+            <label>Change<input type="number" step="0.01" id="changeAmt" value="0" readonly></label>
+            <label>Reference<input type="text" id="reference" placeholder="Auto-generate if blank"></label>
+            <label class="full">Notes<textarea id="notes" rows="2"></textarea></label>
+        </div>
+
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-primary" id="saveRecordBtn">Save</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.BILLER_CHARGES = {{ biller_charges | tojson }};
+</script>
+<script src="/static/js/records.js"></script>
+{% endblock %}
