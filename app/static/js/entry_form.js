@@ -10,6 +10,7 @@ function round2(value) {
 const BILLER_CHARGES = window.BILLER_CHARGES || {};
 const BILLER_LATE_CHARGES = window.BILLER_LATE_CHARGES || {};
 let lastSavedRecordId = null;
+let isDirtySinceSave = false;
 
 const dom = {
     form: document.getElementById("entryForm"),
@@ -25,6 +26,7 @@ const dom = {
     cash: document.getElementById("cash"),
     changeAmt: document.getElementById("changeAmt"),
     dueDate: document.getElementById("dueDate"),
+    saveBtn: document.getElementById("saveEntryBtn"),
     clearBtn: document.getElementById("clearEntryBtn"),
     printPreviewBtn: document.getElementById("printPreviewBtn"),
     saveStatus: document.getElementById("saveStatus"),
@@ -99,6 +101,7 @@ function clearForm() {
     dom.form.reset();
     dom.saveStatus.textContent = "";
     lastSavedRecordId = null;
+    isDirtySinceSave = false;
     recomputeFinancials();
 }
 
@@ -178,16 +181,21 @@ async function saveEntry() {
 
     const saved = await response.json();
     lastSavedRecordId = saved.id;
+    isDirtySinceSave = false;
     dom.saveStatus.textContent = "SAVED SUCCESSFULLY";
     return saved;
 }
 
 async function openPrintPreview() {
-    const saved = await saveEntry();
-    if (!saved) {
+    if (!lastSavedRecordId) {
+        alert("PLEASE SAVE FIRST BEFORE PRINTING.");
         return;
     }
-    const previewUrl = `/api/records/${saved.id}/receipt?from=entry&copies=2`;
+    if (isDirtySinceSave) {
+        alert("FORM CHANGED AFTER LAST SAVE. PLEASE SAVE AGAIN BEFORE PRINTING.");
+        return;
+    }
+    const previewUrl = `/api/records/${lastSavedRecordId}/receipt?from=entry&copies=2`;
     const previewWindow = window.open(previewUrl, "_blank");
     if (!previewWindow) {
         alert("POP-UP BLOCKED. PLEASE ALLOW POP-UPS TO OPEN PRINT PREVIEW.");
@@ -214,6 +222,23 @@ function moveToNextControl(current) {
     el.addEventListener("change", recomputeFinancials);
 });
 
+[
+    dom.account,
+    dom.biller,
+    dom.customerName,
+    dom.cpNumber,
+    dom.billAmt,
+    dom.cash,
+    dom.dueDate,
+].forEach((el) => {
+    el.addEventListener("input", () => {
+        isDirtySinceSave = true;
+    });
+    el.addEventListener("change", () => {
+        isDirtySinceSave = true;
+    });
+});
+
 let lookupTimer = null;
 dom.account.addEventListener("input", () => {
     if (lookupTimer) {
@@ -231,6 +256,7 @@ dom.form.addEventListener("keydown", (event) => {
         moveToNextControl(target);
     }
 });
+dom.saveBtn.addEventListener("click", saveEntry);
 dom.clearBtn.addEventListener("click", clearForm);
 dom.printPreviewBtn.addEventListener("click", openPrintPreview);
 window.addEventListener("message", (event) => {

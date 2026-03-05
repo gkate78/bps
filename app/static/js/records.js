@@ -244,7 +244,17 @@ const table = new DataTable("#recordsTable", {
 const usersDialog = document.getElementById("usersDialog");
 const openUsersBtn = document.getElementById("openUsersBtn");
 const closeUsersBtn = document.getElementById("closeUsersBtn");
+const openAddUserBtn = document.getElementById("openAddUserBtn");
+const addUserDialog = document.getElementById("addUserDialog");
+const closeAddUserBtn = document.getElementById("closeAddUserBtn");
+const addUserForm = document.getElementById("addUserForm");
+const addUserFirstName = document.getElementById("addUserFirstName");
+const addUserLastName = document.getElementById("addUserLastName");
+const addUserPhone = document.getElementById("addUserPhone");
+const addUserPin = document.getElementById("addUserPin");
+const addUserRole = document.getElementById("addUserRole");
 let usersTableInitialized = false;
+let usersTableInstance = null;
 
 function initUsersTableIfNeeded() {
     if (usersTableInitialized) {
@@ -256,19 +266,27 @@ function initUsersTableIfNeeded() {
         return;
     }
 
-    new DataTable("#usersTable", {
+    usersTableInstance = new DataTable("#usersTable", {
         processing: true,
         ajax: {
             url: "/api/admin/users",
             dataSrc: "users",
         },
         pageLength: 10,
+        autoWidth: false,
         columns: [
             { data: "id" },
             { data: "first_name" },
             { data: "last_name" },
-            { data: "phone" },
-            { data: "role" },
+            { data: "phone", render: (d) => `<span class="mono">${d || ""}</span>` },
+            {
+                data: "role",
+                render: (d) => {
+                    const role = String(d || "").toLowerCase();
+                    const roleClass = role === "encoder" ? "role-encoder" : "role-customer";
+                    return `<span class="role-pill ${roleClass}">${role || ""}</span>`;
+                },
+            },
             { data: "created_at", render: formatDateTime },
         ],
         order: [[5, "desc"]],
@@ -283,6 +301,61 @@ if (usersDialog && openUsersBtn && closeUsersBtn) {
         usersDialog.showModal();
     });
     closeUsersBtn.addEventListener("click", () => usersDialog.close());
+}
+
+function resetAddUserForm() {
+    if (!addUserForm) {
+        return;
+    }
+    addUserForm.reset();
+    if (addUserRole) {
+        addUserRole.value = "encoder";
+    }
+}
+
+if (openAddUserBtn && addUserDialog && closeAddUserBtn) {
+    openAddUserBtn.addEventListener("click", () => {
+        resetAddUserForm();
+        addUserDialog.showModal();
+    });
+    closeAddUserBtn.addEventListener("click", () => addUserDialog.close());
+}
+
+async function saveUser(event) {
+    event.preventDefault();
+    const payload = {
+        first_name: (addUserFirstName?.value || "").trim(),
+        last_name: (addUserLastName?.value || "").trim(),
+        phone: (addUserPhone?.value || "").trim(),
+        pin: (addUserPin?.value || "").trim(),
+        role: (addUserRole?.value || "").trim(),
+    };
+
+    if (!payload.first_name || !payload.last_name || !payload.phone || !payload.pin || !payload.role) {
+        await showMessage("All fields are required.", "Validation");
+        return;
+    }
+
+    const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        await showMessage(err.detail || "Unable to save user.", "Save Failed");
+        return;
+    }
+
+    addUserDialog.close();
+    if (usersTableInstance) {
+        usersTableInstance.ajax.reload(null, false);
+    }
+    await showMessage("User saved successfully.", "Saved");
+}
+
+if (addUserForm) {
+    addUserForm.addEventListener("submit", saveUser);
 }
 
 function clearForm() {
