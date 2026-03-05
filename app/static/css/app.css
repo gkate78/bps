@@ -262,6 +262,10 @@ input[readonly] {
     margin: 0 auto;
 }
 
+.auth-panel-wide {
+    max-width: 760px;
+}
+
 .auth-form {
     display: grid;
     gap: 0.75rem;
@@ -281,6 +285,20 @@ input[readonly] {
     padding: 0.55rem 0.7rem;
     border-radius: 8px;
     font-weight: 700;
+}
+
+.alert-success {
+    border: 1px solid #ccead3;
+    background: #edf9f0;
+    color: #1f6b32;
+    padding: 0.55rem 0.7rem;
+    border-radius: 8px;
+    font-weight: 700;
+}
+
+.encoder-table td,
+.encoder-table th {
+    text-transform: none;
 }
 
 .entry-form {

@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Settings | Bills Admin{% endblock %}
+{% block topbar_title %}Admin Settings{% endblock %}
+{% block topbar_subtitle %}Manage business receipt information and encoder accounts.{% endblock %}
+{% block topbar_actions %}
+<a href="/admin/records" class="btn btn-secondary">Back to Records</a>
+<form method="post" action="/auth/logout" class="inline-action">
+    <button type="submit" class="btn btn-secondary">Logout</button>
+</form>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<section class="panel"><div class="alert-error">{{ error }}</div></section>
+{% endif %}
+{% if success %}
+<section class="panel"><div class="alert-success">{{ success }}</div></section>
+{% endif %}
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Business Profile</h2>
+    </div>
+    <form method="post" action="/admin/settings/business" class="auth-form">
+        <label>Business Name
+            <input type="text" name="business_name" value="{{ business_profile.business_name if business_profile else '' }}" required maxlength="160">
+        </label>
+        <label>Business Address
+            <textarea name="business_address" rows="2" required maxlength="255">{{ business_profile.business_address if business_profile else '' }}</textarea>
+        </label>
+        <label>Business Phone
+            <input type="text" name="business_phone" value="{{ business_profile.business_phone if business_profile else '' }}" maxlength="40">
+        </label>
+        <label>Business Email
+            <input type="email" name="business_email" value="{{ business_profile.business_email if business_profile else '' }}" maxlength="120">
+        </label>
+        <label>TIN Number
+            <input type="text" name="tin_number" value="{{ business_profile.tin_number if business_profile else '' }}" maxlength="64">
+        </label>
+        <label>Receipt Footer
+            <input type="text" name="receipt_footer" value="{{ business_profile.receipt_footer if business_profile else '' }}" maxlength="255">
+        </label>
+        <button type="submit" class="btn btn-primary">Save Business Details</button>
+    </form>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Add Encoder</h2>
+    </div>
+    <form method="post" action="/admin/settings/encoders" class="auth-form">
+        <label>First Name
+            <input type="text" name="first_name" required maxlength="80">
+        </label>
+        <label>Last Name
+            <input type="text" name="last_name" required maxlength="80">
+        </label>
+        <label>Phone Number
+            <input type="tel" name="phone" required maxlength="20" placeholder="09XXXXXXXXX">
+        </label>
+        <label>4-digit PIN
+            <input type="password" name="pin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
+        </label>
+        <button type="submit" class="btn btn-primary">Save Encoder</button>
+    </form>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Current Encoders</h2>
+    </div>
+    {% if encoders %}
+    <table class="display encoder-table" style="width:100%">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Phone</th>
+                <th>Created</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for encoder in encoders %}
+            <tr>
+                <td>{{ encoder.first_name }} {{ encoder.last_name }}</td>
+                <td>{{ encoder.phone }}</td>
+                <td>{{ encoder.created_at }}</td>
+                <td>
+                    <form method="post" action="/admin/settings/encoders/{{ encoder.id }}/remove" class="inline-action">
+                        <button type="submit" class="btn btn-danger">Remove Encoder</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No encoders yet.</p>
+    {% endif %}
+</section>
+{% endblock %}

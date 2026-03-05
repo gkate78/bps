@@ -15,6 +15,33 @@
             color: #111;
             width: 58mm;
         }
+        .preview-toolbar {
+            width: 58mm;
+            margin: 0 auto;
+            padding: 6px 4px;
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+            background: #f5f7fc;
+            border-bottom: 1px solid #d6ddec;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+        .toolbar-btn {
+            border: 1px solid #c8d3ee;
+            background: #fff;
+            border-radius: 8px;
+            padding: 5px 8px;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .toolbar-btn.primary {
+            border-color: #0e4dff;
+            background: #0e4dff;
+            color: #fff;
+        }
         .receipt {
             width: 100%;
             margin: 0 auto;
@@ -68,14 +95,24 @@
         @media print {
             body { margin: 0; }
             .receipt { padding: 0; }
+            .preview-toolbar { display: none; }
         }
     </style>
 </head>
 <body>
+    <div class="preview-toolbar">
+        <button type="button" class="toolbar-btn primary" id="printReceiptBtn">OK</button>
+        <button type="button" class="toolbar-btn" id="cancelPreviewBtn">CANCEL</button>
+    </div>
     <div class="receipt">
         <div class="shop">
-            <h1>DITTO DIGITAL PRINT SHOP</h1>
-            <p>KM. 38 PULONG BUHANGIN<br>SANTA MARIA BULACAN</p>
+            <h1>{{ business_profile.business_name if business_profile else "BPAY BUSINESS" }}</h1>
+            <p>
+                {{ business_profile.business_address if business_profile else "BUSINESS ADDRESS" }}
+                {% if business_profile and business_profile.business_phone %}<br>{{ business_profile.business_phone }}{% endif %}
+                {% if business_profile and business_profile.business_email %}<br>{{ business_profile.business_email }}{% endif %}
+                {% if business_profile and business_profile.tin_number %}<br>TIN: {{ business_profile.tin_number }}{% endif %}
+            </p>
         </div>
         <div class="line"><span>REFERENCE</span><span>{{ record.reference or "-" }}</span></div>
         <div class="line"><span>TXN DATE/TIME</span><span>{{ record.txn_datetime }}</span></div>
@@ -92,10 +129,34 @@
             <div class="sign-line"></div>
             <span>SIGNATURE</span>
         </div>
-        <p class="meta">THANK YOU</p>
+        <p class="meta">{{ business_profile.receipt_footer if business_profile and business_profile.receipt_footer else "THANK YOU" }}</p>
     </div>
     <script>
-        window.print();
+        const params = new URLSearchParams(window.location.search);
+        const copiesRaw = Number.parseInt(params.get("copies") || "2", 10);
+        const copies = Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 2;
+
+        let isPrinting = false;
+
+        async function printCopies() {
+            if (isPrinting) return;
+            isPrinting = true;
+
+            for (let i = 0; i < copies; i += 1) {
+                window.print();
+                if (i < copies - 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 250));
+                }
+            }
+
+            if (window.opener && params.get("from") === "entry") {
+                window.opener.postMessage({ type: "receipt_print_completed", copies }, window.location.origin);
+            }
+            window.close();
+        }
+
+        document.getElementById("printReceiptBtn").addEventListener("click", printCopies);
+        document.getElementById("cancelPreviewBtn").addEventListener("click", () => window.close());
     </script>
 </body>
 </html>

@@ -1,14 +1,22 @@
 from datetime import date, datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.auth import get_current_user_optional, require_admin, require_data_entry_access
+from app.auth import (
+    get_current_user_optional,
+    hash_pin,
+    normalize_phone,
+    require_admin,
+    require_data_entry_access,
+    validate_phone,
+    validate_pin,
+)
 from app.controllers.bill_controller import (
     create_record,
     datatable_query,
@@ -22,7 +30,7 @@ from app.controllers.bill_controller import (
     update_record,
 )
 from app.database import get_db
-from app.models import UserAccount
+from app.models import BusinessProfile, UserAccount
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
@@ -70,12 +78,29 @@ class RecordResponse(RecordCreate):
     model_config = {"from_attributes": True}
 
 
+async def _get_profile_for_admin(db: AsyncSession, admin_user_id: int) -> Optional[BusinessProfile]:
+    result = await db.execute(select(BusinessProfile).where(BusinessProfile.admin_user_id == admin_user_id))
+    return result.scalar_one_or_none()
+
+
+async def _get_receipt_business_profile(
+    db: AsyncSession, current_user: Optional[UserAccount]
+) -> Optional[BusinessProfile]:
+    if current_user and current_user.role == "admin":
+        profile = await _get_profile_for_admin(db, current_user.id)
+        if profile:
+            return profile
+
+    result = await db.execute(select(BusinessProfile).order_by(BusinessProfile.id.asc()).limit(1))
+    return result.scalar_one_or_none()
+
+
 @router.get("/admin/records", response_class=HTMLResponse, include_in_schema=False)
 async def admin_records_page(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[UserAccount] = Depends(get_current_user_optional),
-):
+    ):
     if not current_user:
         return RedirectResponse(url="/auth/signin", status_code=303)
     if current_user.role != "admin":
@@ -92,6 +117,142 @@ async def admin_records_page(
             "current_user": current_user,
         },
     )
+
+
+@router.get("/admin/settings", response_class=HTMLResponse, include_in_schema=False)
+async def admin_settings_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_admin),
+):
+    profile = await _get_profile_for_admin(db, current_user.id)
+    result = await db.execute(
+        select(UserAccount).where(UserAccount.role == "encoder").order_by(UserAccount.created_at.desc())
+    )
+    encoders = result.scalars().all()
+    return templates.TemplateResponse(
+        "admin_settings.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "business_profile": profile,
+            "encoders": encoders,
+            "error": request.query_params.get("error", "").strip(),
+            "success": request.query_params.get("success", "").strip(),
+        },
+    )
+
+
+@router.post("/admin/settings/business", include_in_schema=False)
+async def update_business_settings(
+    request: Request,
+    business_name: str = Form(...),
+    business_address: str = Form(...),
+    business_phone: str = Form(""),
+    business_email: str = Form(""),
+    tin_number: str = Form(""),
+    receipt_footer: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_admin),
+):
+    cleaned_name = business_name.strip()
+    cleaned_address = business_address.strip()
+    if not cleaned_name:
+        return RedirectResponse(url="/admin/settings?error=Business+name+is+required", status_code=303)
+    if not cleaned_address:
+        return RedirectResponse(url="/admin/settings?error=Business+address+is+required", status_code=303)
+
+    profile = await _get_profile_for_admin(db, current_user.id)
+    if profile is None:
+        profile = BusinessProfile(
+            admin_user_id=current_user.id,
+            business_name=cleaned_name,
+            business_address=cleaned_address,
+            business_phone=business_phone.strip() or None,
+            business_email=business_email.strip() or None,
+            tin_number=tin_number.strip() or None,
+            receipt_footer=receipt_footer.strip() or None,
+        )
+    else:
+        profile.business_name = cleaned_name
+        profile.business_address = cleaned_address
+        profile.business_phone = business_phone.strip() or None
+        profile.business_email = business_email.strip() or None
+        profile.tin_number = tin_number.strip() or None
+        profile.receipt_footer = receipt_footer.strip() or None
+        profile.updated_at = datetime.utcnow()
+
+    db.add(profile)
+    await db.commit()
+    return RedirectResponse(url="/admin/settings?success=Business+details+saved", status_code=303)
+
+
+@router.post("/admin/settings/encoders", include_in_schema=False)
+async def create_encoder_user(
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    phone: str = Form(...),
+    pin: str = Form(...),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    cleaned_first = first_name.strip()
+    cleaned_last = last_name.strip()
+    normalized_phone = normalize_phone(phone)
+
+    if not cleaned_first or not cleaned_last:
+        return RedirectResponse(url="/admin/settings?error=Encoder+name+is+required", status_code=303)
+    if not validate_phone(normalized_phone):
+        return RedirectResponse(url="/admin/settings?error=Invalid+encoder+phone+number", status_code=303)
+    if not validate_pin(pin):
+        return RedirectResponse(url="/admin/settings?error=Encoder+PIN+must+be+4+digits", status_code=303)
+
+    existing = await db.execute(select(UserAccount).where(UserAccount.phone == normalized_phone))
+    user = existing.scalar_one_or_none()
+    if user is not None:
+        if user.role == "admin":
+            return RedirectResponse(url="/admin/settings?error=Phone+already+belongs+to+an+admin", status_code=303)
+        user.first_name = cleaned_first
+        user.last_name = cleaned_last
+        user.role = "encoder"
+        pin_hash, pin_salt = hash_pin(pin)
+        user.pin_hash = pin_hash
+        user.pin_salt = pin_salt
+        user.updated_at = datetime.utcnow()
+    else:
+        pin_hash, pin_salt = hash_pin(pin)
+        user = UserAccount(
+            first_name=cleaned_first,
+            last_name=cleaned_last,
+            phone=normalized_phone,
+            pin_hash=pin_hash,
+            pin_salt=pin_salt,
+            role="encoder",
+        )
+
+    db.add(user)
+    await db.commit()
+    return RedirectResponse(url="/admin/settings?success=Encoder+saved", status_code=303)
+
+
+@router.post("/admin/settings/encoders/{encoder_id}/remove", include_in_schema=False)
+async def remove_encoder_role(
+    encoder_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    result = await db.execute(select(UserAccount).where(UserAccount.id == encoder_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        return RedirectResponse(url="/admin/settings?error=Encoder+not+found", status_code=303)
+    if user.role == "admin":
+        return RedirectResponse(url="/admin/settings?error=Cannot+remove+an+admin+role", status_code=303)
+
+    user.role = "customer"
+    user.updated_at = datetime.utcnow()
+    db.add(user)
+    await db.commit()
+    return RedirectResponse(url="/admin/settings?success=Encoder+removed", status_code=303)
 
 
 @router.get("/entry/form", response_class=HTMLResponse, include_in_schema=False)
@@ -220,14 +381,16 @@ async def receipt_page(
     record_id: int,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_data_entry_access),
+    current_user: UserAccount = Depends(require_data_entry_access),
 ):
     record = await get_record(db, record_id)
+    business_profile = await _get_receipt_business_profile(db, current_user)
     return templates.TemplateResponse(
         "receipt.html",
         {
             "request": request,
             "record": record,
+            "business_profile": business_profile,
         },
     )
 
