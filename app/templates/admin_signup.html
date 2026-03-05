@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Registration | Bills Admin{% endblock %}
+{% block topbar_title %}Admin Registration{% endblock %}
+{% block topbar_subtitle %}Set up the first admin account and business receipt details.{% endblock %}
+
+{% block content %}
+<section class="panel auth-panel auth-panel-wide">
+    <div class="panel-head">
+        <h2>Register Admin</h2>
+    </div>
+
+    {% if error %}
+    <div class="alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/auth/admin/signup" class="auth-form">
+        <label>First Name
+            <input type="text" name="first_name" value="{{ first_name }}" required maxlength="80">
+        </label>
+        <label>Last Name
+            <input type="text" name="last_name" value="{{ last_name }}" required maxlength="80">
+        </label>
+        <label>Phone Number
+            <input type="tel" name="phone" value="{{ phone }}" required maxlength="20" placeholder="09XXXXXXXXX">
+        </label>
+        <label>4-digit PIN
+            <input type="password" name="pin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
+        </label>
+        <label>Re-enter PIN
+            <input type="password" name="pin_confirm" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
+        </label>
+        <label>Business Name
+            <input type="text" name="business_name" value="{{ business_name }}" required maxlength="160">
+        </label>
+        <label>Business Address
+            <textarea name="business_address" rows="2" required maxlength="255">{{ business_address }}</textarea>
+        </label>
+        <label>Business Phone
+            <input type="text" name="business_phone" value="{{ business_phone }}" maxlength="40">
+        </label>
+        <label>Business Email
+            <input type="email" name="business_email" value="{{ business_email }}" maxlength="120">
+        </label>
+        <label>TIN Number
+            <input type="text" name="tin_number" value="{{ tin_number }}" maxlength="64">
+        </label>
+        <label>Receipt Footer
+            <input type="text" name="receipt_footer" value="{{ receipt_footer }}" maxlength="255" placeholder="e.g., Thank you and come again">
+        </label>
+        <button type="submit" class="btn btn-primary">Create Admin Account</button>
+    </form>
+</section>
+{% endblock %}

@@ -6,6 +6,7 @@
 {% block topbar_actions %}
 {% if current_user.role == "admin" %}
 <a href="/admin/records" class="btn btn-secondary">Open Admin Table</a>
+<a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
 {% endif %}
 <form method="post" action="/auth/logout" class="inline-action">
     <button type="submit" class="btn btn-secondary">Logout</button>
@@ -50,26 +51,12 @@
         </div>
 
         <div class="dialog-actions entry-actions">
-            <button type="submit" class="btn btn-primary">Save Entry</button>
-            <button type="button" class="btn btn-secondary" id="printReceiptBtn" disabled>Print Receipt</button>
+            <button type="button" class="btn btn-primary" id="printPreviewBtn">Print Preview</button>
             <button type="button" class="btn btn-secondary" id="clearEntryBtn">Clear</button>
             <span id="saveStatus" class="status-text"></span>
         </div>
     </form>
 </section>
-
-<dialog id="confirmDialog" class="confirm-dialog">
-    <div class="confirm-head">
-        <h3>Confirm Before Save</h3>
-        <button type="button" class="btn btn-ghost" id="confirmCloseBtn">Close</button>
-    </div>
-    <p class="confirm-sub">Please review the details below.</p>
-    <div id="confirmSummary" class="confirm-summary"></div>
-    <div class="dialog-actions">
-        <button type="button" class="btn btn-secondary" id="confirmCancelBtn">Back</button>
-        <button type="button" class="btn btn-primary" id="confirmProceedBtn">Confirm Save</button>
-    </div>
-</dialog>
 {% endblock %}
 
 {% block scripts %}

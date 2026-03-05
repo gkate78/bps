@@ -13,11 +13,6 @@ let lastSavedRecordId = null;
 
 const dom = {
     form: document.getElementById("entryForm"),
-    confirmDialog: document.getElementById("confirmDialog"),
-    confirmSummary: document.getElementById("confirmSummary"),
-    confirmProceedBtn: document.getElementById("confirmProceedBtn"),
-    confirmCancelBtn: document.getElementById("confirmCancelBtn"),
-    confirmCloseBtn: document.getElementById("confirmCloseBtn"),
     currentDateTime: document.getElementById("currentDateTime"),
     account: document.getElementById("account"),
     biller: document.getElementById("biller"),
@@ -31,7 +26,7 @@ const dom = {
     changeAmt: document.getElementById("changeAmt"),
     dueDate: document.getElementById("dueDate"),
     clearBtn: document.getElementById("clearEntryBtn"),
-    printReceiptBtn: document.getElementById("printReceiptBtn"),
+    printPreviewBtn: document.getElementById("printPreviewBtn"),
     saveStatus: document.getElementById("saveStatus"),
 };
 
@@ -85,10 +80,11 @@ function recomputeFinancials() {
     const cash = round2(rawCash);
     const change = round2(cash - total);
 
-    dom.amt2.value = rawBillAmt || dom.dueDate.value ? lateCharge.toFixed(2) : "";
-    dom.charge.value = rawBillAmt ? charge.toFixed(2) : "";
-    dom.total.value = rawBillAmt ? total.toFixed(2) : "";
-    dom.changeAmt.value = rawBillAmt && rawCash ? change.toFixed(2) : "";
+    // Always show computed amounts so service/late charge fields never look missing.
+    dom.amt2.value = lateCharge.toFixed(2);
+    dom.charge.value = charge.toFixed(2);
+    dom.total.value = total.toFixed(2);
+    dom.changeAmt.value = change.toFixed(2);
 }
 
 function updateCurrentDateTime() {
@@ -102,7 +98,6 @@ function setUppercaseInput(el) {
 function clearForm() {
     dom.form.reset();
     dom.saveStatus.textContent = "";
-    dom.printReceiptBtn.disabled = true;
     lastSavedRecordId = null;
     recomputeFinancials();
 }
@@ -163,72 +158,10 @@ function validatePayload(payload) {
     return true;
 }
 
-function confirmDetails(payload) {
-    const rows = [
-        ["DATE/TIME", dom.currentDateTime.textContent],
-        ["ACCOUNT", payload.account],
-        ["BILLER", payload.biller],
-        ["NAME", payload.customer_name],
-        ["CP NUMBER", payload.cp_number || "-"],
-        ["DUE DATE", payload.due_date || "-"],
-        ["BILL AMOUNT", payload.bill_amt.toFixed(2)],
-        ["LATE CHARGE", payload.amt2.toFixed(2)],
-        ["SERVICE CHARGE", payload.charge.toFixed(2)],
-        ["TOTAL", payload.total.toFixed(2)],
-        ["CASH", payload.cash.toFixed(2)],
-        ["CHANGE", payload.change_amt.toFixed(2)],
-    ];
-
-    dom.confirmSummary.innerHTML = rows
-        .map(
-            ([label, value]) =>
-                `<div class="confirm-row"><span>${label}</span><strong>${value}</strong></div>`
-        )
-        .join("");
-
-    return new Promise((resolve) => {
-        let settled = false;
-        const settle = (ok) => {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            dom.confirmProceedBtn.removeEventListener("click", onConfirm);
-            dom.confirmCancelBtn.removeEventListener("click", onCancel);
-            dom.confirmCloseBtn.removeEventListener("click", onCancel);
-            dom.confirmDialog.removeEventListener("close", onClose);
-            resolve(ok);
-        };
-        const onConfirm = () => {
-            dom.confirmDialog.removeEventListener("close", onClose);
-            dom.confirmDialog.close();
-            settle(true);
-        };
-        const onCancel = () => {
-            dom.confirmDialog.removeEventListener("close", onClose);
-            dom.confirmDialog.close();
-            settle(false);
-        };
-        const onClose = () => settle(false);
-
-        dom.confirmProceedBtn.addEventListener("click", onConfirm);
-        dom.confirmCancelBtn.addEventListener("click", onCancel);
-        dom.confirmCloseBtn.addEventListener("click", onCancel);
-        dom.confirmDialog.addEventListener("close", onClose);
-        dom.confirmDialog.showModal();
-    });
-}
-
-async function saveEntry(event) {
-    event.preventDefault();
-
+async function saveEntry() {
     const payload = payloadFromForm();
     if (!validatePayload(payload)) {
-        return;
-    }
-    const confirmed = await confirmDetails(payload);
-    if (!confirmed) {
-        return;
+        return null;
     }
 
     const response = await fetch("/api/records", {
@@ -240,20 +173,25 @@ async function saveEntry(event) {
     if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         alert((err.detail || "SAVE FAILED").toString().toUpperCase());
-        return;
+        return null;
     }
 
     const saved = await response.json();
     lastSavedRecordId = saved.id;
-    dom.printReceiptBtn.disabled = false;
     dom.saveStatus.textContent = "SAVED SUCCESSFULLY";
+    return saved;
 }
 
-function printReceipt() {
-    if (!lastSavedRecordId) {
+async function openPrintPreview() {
+    const saved = await saveEntry();
+    if (!saved) {
         return;
     }
-    window.open(`/api/records/${lastSavedRecordId}/receipt`, "_blank");
+    const previewUrl = `/api/records/${saved.id}/receipt?from=entry&copies=2`;
+    const previewWindow = window.open(previewUrl, "_blank");
+    if (!previewWindow) {
+        alert("POP-UP BLOCKED. PLEASE ALLOW POP-UPS TO OPEN PRINT PREVIEW.");
+    }
 }
 
 function moveToNextControl(current) {
@@ -285,7 +223,7 @@ dom.account.addEventListener("input", () => {
 });
 dom.account.addEventListener("blur", lookupAccountDetails);
 
-dom.form.addEventListener("submit", saveEntry);
+dom.form.addEventListener("submit", (event) => event.preventDefault());
 dom.form.addEventListener("keydown", (event) => {
     const target = event.target;
     if (event.key === "Enter" && target.tagName !== "TEXTAREA") {
@@ -294,7 +232,17 @@ dom.form.addEventListener("keydown", (event) => {
     }
 });
 dom.clearBtn.addEventListener("click", clearForm);
-dom.printReceiptBtn.addEventListener("click", printReceipt);
+dom.printPreviewBtn.addEventListener("click", openPrintPreview);
+window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin) {
+        return;
+    }
+    if (event.data && event.data.type === "receipt_print_completed") {
+        clearForm();
+        dom.saveStatus.textContent = "PRINTED 2 COPIES. READY FOR NEXT ENTRY";
+        dom.account.focus();
+    }
+});
 
 updateCurrentDateTime();
 setInterval(updateCurrentDateTime, 1000);
