@@ -10,10 +10,14 @@ function round2(value) {
 const BILLER_CHARGES = window.BILLER_CHARGES || {};
 const BILLER_LATE_CHARGES = window.BILLER_LATE_CHARGES || {};
 let lastSavedRecordId = null;
-let isDirtySinceSave = false;
 
 const dom = {
     form: document.getElementById("entryForm"),
+    confirmDialog: document.getElementById("confirmDialog"),
+    confirmSummary: document.getElementById("confirmSummary"),
+    confirmProceedBtn: document.getElementById("confirmProceedBtn"),
+    confirmCancelBtn: document.getElementById("confirmCancelBtn"),
+    confirmCloseBtn: document.getElementById("confirmCloseBtn"),
     currentDateTime: document.getElementById("currentDateTime"),
     account: document.getElementById("account"),
     biller: document.getElementById("biller"),
@@ -26,9 +30,8 @@ const dom = {
     cash: document.getElementById("cash"),
     changeAmt: document.getElementById("changeAmt"),
     dueDate: document.getElementById("dueDate"),
-    saveBtn: document.getElementById("saveEntryBtn"),
     clearBtn: document.getElementById("clearEntryBtn"),
-    printPreviewBtn: document.getElementById("printPreviewBtn"),
+    printReceiptBtn: document.getElementById("printReceiptBtn"),
     saveStatus: document.getElementById("saveStatus"),
 };
 
@@ -82,11 +85,10 @@ function recomputeFinancials() {
     const cash = round2(rawCash);
     const change = round2(cash - total);
 
-    // Always show computed amounts so service/late charge fields never look missing.
-    dom.amt2.value = lateCharge.toFixed(2);
-    dom.charge.value = charge.toFixed(2);
-    dom.total.value = total.toFixed(2);
-    dom.changeAmt.value = change.toFixed(2);
+    dom.amt2.value = rawBillAmt || dom.dueDate.value ? lateCharge.toFixed(2) : "";
+    dom.charge.value = rawBillAmt ? charge.toFixed(2) : "";
+    dom.total.value = rawBillAmt ? total.toFixed(2) : "";
+    dom.changeAmt.value = rawBillAmt && rawCash ? change.toFixed(2) : "";
 }
 
 function updateCurrentDateTime() {
@@ -100,8 +102,8 @@ function setUppercaseInput(el) {
 function clearForm() {
     dom.form.reset();
     dom.saveStatus.textContent = "";
+    dom.printReceiptBtn.disabled = true;
     lastSavedRecordId = null;
-    isDirtySinceSave = false;
     recomputeFinancials();
 }
 
@@ -161,10 +163,72 @@ function validatePayload(payload) {
     return true;
 }
 
-async function saveEntry() {
+function confirmDetails(payload) {
+    const rows = [
+        ["DATE/TIME", dom.currentDateTime.textContent],
+        ["ACCOUNT", payload.account],
+        ["BILLER", payload.biller],
+        ["NAME", payload.customer_name],
+        ["CP NUMBER", payload.cp_number || "-"],
+        ["DUE DATE", payload.due_date || "-"],
+        ["BILL AMOUNT", payload.bill_amt.toFixed(2)],
+        ["LATE CHARGE", payload.amt2.toFixed(2)],
+        ["SERVICE CHARGE", payload.charge.toFixed(2)],
+        ["TOTAL", payload.total.toFixed(2)],
+        ["CASH", payload.cash.toFixed(2)],
+        ["CHANGE", payload.change_amt.toFixed(2)],
+    ];
+
+    dom.confirmSummary.innerHTML = rows
+        .map(
+            ([label, value]) =>
+                `<div class="confirm-row"><span>${label}</span><strong>${value}</strong></div>`
+        )
+        .join("");
+
+    return new Promise((resolve) => {
+        let settled = false;
+        const settle = (ok) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            dom.confirmProceedBtn.removeEventListener("click", onConfirm);
+            dom.confirmCancelBtn.removeEventListener("click", onCancel);
+            dom.confirmCloseBtn.removeEventListener("click", onCancel);
+            dom.confirmDialog.removeEventListener("close", onClose);
+            resolve(ok);
+        };
+        const onConfirm = () => {
+            dom.confirmDialog.removeEventListener("close", onClose);
+            dom.confirmDialog.close();
+            settle(true);
+        };
+        const onCancel = () => {
+            dom.confirmDialog.removeEventListener("close", onClose);
+            dom.confirmDialog.close();
+            settle(false);
+        };
+        const onClose = () => settle(false);
+
+        dom.confirmProceedBtn.addEventListener("click", onConfirm);
+        dom.confirmCancelBtn.addEventListener("click", onCancel);
+        dom.confirmCloseBtn.addEventListener("click", onCancel);
+        dom.confirmDialog.addEventListener("close", onClose);
+        dom.confirmDialog.showModal();
+    });
+}
+
+async function saveEntry(event) {
+    event.preventDefault();
+
     const payload = payloadFromForm();
     if (!validatePayload(payload)) {
-        return null;
+        return;
+    }
+    const confirmed = await confirmDetails(payload);
+    if (!confirmed) {
+        return;
     }
 
     const response = await fetch("/api/records", {
@@ -176,30 +240,20 @@ async function saveEntry() {
     if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         alert((err.detail || "SAVE FAILED").toString().toUpperCase());
-        return null;
+        return;
     }
 
     const saved = await response.json();
     lastSavedRecordId = saved.id;
-    isDirtySinceSave = false;
+    dom.printReceiptBtn.disabled = false;
     dom.saveStatus.textContent = "SAVED SUCCESSFULLY";
-    return saved;
 }
 
-async function openPrintPreview() {
+function printReceipt() {
     if (!lastSavedRecordId) {
-        alert("PLEASE SAVE FIRST BEFORE PRINTING.");
         return;
     }
-    if (isDirtySinceSave) {
-        alert("FORM CHANGED AFTER LAST SAVE. PLEASE SAVE AGAIN BEFORE PRINTING.");
-        return;
-    }
-    const previewUrl = `/api/records/${lastSavedRecordId}/receipt?from=entry&copies=2`;
-    const previewWindow = window.open(previewUrl, "_blank");
-    if (!previewWindow) {
-        alert("POP-UP BLOCKED. PLEASE ALLOW POP-UPS TO OPEN PRINT PREVIEW.");
-    }
+    window.open(`/api/records/${lastSavedRecordId}/receipt`, "_blank");
 }
 
 function moveToNextControl(current) {
@@ -222,23 +276,6 @@ function moveToNextControl(current) {
     el.addEventListener("change", recomputeFinancials);
 });
 
-[
-    dom.account,
-    dom.biller,
-    dom.customerName,
-    dom.cpNumber,
-    dom.billAmt,
-    dom.cash,
-    dom.dueDate,
-].forEach((el) => {
-    el.addEventListener("input", () => {
-        isDirtySinceSave = true;
-    });
-    el.addEventListener("change", () => {
-        isDirtySinceSave = true;
-    });
-});
-
 let lookupTimer = null;
 dom.account.addEventListener("input", () => {
     if (lookupTimer) {
@@ -248,7 +285,7 @@ dom.account.addEventListener("input", () => {
 });
 dom.account.addEventListener("blur", lookupAccountDetails);
 
-dom.form.addEventListener("submit", (event) => event.preventDefault());
+dom.form.addEventListener("submit", saveEntry);
 dom.form.addEventListener("keydown", (event) => {
     const target = event.target;
     if (event.key === "Enter" && target.tagName !== "TEXTAREA") {
@@ -256,19 +293,8 @@ dom.form.addEventListener("keydown", (event) => {
         moveToNextControl(target);
     }
 });
-dom.saveBtn.addEventListener("click", saveEntry);
 dom.clearBtn.addEventListener("click", clearForm);
-dom.printPreviewBtn.addEventListener("click", openPrintPreview);
-window.addEventListener("message", (event) => {
-    if (event.origin !== window.location.origin) {
-        return;
-    }
-    if (event.data && event.data.type === "receipt_print_completed") {
-        clearForm();
-        dom.saveStatus.textContent = "PRINTED 2 COPIES. READY FOR NEXT ENTRY";
-        dom.account.focus();
-    }
-});
+dom.printReceiptBtn.addEventListener("click", printReceipt);
 
 updateCurrentDateTime();
 setInterval(updateCurrentDateTime, 1000);
