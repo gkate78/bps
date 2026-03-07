@@ -50,6 +50,10 @@ RECEIPT_FIELD_KEYS = (
 )
 
 
+def _normalize_text(value: str) -> str:
+    return value.strip().upper()
+
+
 class RecordCreate(BaseModel):
     txn_datetime: Optional[datetime] = None
     txn_date: Optional[date] = None
@@ -95,7 +99,7 @@ class RecordResponse(RecordCreate):
 class AdminUserCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
-    phone: str = Field(min_length=1, max_length=20)
+    phone: str = Field(min_length=11, max_length=11)
     pin: str = Field(min_length=4, max_length=4)
     role: str = Field(min_length=1, max_length=20)
 
@@ -223,8 +227,8 @@ async def update_business_settings(
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(require_admin),
 ):
-    cleaned_name = business_name.strip()
-    cleaned_address = business_address.strip()
+    cleaned_name = _normalize_text(business_name)
+    cleaned_address = _normalize_text(business_address)
     if not cleaned_name:
         return RedirectResponse(url="/admin/settings?error=Business+name+is+required", status_code=303)
     if not cleaned_address:
@@ -236,10 +240,10 @@ async def update_business_settings(
             admin_user_id=current_user.id,
             business_name=cleaned_name,
             business_address=cleaned_address,
-            business_phone=business_phone.strip() or None,
-            business_email=business_email.strip() or None,
-            tin_number=tin_number.strip() or None,
-            receipt_footer=receipt_footer.strip() or None,
+            business_phone=_normalize_text(business_phone) or None,
+            business_email=_normalize_text(business_email) or None,
+            tin_number=_normalize_text(tin_number) or None,
+            receipt_footer=_normalize_text(receipt_footer) or None,
             receipt_show_headings=receipt_show_headings is not None,
             receipt_visible_fields=_serialize_visible_fields(list(RECEIPT_FIELD_KEYS)),
             receipt_show_business_name=receipt_show_business_name is not None,
@@ -251,10 +255,10 @@ async def update_business_settings(
     else:
         profile.business_name = cleaned_name
         profile.business_address = cleaned_address
-        profile.business_phone = business_phone.strip() or None
-        profile.business_email = business_email.strip() or None
-        profile.tin_number = tin_number.strip() or None
-        profile.receipt_footer = receipt_footer.strip() or None
+        profile.business_phone = _normalize_text(business_phone) or None
+        profile.business_email = _normalize_text(business_email) or None
+        profile.tin_number = _normalize_text(tin_number) or None
+        profile.receipt_footer = _normalize_text(receipt_footer) or None
         profile.receipt_show_headings = receipt_show_headings is not None
         profile.receipt_visible_fields = _serialize_visible_fields(list(RECEIPT_FIELD_KEYS))
         profile.receipt_show_business_name = receipt_show_business_name is not None
@@ -278,8 +282,8 @@ async def create_encoder_user(
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_admin),
 ):
-    cleaned_first = first_name.strip()
-    cleaned_last = last_name.strip()
+    cleaned_first = _normalize_text(first_name)
+    cleaned_last = _normalize_text(last_name)
     normalized_phone = normalize_phone(phone)
 
     if not cleaned_first or not cleaned_last:
@@ -448,8 +452,8 @@ async def upsert_user(
     if not pin_ok:
         raise HTTPException(status_code=400, detail=pin_error or "Invalid PIN")
 
-    first_name = payload.first_name.strip()
-    last_name = payload.last_name.strip()
+    first_name = _normalize_text(payload.first_name)
+    last_name = _normalize_text(payload.last_name)
     if not first_name or not last_name:
         raise HTTPException(status_code=400, detail="First name and last name are required")
 
