@@ -18,7 +18,7 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db() -> None:
-    from app.models import BillRecord, UserAccount  # noqa: F401
+    from app.models import BillRecord, BusinessProfile, UserAccount  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
@@ -35,4 +35,39 @@ async def init_db() -> None:
                     WHERE txn_datetime IS NULL
                     """
                 )
+            )
+
+        # Lightweight migration: add receipt settings columns for business_profiles.
+        profile_columns = (await conn.execute(text("PRAGMA table_info(business_profiles)"))).fetchall()
+        profile_col_names = {row[1] for row in profile_columns}
+        if "receipt_show_headings" not in profile_col_names:
+            await conn.execute(
+                text("ALTER TABLE business_profiles ADD COLUMN receipt_show_headings INTEGER NOT NULL DEFAULT 1")
+            )
+        if "receipt_visible_fields" not in profile_col_names:
+            await conn.execute(
+                text(
+                    "ALTER TABLE business_profiles ADD COLUMN receipt_visible_fields VARCHAR(255) NOT NULL "
+                    "DEFAULT 'reference,txn_datetime,account,biller,customer_name,bill_amt,amt2,charge,total,cash,change_amt'"
+                )
+            )
+        if "receipt_show_business_name" not in profile_col_names:
+            await conn.execute(
+                text("ALTER TABLE business_profiles ADD COLUMN receipt_show_business_name INTEGER NOT NULL DEFAULT 1")
+            )
+        if "receipt_show_business_address" not in profile_col_names:
+            await conn.execute(
+                text("ALTER TABLE business_profiles ADD COLUMN receipt_show_business_address INTEGER NOT NULL DEFAULT 1")
+            )
+        if "receipt_show_business_phone" not in profile_col_names:
+            await conn.execute(
+                text("ALTER TABLE business_profiles ADD COLUMN receipt_show_business_phone INTEGER NOT NULL DEFAULT 1")
+            )
+        if "receipt_show_business_email" not in profile_col_names:
+            await conn.execute(
+                text("ALTER TABLE business_profiles ADD COLUMN receipt_show_business_email INTEGER NOT NULL DEFAULT 0")
+            )
+        if "receipt_show_business_tin" not in profile_col_names:
+            await conn.execute(
+                text("ALTER TABLE business_profiles ADD COLUMN receipt_show_business_tin INTEGER NOT NULL DEFAULT 0")
             )

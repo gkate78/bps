@@ -7,18 +7,42 @@
     <style>
         @page {
             size: 58mm auto;
-            margin: 3mm;
+            margin: 0.5mm 3mm 2mm 3mm;
         }
         body {
             font-family: "Courier New", monospace;
             margin: 0;
             color: #111;
             width: 58mm;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .preview-actions {
+            width: 58mm;
+            margin: 0 auto;
+            padding: 6px 4px 2px;
+            display: flex;
+            gap: 6px;
+            justify-content: center;
+        }
+        .toolbar-btn {
+            border: 1px solid #c8d3ee;
+            background: #fff;
+            border-radius: 8px;
+            padding: 5px 8px;
+            font-size: 10px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .toolbar-btn.primary {
+            border-color: #0e4dff;
+            background: #0e4dff;
+            color: #fff;
         }
         .receipt {
             width: 100%;
             margin: 0 auto;
-            padding: 2mm 1mm;
+            padding: 1mm 1mm 0;
         }
         .shop {
             text-align: center;
@@ -26,22 +50,21 @@
         }
         .shop h1 {
             margin: 0;
-            font-size: 12px;
+            font-size: 11px;
             letter-spacing: 0.2px;
             text-transform: uppercase;
         }
         .shop p {
             margin: 0.5mm 0 0;
-            font-size: 9px;
+            font-size: 11px;
             text-transform: uppercase;
             line-height: 1.2;
         }
         .line {
             display: flex;
             justify-content: space-between;
-            border-bottom: 1px dashed #bbb;
-            padding: 1.2mm 0;
-            font-size: 10px;
+            padding: 1mm 0;
+            font-size: 11px;
             text-transform: uppercase;
         }
         .total {
@@ -50,14 +73,14 @@
         }
         .meta {
             margin-top: 2mm;
-            font-size: 9px;
+            font-size: 11px;
             text-align: center;
             text-transform: uppercase;
         }
         .sign {
             margin-top: 7mm;
             text-align: center;
-            font-size: 9px;
+            font-size: 11px;
             text-transform: uppercase;
         }
         .sign-line {
@@ -68,34 +91,129 @@
         @media print {
             body { margin: 0; }
             .receipt { padding: 0; }
+            .preview-actions { display: none; }
         }
     </style>
 </head>
 <body>
     <div class="receipt">
         <div class="shop">
-            <h1>DITTO DIGITAL PRINT SHOP</h1>
-            <p>KM. 38 PULONG BUHANGIN<br>SANTA MARIA BULACAN</p>
+            {% if receipt_settings.show_business_name %}
+            <h1>{{ business_profile.business_name if business_profile else "BPAY BUSINESS" }}</h1>
+            {% endif %}
+            {% if receipt_settings.show_business_address or receipt_settings.show_business_phone or receipt_settings.show_business_email or receipt_settings.show_business_tin %}
+            <p>
+                {% if receipt_settings.show_business_address %}
+                {{ business_profile.business_address if business_profile else "BUSINESS ADDRESS" }}
+                {% endif %}
+                {% if receipt_settings.show_business_phone and business_profile and business_profile.business_phone %}<br>{{ business_profile.business_phone }}{% endif %}
+                {% if receipt_settings.show_business_email and business_profile and business_profile.business_email %}<br>{{ business_profile.business_email }}{% endif %}
+                {% if receipt_settings.show_business_tin and business_profile and business_profile.tin_number %}<br>TIN: {{ business_profile.tin_number }}{% endif %}
+            </p>
+            {% endif %}
         </div>
-        <div class="line"><span>REFERENCE</span><span>{{ record.reference or "-" }}</span></div>
-        <div class="line"><span>TXN DATE/TIME</span><span>{{ record.txn_datetime }}</span></div>
-        <div class="line"><span>ACCOUNT</span><span>{{ record.account }}</span></div>
-        <div class="line"><span>BILLER</span><span>{{ record.biller }}</span></div>
-        <div class="line"><span>NAME</span><span>{{ record.customer_name }}</span></div>
-        <div class="line"><span>BILL AMOUNT</span><span>{{ "%.2f"|format(record.bill_amt) }}</span></div>
-        <div class="line"><span>LATE CHARGE</span><span>{{ "%.2f"|format(record.amt2) }}</span></div>
-        <div class="line"><span>SERVICE CHARGE</span><span>{{ "%.2f"|format(record.charge) }}</span></div>
-        <div class="line total"><span>TOTAL</span><span>{{ "%.2f"|format(record.total) }}</span></div>
-        <div class="line"><span>CASH</span><span>{{ "%.2f"|format(record.cash) }}</span></div>
-        <div class="line"><span>CHANGE</span><span>{{ "%.2f"|format(record.change_amt) }}</span></div>
+        {% if receipt_settings.show_reference %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}REFERENCE{% endif %}</span>
+            <span>{{ record.reference or "-" }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_txn_datetime %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}TXN DATE/TIME{% endif %}</span>
+            <span>{{ record.txn_datetime }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_account %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}ACCOUNT{% endif %}</span>
+            <span>{{ record.account }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_biller %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}BILLER{% endif %}</span>
+            <span>{{ record.biller }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_customer_name %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}NAME{% endif %}</span>
+            <span>{{ record.customer_name }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_bill_amt %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}BILL AMOUNT{% endif %}</span>
+            <span>{{ "%.2f"|format(record.bill_amt) }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_amt2 %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}LATE CHARGE{% endif %}</span>
+            <span>{{ "%.2f"|format(record.amt2) }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_charge %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}SERVICE CHARGE{% endif %}</span>
+            <span>{{ "%.2f"|format(record.charge) }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_total %}
+        <div class="line total">
+            <span>{% if receipt_settings.show_headings %}TOTAL{% endif %}</span>
+            <span>{{ "%.2f"|format(record.total) }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_cash %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}CASH{% endif %}</span>
+            <span>{{ "%.2f"|format(record.cash) }}</span>
+        </div>
+        {% endif %}
+        {% if receipt_settings.show_change_amt %}
+        <div class="line">
+            <span>{% if receipt_settings.show_headings %}CHANGE{% endif %}</span>
+            <span>{{ "%.2f"|format(record.change_amt) }}</span>
+        </div>
+        {% endif %}
         <div class="sign">
             <div class="sign-line"></div>
             <span>SIGNATURE</span>
         </div>
-        <p class="meta">THANK YOU</p>
+        <p class="meta">{{ business_profile.receipt_footer if business_profile and business_profile.receipt_footer else "THANK YOU" }}</p>
+    </div>
+    <div class="preview-actions">
+        <button type="button" class="toolbar-btn primary" id="printReceiptBtn">Print</button>
+        <button type="button" class="toolbar-btn" id="cancelPreviewBtn">Cancel</button>
     </div>
     <script>
-        window.print();
+        const params = new URLSearchParams(window.location.search);
+        const copiesRaw = Number.parseInt(params.get("copies") || "2", 10);
+        const copies = Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 2;
+
+        let isPrinting = false;
+
+        async function printCopies() {
+            if (isPrinting) return;
+            isPrinting = true;
+
+            for (let i = 0; i < copies; i += 1) {
+                window.print();
+                if (i < copies - 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 250));
+                }
+            }
+
+            if (window.opener && params.get("from") === "entry") {
+                window.opener.postMessage({ type: "receipt_print_completed", copies }, window.location.origin);
+            }
+            window.close();
+        }
+
+        document.getElementById("printReceiptBtn").addEventListener("click", printCopies);
+        document.getElementById("cancelPreviewBtn").addEventListener("click", () => window.close());
     </script>
 </body>
 </html>

@@ -5,6 +5,7 @@
 {% block topbar_subtitle %}Manage imported billing rows with fast table tools.{% endblock %}
 {% block topbar_actions %}
 <a href="/entry/form" class="btn btn-primary">Add Record</a>
+<a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
 <button type="button" class="btn btn-secondary" id="openUsersBtn">Users</button>
 <form method="post" action="/auth/logout" class="inline-action">
     <button type="submit" class="btn btn-secondary">Logout</button>
@@ -88,9 +89,12 @@
 <dialog id="usersDialog" class="record-dialog users-dialog">
     <div class="dialog-head">
         <h3>Users</h3>
-        <button type="button" id="closeUsersBtn" class="btn btn-ghost">Close</button>
+        <div class="topbar-actions">
+            <button type="button" id="openAddUserBtn" class="btn btn-primary">Add User</button>
+            <button type="button" id="closeUsersBtn" class="btn btn-ghost">Close</button>
+        </div>
     </div>
-    <table id="usersTable" class="display" style="width:100%">
+    <table id="usersTable" class="display users-grid" style="width:100%">
         <thead>
             <tr>
                 <th>ID</th>
@@ -102,6 +106,36 @@
             </tr>
         </thead>
     </table>
+</dialog>
+
+<dialog id="addUserDialog" class="app-dialog">
+    <div class="app-dialog-head">
+        <h3>Add User</h3>
+        <button type="button" class="btn btn-ghost" id="closeAddUserBtn">Close</button>
+    </div>
+    <form id="addUserForm" class="auth-form">
+        <label>First Name
+            <input type="text" id="addUserFirstName" required maxlength="80">
+        </label>
+        <label>Last Name
+            <input type="text" id="addUserLastName" required maxlength="80">
+        </label>
+        <label>Phone Number
+            <input type="tel" id="addUserPhone" required maxlength="20" placeholder="09XXXXXXXXX">
+        </label>
+        <label>4-digit PIN
+            <input type="password" id="addUserPin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
+        </label>
+        <label>Role
+            <select id="addUserRole" required>
+                <option value="encoder">Encoder</option>
+                <option value="customer">Customer</option>
+            </select>
+        </label>
+        <div class="dialog-actions">
+            <button type="submit" class="btn btn-primary">Save User</button>
+        </div>
+    </form>
 </dialog>
 
 <dialog id="recordDialog" class="record-dialog">

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Settings | Bills Admin{% endblock %}
+{% block topbar_title %}Admin Settings{% endblock %}
+{% block topbar_subtitle %}Manage business receipt information and encoder accounts.{% endblock %}
+{% block topbar_actions %}
+<a href="/admin/records" class="btn btn-secondary">Back to Records</a>
+<form method="post" action="/auth/logout" class="inline-action">
+    <button type="submit" class="btn btn-secondary">Logout</button>
+</form>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<section class="panel"><div class="alert-error">{{ error }}</div></section>
+{% endif %}
+{% if success %}
+<section class="panel"><div class="alert-success">{{ success }}</div></section>
+{% endif %}
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Business Profile</h2>
+    </div>
+    <form method="post" action="/admin/settings/business" class="auth-form">
+        <label>Business Name
+            <input type="text" name="business_name" value="{{ business_profile.business_name if business_profile else '' }}" required maxlength="160">
+        </label>
+        <label>Business Address
+            <textarea name="business_address" rows="2" required maxlength="255">{{ business_profile.business_address if business_profile else '' }}</textarea>
+        </label>
+        <label>Business Phone
+            <input type="text" name="business_phone" value="{{ business_profile.business_phone if business_profile else '' }}" maxlength="40">
+        </label>
+        <label>Business Email
+            <input type="email" name="business_email" value="{{ business_profile.business_email if business_profile else '' }}" maxlength="120">
+        </label>
+        <label>TIN Number
+            <input type="text" name="tin_number" value="{{ business_profile.tin_number if business_profile else '' }}" maxlength="64">
+        </label>
+        <label>Receipt Footer
+            <input type="text" name="receipt_footer" value="{{ business_profile.receipt_footer if business_profile else '' }}" maxlength="255">
+        </label>
+        <label>
+            <input type="checkbox" name="receipt_show_headings" {% if receipt_show_headings %}checked{% endif %}>
+            Show Receipt Headings/Labels
+        </label>
+        <div class="field">
+            <span><strong>Business Profile Items To Print</strong></span>
+            <div>
+                <label><input type="checkbox" name="receipt_show_business_name" {% if receipt_show_business_name %}checked{% endif %}> Business Name</label>
+                <label><input type="checkbox" name="receipt_show_business_address" {% if receipt_show_business_address %}checked{% endif %}> Business Address</label>
+                <label><input type="checkbox" name="receipt_show_business_phone" {% if receipt_show_business_phone %}checked{% endif %}> Business Phone</label>
+                <label><input type="checkbox" name="receipt_show_business_email" {% if receipt_show_business_email %}checked{% endif %}> Business Email</label>
+                <label><input type="checkbox" name="receipt_show_business_tin" {% if receipt_show_business_tin %}checked{% endif %}> TIN</label>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Business Details</button>
+    </form>
+</section>
+{% endblock %}

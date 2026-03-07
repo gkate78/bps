@@ -17,7 +17,7 @@ from app.auth import (
     verify_pin,
 )
 from app.database import get_db
-from app.models import UserAccount
+from app.models import BusinessProfile, UserAccount
 
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory="app/templates")
@@ -53,11 +53,68 @@ def _render_signin(request: Request, error: Optional[str] = None, phone: str = "
     )
 
 
+def _render_admin_signup(
+    request: Request,
+    error: Optional[str] = None,
+    first_name: str = "",
+    last_name: str = "",
+    phone: str = "",
+    business_name: str = "",
+    business_address: str = "",
+    business_phone: str = "",
+    business_email: str = "",
+    tin_number: str = "",
+    receipt_footer: str = "",
+):
+    return templates.TemplateResponse(
+        "admin_signup.html",
+        {
+            "request": request,
+            "error": error,
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone": phone,
+            "business_name": business_name,
+            "business_address": business_address,
+            "business_phone": business_phone,
+            "business_email": business_email,
+            "tin_number": tin_number,
+            "receipt_footer": receipt_footer,
+        },
+    )
+
+
+async def _has_admin_account(db: AsyncSession) -> bool:
+    result = await db.execute(select(UserAccount.id).where(UserAccount.role == "admin").limit(1))
+    return result.scalar_one_or_none() is not None
+
+
 @router.get("/auth/signup", response_class=HTMLResponse, include_in_schema=False)
-async def signup_page(request: Request, current_user: Optional[UserAccount] = Depends(get_current_user_optional)):
+async def signup_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
     if current_user:
         return RedirectResponse(url="/dashboard", status_code=303)
+    if not await _has_admin_account(db):
+        return RedirectResponse(url="/auth/admin/signup", status_code=303)
     return _render_signup(request)
+
+
+@router.get("/auth/admin/signup", response_class=HTMLResponse, include_in_schema=False)
+async def admin_signup_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
+    if current_user:
+        return RedirectResponse(url="/dashboard", status_code=303)
+
+    if await _has_admin_account(db):
+        return RedirectResponse(url="/auth/signin", status_code=303)
+
+    return _render_admin_signup(request)
 
 
 @router.post("/auth/signup", response_class=HTMLResponse, include_in_schema=False)
@@ -106,10 +163,132 @@ async def signup_submit(
     return RedirectResponse(url="/dashboard", status_code=303)
 
 
+@router.post("/auth/admin/signup", response_class=HTMLResponse, include_in_schema=False)
+async def admin_signup_submit(
+    request: Request,
+    first_name: str = Form(...),
+    last_name: str = Form(...),
+    phone: str = Form(...),
+    pin: str = Form(...),
+    pin_confirm: str = Form(...),
+    business_name: str = Form(...),
+    business_address: str = Form(...),
+    business_phone: str = Form(""),
+    business_email: str = Form(""),
+    tin_number: str = Form(""),
+    receipt_footer: str = Form(""),
+    db: AsyncSession = Depends(get_db),
+):
+    if await _has_admin_account(db):
+        return RedirectResponse(url="/auth/signin", status_code=303)
+
+    cleaned_first = first_name.strip()
+    cleaned_last = last_name.strip()
+    normalized_phone = normalize_phone(phone)
+    cleaned_business_name = business_name.strip()
+    cleaned_business_address = business_address.strip()
+
+    if not cleaned_first or not cleaned_last:
+        return _render_admin_signup(
+            request, "First name and last name are required", cleaned_first, cleaned_last, phone
+        )
+    if not validate_phone(normalized_phone):
+        return _render_admin_signup(
+            request, "Please enter a valid phone number", cleaned_first, cleaned_last, phone
+        )
+    if not validate_pin(pin):
+        return _render_admin_signup(
+            request, "PIN must be exactly 4 digits", cleaned_first, cleaned_last, phone
+        )
+    if pin != pin_confirm:
+        return _render_admin_signup(
+            request, "PIN entries do not match", cleaned_first, cleaned_last, phone
+        )
+    if not cleaned_business_name:
+        return _render_admin_signup(
+            request,
+            "Business name is required",
+            cleaned_first,
+            cleaned_last,
+            phone,
+            cleaned_business_name,
+            cleaned_business_address,
+            business_phone,
+            business_email,
+            tin_number,
+            receipt_footer,
+        )
+    if not cleaned_business_address:
+        return _render_admin_signup(
+            request,
+            "Business address is required",
+            cleaned_first,
+            cleaned_last,
+            phone,
+            cleaned_business_name,
+            cleaned_business_address,
+            business_phone,
+            business_email,
+            tin_number,
+            receipt_footer,
+        )
+
+    existing = await db.execute(select(UserAccount).where(UserAccount.phone == normalized_phone))
+    if existing.scalar_one_or_none():
+        return _render_admin_signup(
+            request,
+            "Phone number is already registered",
+            cleaned_first,
+            cleaned_last,
+            phone,
+            cleaned_business_name,
+            cleaned_business_address,
+            business_phone,
+            business_email,
+            tin_number,
+            receipt_footer,
+        )
+
+    pin_hash, pin_salt = hash_pin(pin)
+    user = UserAccount(
+        first_name=cleaned_first,
+        last_name=cleaned_last,
+        phone=normalized_phone,
+        pin_hash=pin_hash,
+        pin_salt=pin_salt,
+        role="admin",
+    )
+    db.add(user)
+    await db.flush()
+
+    profile = BusinessProfile(
+        admin_user_id=user.id,
+        business_name=cleaned_business_name,
+        business_address=cleaned_business_address,
+        business_phone=business_phone.strip() or None,
+        business_email=business_email.strip() or None,
+        tin_number=tin_number.strip() or None,
+        receipt_footer=receipt_footer.strip() or None,
+    )
+    db.add(profile)
+
+    await db.commit()
+    await db.refresh(user)
+
+    request.session["user_id"] = user.id
+    return RedirectResponse(url="/dashboard", status_code=303)
+
+
 @router.get("/auth/signin", response_class=HTMLResponse, include_in_schema=False)
-async def signin_page(request: Request, current_user: Optional[UserAccount] = Depends(get_current_user_optional)):
+async def signin_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
     if current_user:
         return RedirectResponse(url="/dashboard", status_code=303)
+    if not await _has_admin_account(db):
+        return RedirectResponse(url="/auth/admin/signup", status_code=303)
     return _render_signin(request)
 
 
@@ -127,7 +306,10 @@ async def signin_submit(
     if not user or not verify_pin(pin, user.pin_hash, user.pin_salt):
         return _render_signin(request, "Invalid phone number or PIN", phone)
 
-    resolved_role = resolve_role_from_phone(user.phone)
+    resolved_role = user.role
+    if user.role not in {"admin", "encoder"}:
+        resolved_role = resolve_role_from_phone(user.phone)
+
     if user.role != resolved_role:
         user.role = resolved_role
         user.updated_at = datetime.utcnow()
