@@ -92,6 +92,9 @@ function recomputeFinancials() {
 }
 
 function updateCurrentDateTime() {
+    if (!dom.currentDateTime) {
+        return;
+    }
     dom.currentDateTime.textContent = new Date().toLocaleString();
 }
 
@@ -104,6 +107,7 @@ function clearForm() {
     dom.saveStatus.textContent = "";
     dom.printReceiptBtn.disabled = true;
     lastSavedRecordId = null;
+    updateCurrentDateTime();
     recomputeFinancials();
 }
 
@@ -297,5 +301,7 @@ dom.clearBtn.addEventListener("click", clearForm);
 dom.printReceiptBtn.addEventListener("click", printReceipt);
 
 updateCurrentDateTime();
-setInterval(updateCurrentDateTime, 1000);
+if (dom.currentDateTime) {
+    setInterval(updateCurrentDateTime, 1000);
+}
 clearForm();
