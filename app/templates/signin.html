@@ -16,6 +16,9 @@
     {% if error %}
     <div class="alert-error">{{ error }}</div>
     {% endif %}
+    {% if success %}
+    <div class="alert-success">{{ success }}</div>
+    {% endif %}
 
     <form method="post" action="/auth/signin" class="auth-form">
         <label>Phone Number
@@ -25,6 +28,9 @@
             <input type="password" name="pin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
         </label>
         <button type="submit" class="btn btn-primary">Sign In</button>
+    </form>
+    <form method="get" action="/auth/pin/reset" class="auth-form">
+        <button type="submit" class="btn btn-secondary">Forgot PIN</button>
     </form>
 </section>
 {% endblock %}

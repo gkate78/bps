@@ -24,6 +24,34 @@ def validate_pin(pin: str) -> bool:
     return pin.isdigit() and len(pin) == 4
 
 
+def _weak_pin_set() -> set[str]:
+    default_weak = {
+        "0000",
+        "1111",
+        "1234",
+        "4321",
+        "1212",
+        "1122",
+        "1004",
+        "2000",
+        "2580",
+    }
+    custom = os.getenv("PIN_WEAK_LIST", "").strip()
+    if not custom:
+        return default_weak
+    merged = set(default_weak)
+    merged.update(item.strip() for item in custom.split(",") if item.strip())
+    return merged
+
+
+def validate_pin_policy(pin: str) -> tuple[bool, Optional[str]]:
+    if not validate_pin(pin):
+        return False, "PIN must be exactly 4 digits"
+    if pin in _weak_pin_set():
+        return False, "Please choose a less common PIN"
+    return True, None
+
+
 def hash_pin(pin: str, salt_hex: Optional[str] = None) -> tuple[str, str]:
     salt = bytes.fromhex(salt_hex) if salt_hex else secrets.token_bytes(16)
     pin_hash = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, 120_000)

@@ -71,3 +71,19 @@ async def init_db() -> None:
             await conn.execute(
                 text("ALTER TABLE business_profiles ADD COLUMN receipt_show_business_tin INTEGER NOT NULL DEFAULT 0")
             )
+
+        # Lightweight migration: add auth hardening columns for user_accounts.
+        user_columns = (await conn.execute(text("PRAGMA table_info(user_accounts)"))).fetchall()
+        user_col_names = {row[1] for row in user_columns}
+        if "otp_code_hash" not in user_col_names:
+            await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN otp_code_hash VARCHAR(128)"))
+        if "otp_expires_at" not in user_col_names:
+            await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN otp_expires_at DATETIME"))
+        if "otp_attempts" not in user_col_names:
+            await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN otp_attempts INTEGER NOT NULL DEFAULT 0"))
+        if "pin_failed_attempts" not in user_col_names:
+            await conn.execute(
+                text("ALTER TABLE user_accounts ADD COLUMN pin_failed_attempts INTEGER NOT NULL DEFAULT 0")
+            )
+        if "locked_until" not in user_col_names:
+            await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN locked_until DATETIME"))
