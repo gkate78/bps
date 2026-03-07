@@ -28,6 +28,10 @@ PIN_MAX_FAILED_ATTEMPTS = int(os.getenv("PIN_MAX_FAILED_ATTEMPTS", "5"))
 PIN_LOCKOUT_MINUTES = int(os.getenv("PIN_LOCKOUT_MINUTES", "15"))
 
 
+def _normalize_text(value: str) -> str:
+    return value.strip().upper()
+
+
 def _render_signup(
     request: Request,
     error: Optional[str] = None,
@@ -246,8 +250,8 @@ async def signup_submit(
     pin_confirm: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
-    cleaned_first = first_name.strip()
-    cleaned_last = last_name.strip()
+    cleaned_first = _normalize_text(first_name)
+    cleaned_last = _normalize_text(last_name)
     normalized_phone = normalize_phone(phone)
 
     if not cleaned_first or not cleaned_last:
@@ -623,11 +627,11 @@ async def admin_signup_submit(
     if await _has_admin_account(db):
         return RedirectResponse(url="/auth/signin", status_code=303)
 
-    cleaned_first = first_name.strip()
-    cleaned_last = last_name.strip()
+    cleaned_first = _normalize_text(first_name)
+    cleaned_last = _normalize_text(last_name)
     normalized_phone = normalize_phone(phone)
-    cleaned_business_name = business_name.strip()
-    cleaned_business_address = business_address.strip()
+    cleaned_business_name = _normalize_text(business_name)
+    cleaned_business_address = _normalize_text(business_address)
 
     if not cleaned_first or not cleaned_last:
         return _render_admin_signup(
@@ -705,10 +709,10 @@ async def admin_signup_submit(
         admin_user_id=user.id,
         business_name=cleaned_business_name,
         business_address=cleaned_business_address,
-        business_phone=business_phone.strip() or None,
-        business_email=business_email.strip() or None,
-        tin_number=tin_number.strip() or None,
-        receipt_footer=receipt_footer.strip() or None,
+        business_phone=_normalize_text(business_phone) or None,
+        business_email=_normalize_text(business_email) or None,
+        tin_number=_normalize_text(tin_number) or None,
+        receipt_footer=_normalize_text(receipt_footer) or None,
     )
     db.add(profile)
 
