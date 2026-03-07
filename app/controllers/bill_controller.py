@@ -82,7 +82,7 @@ def _normalized_amount(payload: dict) -> float:
 
 
 def _normalize_text_fields(payload: dict) -> dict:
-    for key in ("account", "biller", "customer_name", "cp_number", "reference"):
+    for key in ("account", "biller", "customer_name", "cp_number", "reference", "notes"):
         value = payload.get(key)
         if value is None:
             continue
