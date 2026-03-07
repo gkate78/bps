@@ -262,6 +262,10 @@ input[readonly] {
     margin: 0 auto;
 }
 
+.auth-panel-wide {
+    max-width: 760px;
+}
+
 .auth-form {
     display: grid;
     gap: 0.75rem;
@@ -281,6 +285,70 @@ input[readonly] {
     padding: 0.55rem 0.7rem;
     border-radius: 8px;
     font-weight: 700;
+}
+
+.alert-success {
+    border: 1px solid #ccead3;
+    background: #edf9f0;
+    color: #1f6b32;
+    padding: 0.55rem 0.7rem;
+    border-radius: 8px;
+    font-weight: 700;
+}
+
+.encoder-table td,
+.encoder-table th {
+    text-transform: none;
+}
+
+.users-dialog {
+    width: min(980px, 96vw);
+}
+
+.users-grid thead th {
+    background: #eef3ff;
+    color: #1a2e62;
+    border-bottom: 1px solid #d5e0f5;
+    font-weight: 700;
+}
+
+.users-grid tbody tr:nth-child(even) {
+    background: #f9fbff;
+}
+
+.users-grid tbody tr:hover {
+    background: #eef5ff;
+}
+
+.users-grid td,
+.users-grid th {
+    text-transform: none;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    letter-spacing: 0.2px;
+}
+
+.role-pill {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.role-encoder {
+    background: #e7f1ff;
+    color: #164a93;
+    border: 1px solid #c0d8ff;
+}
+
+.role-customer {
+    background: #edf7ea;
+    color: #235b2a;
+    border: 1px solid #cfe9cc;
 }
 
 .entry-form {

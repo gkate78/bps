@@ -113,10 +113,11 @@ def _compute_charge(biller: str, bill_amount: float) -> float:
     return round(float(computed), 2)
 
 
-def _compute_late_charge(biller: str, due_date: Optional[date]) -> float:
+def _compute_late_charge(biller: str, due_date: Optional[date], ref_date: Optional[date] = None) -> float:
     if due_date is None:
         return 0.0
-    if due_date >= date.today():
+    basis_date = ref_date or date.today()
+    if due_date >= basis_date:
         return 0.0
     return round(float(_BILLER_LATE_CHARGES.get(biller.strip().upper(), 0.0)), 2)
 
@@ -124,7 +125,8 @@ def _compute_late_charge(biller: str, due_date: Optional[date]) -> float:
 def _apply_computations(payload: dict) -> dict:
     bill_amt = round(float(payload.get("bill_amt", 0) or 0), 2)
     due_date = payload.get("due_date")
-    late_charge = _compute_late_charge(str(payload.get("biller", "") or ""), due_date)
+    txn_date = payload.get("txn_date")
+    late_charge = _compute_late_charge(str(payload.get("biller", "") or ""), due_date, txn_date)
     cash = round(float(payload.get("cash", 0) or 0), 2)
     biller = str(payload.get("biller", "") or "").strip()
 
