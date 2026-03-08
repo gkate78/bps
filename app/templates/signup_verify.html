@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Verify OTP | Bills Admin{% endblock %}
+{% block topbar_title %}Verify Phone Number{% endblock %}
+{% block topbar_subtitle %}Enter the OTP code sent to your mobile number to activate your account.{% endblock %}
+{% block topbar_actions %}
+<a class="btn btn-secondary" href="/auth/signup">Back</a>
+{% endblock %}
+
+{% block content %}
+<section class="panel auth-panel">
+    <div class="panel-head">
+        <h2>OTP Verification</h2>
+    </div>
+
+    <p>Phone: <strong>{{ masked_phone }}</strong></p>
+
+    {% if error %}
+    <div class="alert-error">{{ error }}</div>
+    {% endif %}
+    {% if success %}
+    <div class="alert-success">{{ success }}</div>
+    {% endif %}
+
+    <form method="post" action="/auth/signup/verify" class="auth-form">
+        <label>6-digit OTP
+            <input type="text" name="otp_code" required minlength="6" maxlength="6" inputmode="numeric" pattern="\d{6}" placeholder="123456">
+        </label>
+        <button type="submit" class="btn btn-primary">Verify and Continue</button>
+    </form>
+
+    <form method="post" action="/auth/signup/resend-otp" class="auth-form">
+        <button type="submit" class="btn btn-secondary">Resend OTP</button>
+    </form>
+</section>
+{% endblock %}

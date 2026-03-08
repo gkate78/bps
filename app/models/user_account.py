@@ -14,6 +14,11 @@ class UserAccount(SQLModel, table=True):
     pin_hash: str = Field(max_length=128)
     pin_salt: str = Field(max_length=64)
     role: str = Field(default="customer", max_length=20, index=True)
+    otp_code_hash: Optional[str] = Field(default=None, max_length=128)
+    otp_expires_at: Optional[datetime] = Field(default=None)
+    otp_attempts: int = Field(default=0, nullable=False)
+    pin_failed_attempts: int = Field(default=0, nullable=False)
+    locked_until: Optional[datetime] = Field(default=None)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

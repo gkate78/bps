@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Verify Reset OTP | Bills Admin{% endblock %}
+{% block topbar_title %}Verify Reset OTP{% endblock %}
+{% block topbar_subtitle %}Enter OTP and set your new 4-digit PIN.{% endblock %}
+{% block topbar_actions %}
+<a class="btn btn-secondary" href="/auth/pin/reset">Back</a>
+{% endblock %}
+
+{% block content %}
+<section class="panel auth-panel">
+    <div class="panel-head">
+        <h2>Complete PIN Reset</h2>
+    </div>
+
+    <p>Phone: <strong>{{ masked_phone }}</strong></p>
+
+    {% if error %}
+    <div class="alert-error">{{ error }}</div>
+    {% endif %}
+    {% if success %}
+    <div class="alert-success">{{ success }}</div>
+    {% endif %}
+
+    <form method="post" action="/auth/pin/reset/verify" class="auth-form">
+        <label>6-digit OTP
+            <input type="text" name="otp_code" required minlength="6" maxlength="6" inputmode="numeric" pattern="\d{6}" placeholder="123456">
+        </label>
+        <label>New 4-digit PIN
+            <input type="password" name="new_pin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
+        </label>
+        <label>Re-enter New PIN
+            <input type="password" name="new_pin_confirm" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
+        </label>
+        <button type="submit" class="btn btn-primary">Reset PIN</button>
+    </form>
+
+    <form method="post" action="/auth/pin/reset/resend-otp" class="auth-form">
+        <button type="submit" class="btn btn-secondary">Resend OTP</button>
+    </form>
+</section>
+{% endblock %}

@@ -24,6 +24,31 @@ uvicorn main:app --reload
 
 Open: `http://127.0.0.1:8000/admin/records`
 
+### Windows (PowerShell) quickstart
+```powershell
+./scripts/dev.ps1 setup
+./scripts/dev.ps1 run
+```
+
+### Quick checks
+```powershell
+./scripts/dev.ps1 check
+```
+
+### OTP development mode
+Signup now uses OTP verification before account creation.
+By default, OTP runs in local stub mode and logs the code in server output:
+
+```bash
+export OTP_PROVIDER=local
+export OTP_TTL_SECONDS=300
+export PIN_MAX_FAILED_ATTEMPTS=5
+export PIN_LOCKOUT_MINUTES=15
+export PIN_WEAK_LIST=0000,1111,1234,4321
+```
+
+PIN recovery flow is available from Sign In via `Forgot PIN` (`/auth/pin/reset`).
+
 ### Admin phone configuration
 Set admin phone numbers (comma-separated) so those users land on admin dashboard after login:
 
@@ -60,3 +85,14 @@ Headers supported (case-sensitive):
 - `REFERENCE`
 
 A masked sample is included: `sample_masked_records.csv`
+
+## Workflow
+Use these files as your working system:
+- `docs/WORKFLOW.md` for the development loop and definition of done
+- `docs/BACKLOG.md` for `NOW / NEXT / LATER` task planning
+- `docs/DECISIONS.md` for architecture/product tradeoff history
+
+Recommended cadence:
+1. Pick one `NOW` item and create a focused branch.
+2. Build and verify with `./scripts/dev.ps1 check`.
+3. Update backlog + decisions, then commit with the task ID.
