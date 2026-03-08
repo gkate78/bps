@@ -15,7 +15,7 @@ from app.auth import (
     require_admin,
     require_data_entry_access,
     validate_phone,
-    validate_pin,
+    validate_pin_policy,
 )
 from app.controllers.bill_controller import (
     create_record,
@@ -286,8 +286,10 @@ async def create_encoder_user(
         return RedirectResponse(url="/admin/settings?error=Encoder+name+is+required", status_code=303)
     if not validate_phone(normalized_phone):
         return RedirectResponse(url="/admin/settings?error=Invalid+encoder+phone+number", status_code=303)
-    if not validate_pin(pin):
-        return RedirectResponse(url="/admin/settings?error=Encoder+PIN+must+be+4+digits", status_code=303)
+    pin_ok, pin_error = validate_pin_policy(pin)
+    if not pin_ok:
+        msg = (pin_error or "Invalid encoder PIN").replace(" ", "+")
+        return RedirectResponse(url=f"/admin/settings?error={msg}", status_code=303)
 
     existing = await db.execute(select(UserAccount).where(UserAccount.phone == normalized_phone))
     user = existing.scalar_one_or_none()
@@ -442,8 +444,9 @@ async def upsert_user(
     phone = normalize_phone(payload.phone)
     if not validate_phone(phone):
         raise HTTPException(status_code=400, detail="Please enter a valid phone number")
-    if not validate_pin(payload.pin):
-        raise HTTPException(status_code=400, detail="PIN must be exactly 4 digits")
+    pin_ok, pin_error = validate_pin_policy(payload.pin)
+    if not pin_ok:
+        raise HTTPException(status_code=400, detail=pin_error or "Invalid PIN")
 
     first_name = payload.first_name.strip()
     last_name = payload.last_name.strip()
