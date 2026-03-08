@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}Reset PIN | Bills Admin{% endblock %}
+{% block topbar_title %}Reset PIN{% endblock %}
+{% block topbar_subtitle %}Request an OTP to reset your account PIN.{% endblock %}
+{% block topbar_actions %}
+<a class="btn btn-secondary" href="/auth/signin">Back to Sign In</a>
+{% endblock %}
+
+{% block content %}
+<section class="panel auth-panel">
+    <div class="panel-head">
+        <h2>PIN Reset Request</h2>
+    </div>
+
+    {% if error %}
+    <div class="alert-error">{{ error }}</div>
+    {% endif %}
+    {% if success %}
+    <div class="alert-success">{{ success }}</div>
+    {% endif %}
+
+    <form method="post" action="/auth/pin/reset/request" class="auth-form">
+        <label>Phone Number
+            <input type="tel" name="phone" value="{{ phone }}" required maxlength="20" placeholder="09XXXXXXXXX">
+        </label>
+        <button type="submit" class="btn btn-primary">Send Reset OTP</button>
+    </form>
+</section>
+{% endblock %}
