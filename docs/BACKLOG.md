@@ -12,7 +12,7 @@
   - [x] BPS-201.8 Auth logging: log signin success/failure, lockout events, OTP verify events
   - [ ] BPS-201.9 UI updates: signup/signin templates show OTP and lockout states with clear errors
   - [ ] BPS-201.10 Verification: manual test matrix for happy path, invalid OTP, expired OTP, lockout, reset flow
-- [ ] BPS-202 | Theme: Reliability | Outcome: Add transaction audit log (`who`, `when`, `channel`, `status`) | Done when: each record state change writes an audit entry and is viewable in admin
+- [x] BPS-202 | Theme: Reliability | Outcome: Add transaction audit log (`who`, `when`, `channel`, `status`) | Done when: each record state change writes an audit entry and is viewable in admin
 - [ ] BPS-203 | Theme: Validation | Outcome: Strengthen counter payment validation by biller rules | Done when: required fields/format are enforced per biller before save
 
 ## NEXT
@@ -30,3 +30,4 @@
 - [x] BPS-102 | Shipped on: 2026-03-05 | Notes: Dashboard/records view with filters and CRUD
 - [x] BPS-103 | Shipped on: 2026-03-05 | Notes: Duplicate detection (`date + account + biller + amount`)
 - [x] BPS-104 | Shipped on: 2026-03-06 | Notes: Auto reference generation + receipt print view
+- [x] BPS-202 | Shipped on: 2026-03-09 | Notes: Record audit trail with admin audit table (`who/when/channel/status`, plus action/detail)

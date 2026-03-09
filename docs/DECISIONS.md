@@ -30,3 +30,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The PDF captures business intent, risks, and sequencing better than generic placeholders.
 - Alternatives considered: continue with placeholder backlog, or prioritize by technical ease only.
 - Follow-up: Re-rank `NOW/NEXT/LATER` every Friday based on incident risk, reconciliation impact, and operational speed.
+
+- Date: 2026-03-09
+- ID: DEC-004
+- Related task: BPS-202
+- Decision: Add a dedicated `record_audit_logs` table and log record state changes (`create`, `update`, `delete`, `import_csv`) from route handlers with actor, channel, status, and detail metadata.
+- Why: We need traceability of operational changes directly in admin tooling without relying on external logs.
+- Alternatives considered: reusing auth event logs table, filesystem logs only, no UI exposure.
+- Follow-up: Expand audit coverage to future record status transitions and add filter/search controls on the audit table if volume grows.

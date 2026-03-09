@@ -86,6 +86,29 @@
     </table>
 </section>
 
+<section class="panel">
+    <div class="panel-head">
+        <h2>Transaction Audit Log</h2>
+    </div>
+    <div class="dialog-actions">
+        <button type="button" class="btn btn-secondary" id="refreshAuditBtn">Refresh Audit Log</button>
+    </div>
+    <table id="auditTable" class="display audit-grid" style="width:100%">
+        <thead>
+            <tr>
+                <th>When</th>
+                <th>Who</th>
+                <th>Role</th>
+                <th>Action</th>
+                <th>Channel</th>
+                <th>Status</th>
+                <th>Record ID</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+    </table>
+</section>
+
 <dialog id="usersDialog" class="record-dialog users-dialog">
     <div class="dialog-head">
         <h3>Users</h3>
