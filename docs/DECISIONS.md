@@ -30,3 +30,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The PDF captures business intent, risks, and sequencing better than generic placeholders.
 - Alternatives considered: continue with placeholder backlog, or prioritize by technical ease only.
 - Follow-up: Re-rank `NOW/NEXT/LATER` every Friday based on incident risk, reconciliation impact, and operational speed.
+
+- Date: 2026-03-09
+- ID: DEC-005
+- Related task: BPS-208
+- Decision: Replace hardcoded biller charge maps with a DB-backed `biller_rules` directory managed from Admin Settings.
+- Why: New/updated billers should not require code changes and redeploys to keep charge computation accurate.
+- Alternatives considered: keep hardcoded constants, JSON config file in repo, external spreadsheet only.
+- Follow-up: Extend rules to include per-biller required field validation (BPS-203) and add import/export tooling for large rule sets.
