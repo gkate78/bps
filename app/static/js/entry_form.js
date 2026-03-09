@@ -9,6 +9,7 @@ function round2(value) {
 
 const BILLER_CHARGES = window.BILLER_CHARGES || {};
 const BILLER_LATE_CHARGES = window.BILLER_LATE_CHARGES || {};
+const BILLER_ACCOUNT_DIGITS = window.BILLER_ACCOUNT_DIGITS || {};
 let lastSavedRecordId = null;
 
 const dom = {
@@ -151,6 +152,18 @@ function validatePayload(payload) {
     if (!payload.account || !payload.biller || !payload.customer_name) {
         alert("ACCOUNT, BILLER, AND NAME ARE REQUIRED");
         return false;
+    }
+    if (BILLER_CHARGES[normalizedBillerKey(payload.biller)] == null) {
+        alert("BILLER RULE IS NOT CONFIGURED. PLEASE CONTACT ADMIN.");
+        return false;
+    }
+    const requiredDigits = BILLER_ACCOUNT_DIGITS[normalizedBillerKey(payload.biller)];
+    if (requiredDigits != null) {
+        const accountDigits = String(payload.account || "").replace(/\D/g, "");
+        if (accountDigits.length !== Number(requiredDigits)) {
+            alert(`ACCOUNT MUST BE EXACTLY ${requiredDigits} DIGITS FOR ${payload.biller}.`);
+            return false;
+        }
     }
     if (!payload.due_date) {
         alert("DUE DATE IS REQUIRED");
