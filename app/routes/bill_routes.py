@@ -18,6 +18,7 @@ from app.auth import (
     validate_pin_policy,
 )
 from app.controllers.bill_controller import (
+    get_biller_account_digits,
     create_record,
     datatable_query,
     delete_record,
@@ -26,11 +27,12 @@ from app.controllers.bill_controller import (
     get_biller_late_charges,
     get_distinct_billers,
     get_record,
+    has_active_biller_rule,
     import_csv_records,
     update_record,
 )
 from app.database import get_db
-from app.models import BusinessProfile, UserAccount
+from app.models import BillerRule, BusinessProfile, UserAccount
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
@@ -105,6 +107,28 @@ async def _get_profile_for_admin(db: AsyncSession, admin_user_id: int) -> Option
     return result.scalar_one_or_none()
 
 
+async def _list_biller_rules(db: AsyncSession) -> list[BillerRule]:
+    result = await db.execute(select(BillerRule).order_by(BillerRule.biller.asc(), BillerRule.id.asc()))
+    return result.scalars().all()
+
+
+async def _required_account_digits_for_biller(db: AsyncSession, biller: str) -> Optional[int]:
+    cleaned_biller = str(biller or "").strip().upper()
+    if not cleaned_biller:
+        return None
+    result = await db.execute(
+        select(BillerRule.account_digits)
+        .where(BillerRule.biller == cleaned_biller)
+        .where(BillerRule.is_active == True)  # noqa: E712
+        .limit(1)
+    )
+    value = result.scalar_one_or_none()
+    if value is None:
+        return None
+    digits = int(value)
+    return digits if digits > 0 else None
+
+
 async def _get_receipt_business_profile(
     db: AsyncSession, current_user: Optional[UserAccount]
 ) -> Optional[BusinessProfile]:
@@ -173,8 +197,9 @@ async def admin_records_page(
         {
             "request": request,
             "billers": billers,
-            "biller_charges": get_biller_charges(),
-            "biller_late_charges": get_biller_late_charges(),
+            "biller_charges": await get_biller_charges(db),
+            "biller_late_charges": await get_biller_late_charges(db),
+            "biller_account_digits": await get_biller_account_digits(db),
             "current_user": current_user,
         },
     )
@@ -187,6 +212,7 @@ async def admin_settings_page(
     current_user: UserAccount = Depends(require_admin),
 ):
     profile = await _get_profile_for_admin(db, current_user.id)
+    biller_rules = await _list_biller_rules(db)
     return templates.TemplateResponse(
         "admin_settings.html",
         {
@@ -199,6 +225,7 @@ async def admin_settings_page(
             "receipt_show_business_phone": bool(profile.receipt_show_business_phone) if profile else True,
             "receipt_show_business_email": bool(profile.receipt_show_business_email) if profile else False,
             "receipt_show_business_tin": bool(profile.receipt_show_business_tin) if profile else False,
+            "biller_rules": biller_rules,
             "error": request.query_params.get("error", "").strip(),
             "success": request.query_params.get("success", "").strip(),
         },
@@ -319,6 +346,62 @@ async def create_encoder_user(
     return RedirectResponse(url="/admin/settings?success=Encoder+saved", status_code=303)
 
 
+@router.post("/admin/settings/biller-rules", include_in_schema=False)
+async def upsert_biller_rule(
+    biller: str = Form(...),
+    service_charge: float = Form(0),
+    late_charge: float = Form(0),
+    account_digits: Optional[int] = Form(None),
+    is_active: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    cleaned_biller = biller.strip().upper()
+    if not cleaned_biller:
+        return RedirectResponse(url="/admin/settings?error=Biller+name+is+required", status_code=303)
+    if service_charge < 0 or late_charge < 0:
+        return RedirectResponse(url="/admin/settings?error=Charges+must+not+be+negative", status_code=303)
+    if account_digits is not None and account_digits <= 0:
+        return RedirectResponse(url="/admin/settings?error=Account+digits+must+be+greater+than+zero", status_code=303)
+
+    existing = await db.execute(select(BillerRule).where(BillerRule.biller == cleaned_biller))
+    rule = existing.scalar_one_or_none()
+    if rule is None:
+        rule = BillerRule(
+            biller=cleaned_biller,
+            service_charge=round(float(service_charge), 2),
+            late_charge=round(float(late_charge), 2),
+            account_digits=int(account_digits) if account_digits else None,
+            is_active=is_active is not None,
+        )
+    else:
+        rule.service_charge = round(float(service_charge), 2)
+        rule.late_charge = round(float(late_charge), 2)
+        rule.account_digits = int(account_digits) if account_digits else None
+        rule.is_active = is_active is not None
+        rule.updated_at = datetime.utcnow()
+
+    db.add(rule)
+    await db.commit()
+    return RedirectResponse(url="/admin/settings?success=Biller+rule+saved", status_code=303)
+
+
+@router.post("/admin/settings/biller-rules/{rule_id}/delete", include_in_schema=False)
+async def delete_biller_rule(
+    rule_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    result = await db.execute(select(BillerRule).where(BillerRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        return RedirectResponse(url="/admin/settings?error=Biller+rule+not+found", status_code=303)
+
+    await db.delete(rule)
+    await db.commit()
+    return RedirectResponse(url="/admin/settings?success=Biller+rule+deleted", status_code=303)
+
+
 @router.post("/admin/settings/encoders/{encoder_id}/remove", include_in_schema=False)
 async def remove_encoder_role(
     encoder_id: int,
@@ -356,8 +439,9 @@ async def entry_form_page(
         {
             "request": request,
             "billers": billers,
-            "biller_charges": get_biller_charges(),
-            "biller_late_charges": get_biller_late_charges(),
+            "biller_charges": await get_biller_charges(db),
+            "biller_late_charges": await get_biller_late_charges(db),
+            "biller_account_digits": await get_biller_account_digits(db),
             "current_user": current_user,
         },
     )
@@ -488,8 +572,11 @@ async def upsert_user(
 
 
 @router.get("/api/records/biller-charges")
-async def list_biller_charges(_: UserAccount = Depends(require_data_entry_access)):
-    return {"biller_charges": get_biller_charges()}
+async def list_biller_charges(
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_data_entry_access),
+):
+    return {"biller_charges": await get_biller_charges(db)}
 
 
 @router.get("/api/records/by-account/{account}")
@@ -556,6 +643,16 @@ async def create_record_endpoint(
 
     if payload.bill_amt <= 0:
         raise HTTPException(status_code=400, detail="Bill amount is required")
+    if not await has_active_biller_rule(db, payload.biller):
+        raise HTTPException(status_code=400, detail="Biller rule is not configured")
+    required_digits = await _required_account_digits_for_biller(db, payload.biller)
+    if required_digits is not None:
+        account_digits = "".join(ch for ch in str(payload.account or "") if ch.isdigit())
+        if len(account_digits) != required_digits:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Account must be exactly {required_digits} digits for {str(payload.biller).strip().upper()}",
+            )
 
     record = await create_record(db, payload.model_dump())
     return record
@@ -574,6 +671,28 @@ async def update_record_endpoint(
 
     if "due_date" in updates and updates["due_date"] is None:
         raise HTTPException(status_code=400, detail="Due date is required")
+    if "biller" in updates and not await has_active_biller_rule(db, str(updates.get("biller", ""))):
+        raise HTTPException(status_code=400, detail="Biller rule is not configured")
+    if "account" in updates or "biller" in updates:
+        biller_for_validation = str(updates.get("biller", "")).strip()
+        if not biller_for_validation:
+            current = await get_record(db, record_id)
+            biller_for_validation = current.biller
+        required_digits = await _required_account_digits_for_biller(db, biller_for_validation)
+        if required_digits is not None:
+            account_value = str(updates.get("account", "")).strip()
+            if not account_value:
+                current = await get_record(db, record_id)
+                account_value = current.account
+            account_digits = "".join(ch for ch in account_value if ch.isdigit())
+            if len(account_digits) != required_digits:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Account must be exactly {required_digits} digits for "
+                        f"{str(biller_for_validation).strip().upper()}"
+                    ),
+                )
 
     record = await update_record(db, record_id, updates)
     return record
