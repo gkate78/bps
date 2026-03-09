@@ -53,7 +53,14 @@ A task is done only if:
 4. `./scripts/dev.ps1 check` passes
 5. `docs/BACKLOG.md` and `docs/DECISIONS.md` are updated
 
-## 6) Weekly Cadence
+## 6) Current Standards
+Unless explicitly overridden by a task requirement:
+1. Phone fields must enforce exactly 11 digits.
+2. CP number must enforce exactly 11 digits when provided.
+3. Text form values are normalized to uppercase before persistence.
+4. Amount displays should use comma separators with 2 decimal places on summaries/receipts/tables.
+
+## 7) Weekly Cadence
 1. Monday: pick top `NOW` items from backlog
 2. Mid-week: close blockers, update decisions
 3. Friday: move completed tasks to `DONE`, re-rank `NEXT`

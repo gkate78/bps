@@ -5,6 +5,8 @@ Admin dashboard for managing billing records from a Google Sheet export.
 ## Features
 - SQLite-backed records
 - Signup/Signin with phone + 4-digit PIN
+- OTP-based signup verification and PIN reset flow
+- PIN policy + signin lockout controls + auth event logging
 - Session login with role-based routing (`admin`, `encoder`, or `customer`)
 - Server-side DataTables endpoint (search, sort, pagination)
 - Filters: biller, transaction date range, due status
@@ -13,6 +15,10 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save
+- Phone validation: exactly 11 digits
+- CP number validation: exactly 11 digits when provided
+- Text normalization: form text values are standardized to uppercase before persistence
+- Amount display formatting: comma separators with 2 decimal places on key views
 
 ## Run
 ```bash
@@ -22,7 +28,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-Open: `http://127.0.0.1:8000/admin/records`
+Open: `http://127.0.0.1:8000/auth/signin`
 
 ### Windows (PowerShell) quickstart
 ```powershell
