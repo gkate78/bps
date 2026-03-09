@@ -157,6 +157,10 @@ function validatePayload(payload) {
         alert("ACCOUNT, BILLER, AND NAME ARE REQUIRED");
         return false;
     }
+    if (payload.cp_number && !/^\d{11}$/.test(payload.cp_number)) {
+        alert("CP NUMBER MUST BE EXACTLY 11 DIGITS");
+        return false;
+    }
     if (!payload.due_date) {
         alert("DUE DATE IS REQUIRED");
         return false;

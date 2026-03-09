@@ -54,13 +54,22 @@ def _normalize_text(value: str) -> str:
     return value.strip().upper()
 
 
+def _is_valid_cp_number(value: Optional[str]) -> bool:
+    if value is None:
+        return True
+    cleaned = str(value).strip()
+    if cleaned == "":
+        return True
+    return cleaned.isdigit() and len(cleaned) == 11
+
+
 class RecordCreate(BaseModel):
     txn_datetime: Optional[datetime] = None
     txn_date: Optional[date] = None
     account: str = Field(min_length=1, max_length=64)
     biller: str = Field(min_length=1, max_length=120)
     customer_name: str = Field(min_length=1, max_length=160)
-    cp_number: str = ""
+    cp_number: str = Field(default="", max_length=11)
     bill_amt: float = 0
     amt2: float = 0
     charge: float = 0
@@ -78,7 +87,7 @@ class RecordUpdate(BaseModel):
     account: Optional[str] = Field(default=None, min_length=1, max_length=64)
     biller: Optional[str] = Field(default=None, min_length=1, max_length=120)
     customer_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
-    cp_number: Optional[str] = None
+    cp_number: Optional[str] = Field(default=None, max_length=11)
     bill_amt: Optional[float] = None
     amt2: Optional[float] = None
     charge: Optional[float] = None
@@ -560,6 +569,8 @@ async def create_record_endpoint(
 
     if payload.bill_amt <= 0:
         raise HTTPException(status_code=400, detail="Bill amount is required")
+    if not _is_valid_cp_number(payload.cp_number):
+        raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     record = await create_record(db, payload.model_dump())
     return record
@@ -578,6 +589,8 @@ async def update_record_endpoint(
 
     if "due_date" in updates and updates["due_date"] is None:
         raise HTTPException(status_code=400, detail="Due date is required")
+    if "cp_number" in updates and not _is_valid_cp_number(updates.get("cp_number")):
+        raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     record = await update_record(db, record_id, updates)
     return record
