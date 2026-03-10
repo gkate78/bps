@@ -18,6 +18,7 @@ from app.auth import (
     validate_pin_policy,
 )
 from app.controllers.bill_controller import (
+    get_biller_account_digits,
     create_record,
     datatable_query,
     delete_record,
@@ -26,11 +27,12 @@ from app.controllers.bill_controller import (
     get_biller_late_charges,
     get_distinct_billers,
     get_record,
+    has_active_biller_rule,
     import_csv_records,
     update_record,
 )
 from app.database import get_db
-from app.models import BusinessProfile, UserAccount
+from app.models import BillerRule, BusinessProfile, RecordAuditLog, UserAccount
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
@@ -118,6 +120,28 @@ async def _get_profile_for_admin(db: AsyncSession, admin_user_id: int) -> Option
     return result.scalar_one_or_none()
 
 
+async def _list_biller_rules(db: AsyncSession) -> list[BillerRule]:
+    result = await db.execute(select(BillerRule).order_by(BillerRule.biller.asc(), BillerRule.id.asc()))
+    return result.scalars().all()
+
+
+async def _required_account_digits_for_biller(db: AsyncSession, biller: str) -> Optional[int]:
+    cleaned_biller = str(biller or "").strip().upper()
+    if not cleaned_biller:
+        return None
+    result = await db.execute(
+        select(BillerRule.account_digits)
+        .where(BillerRule.biller == cleaned_biller)
+        .where(BillerRule.is_active == True)  # noqa: E712
+        .limit(1)
+    )
+    value = result.scalar_one_or_none()
+    if value is None:
+        return None
+    digits = int(value)
+    return digits if digits > 0 else None
+
+
 async def _get_receipt_business_profile(
     db: AsyncSession, current_user: Optional[UserAccount]
 ) -> Optional[BusinessProfile]:
@@ -169,6 +193,37 @@ def _build_receipt_settings(profile: Optional[BusinessProfile]) -> dict:
     }
 
 
+def _actor_name(user: Optional[UserAccount]) -> str:
+    if not user:
+        return "SYSTEM"
+    return f"{user.first_name} {user.last_name}".strip() or user.phone
+
+
+async def _log_record_audit(
+    db: AsyncSession,
+    *,
+    action: str,
+    status: str,
+    current_user: Optional[UserAccount],
+    channel: str = "web",
+    record_id: Optional[int] = None,
+    detail: Optional[str] = None,
+) -> None:
+    db.add(
+        RecordAuditLog(
+            record_id=record_id,
+            user_id=current_user.id if current_user else None,
+            actor_name=_actor_name(current_user),
+            actor_role=current_user.role if current_user else "system",
+            action=action,
+            channel=channel,
+            status=status,
+            detail=detail,
+        )
+    )
+    await db.commit()
+
+
 @router.get("/admin/records", response_class=HTMLResponse, include_in_schema=False)
 async def admin_records_page(
     request: Request,
@@ -186,8 +241,9 @@ async def admin_records_page(
         {
             "request": request,
             "billers": billers,
-            "biller_charges": get_biller_charges(),
-            "biller_late_charges": get_biller_late_charges(),
+            "biller_charges": await get_biller_charges(db),
+            "biller_late_charges": await get_biller_late_charges(db),
+            "biller_account_digits": await get_biller_account_digits(db),
             "current_user": current_user,
         },
     )
@@ -200,6 +256,7 @@ async def admin_settings_page(
     current_user: UserAccount = Depends(require_admin),
 ):
     profile = await _get_profile_for_admin(db, current_user.id)
+    biller_rules = await _list_biller_rules(db)
     return templates.TemplateResponse(
         "admin_settings.html",
         {
@@ -212,6 +269,7 @@ async def admin_settings_page(
             "receipt_show_business_phone": bool(profile.receipt_show_business_phone) if profile else True,
             "receipt_show_business_email": bool(profile.receipt_show_business_email) if profile else False,
             "receipt_show_business_tin": bool(profile.receipt_show_business_tin) if profile else False,
+            "biller_rules": biller_rules,
             "error": request.query_params.get("error", "").strip(),
             "success": request.query_params.get("success", "").strip(),
         },
@@ -332,6 +390,62 @@ async def create_encoder_user(
     return RedirectResponse(url="/admin/settings?success=Encoder+saved", status_code=303)
 
 
+@router.post("/admin/settings/biller-rules", include_in_schema=False)
+async def upsert_biller_rule(
+    biller: str = Form(...),
+    service_charge: float = Form(0),
+    late_charge: float = Form(0),
+    account_digits: Optional[int] = Form(None),
+    is_active: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    cleaned_biller = biller.strip().upper()
+    if not cleaned_biller:
+        return RedirectResponse(url="/admin/settings?error=Biller+name+is+required", status_code=303)
+    if service_charge < 0 or late_charge < 0:
+        return RedirectResponse(url="/admin/settings?error=Charges+must+not+be+negative", status_code=303)
+    if account_digits is not None and account_digits <= 0:
+        return RedirectResponse(url="/admin/settings?error=Account+digits+must+be+greater+than+zero", status_code=303)
+
+    existing = await db.execute(select(BillerRule).where(BillerRule.biller == cleaned_biller))
+    rule = existing.scalar_one_or_none()
+    if rule is None:
+        rule = BillerRule(
+            biller=cleaned_biller,
+            service_charge=round(float(service_charge), 2),
+            late_charge=round(float(late_charge), 2),
+            account_digits=int(account_digits) if account_digits else None,
+            is_active=is_active is not None,
+        )
+    else:
+        rule.service_charge = round(float(service_charge), 2)
+        rule.late_charge = round(float(late_charge), 2)
+        rule.account_digits = int(account_digits) if account_digits else None
+        rule.is_active = is_active is not None
+        rule.updated_at = datetime.utcnow()
+
+    db.add(rule)
+    await db.commit()
+    return RedirectResponse(url="/admin/settings?success=Biller+rule+saved", status_code=303)
+
+
+@router.post("/admin/settings/biller-rules/{rule_id}/delete", include_in_schema=False)
+async def delete_biller_rule(
+    rule_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    result = await db.execute(select(BillerRule).where(BillerRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if rule is None:
+        return RedirectResponse(url="/admin/settings?error=Biller+rule+not+found", status_code=303)
+
+    await db.delete(rule)
+    await db.commit()
+    return RedirectResponse(url="/admin/settings?success=Biller+rule+deleted", status_code=303)
+
+
 @router.post("/admin/settings/encoders/{encoder_id}/remove", include_in_schema=False)
 async def remove_encoder_role(
     encoder_id: int,
@@ -369,8 +483,9 @@ async def entry_form_page(
         {
             "request": request,
             "billers": billers,
-            "biller_charges": get_biller_charges(),
-            "biller_late_charges": get_biller_late_charges(),
+            "biller_charges": await get_biller_charges(db),
+            "biller_late_charges": await get_biller_late_charges(db),
+            "biller_account_digits": await get_biller_account_digits(db),
             "current_user": current_user,
         },
     )
@@ -444,6 +559,36 @@ async def list_users(db: AsyncSession = Depends(get_db), _: UserAccount = Depend
     }
 
 
+@router.get("/api/admin/record-audit")
+async def list_record_audit_logs(
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    result = await db.execute(
+        select(RecordAuditLog)
+        .order_by(RecordAuditLog.created_at.desc(), RecordAuditLog.id.desc())
+        .limit(limit)
+    )
+    logs = result.scalars().all()
+    return {
+        "logs": [
+            {
+                "id": item.id,
+                "record_id": item.record_id,
+                "actor_name": item.actor_name or "",
+                "actor_role": item.actor_role or "",
+                "action": item.action,
+                "channel": item.channel,
+                "status": item.status,
+                "detail": item.detail or "",
+                "created_at": item.created_at.isoformat() if item.created_at else "",
+            }
+            for item in logs
+        ]
+    }
+
+
 @router.post("/api/admin/users")
 async def upsert_user(
     payload: AdminUserCreate,
@@ -501,8 +646,11 @@ async def upsert_user(
 
 
 @router.get("/api/records/biller-charges")
-async def list_biller_charges(_: UserAccount = Depends(require_data_entry_access)):
-    return {"biller_charges": get_biller_charges()}
+async def list_biller_charges(
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_data_entry_access),
+):
+    return {"biller_charges": await get_biller_charges(db)}
 
 
 @router.get("/api/records/by-account/{account}")
@@ -557,7 +705,7 @@ async def receipt_page(
 async def create_record_endpoint(
     payload: RecordCreate,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_data_entry_access),
+    current_user: UserAccount = Depends(require_data_entry_access),
 ):
     if payload.txn_datetime is None:
         payload.txn_datetime = datetime.utcnow()
@@ -581,7 +729,7 @@ async def update_record_endpoint(
     record_id: int,
     payload: RecordUpdate,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_admin),
 ):
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
@@ -600,21 +748,67 @@ async def update_record_endpoint(
 async def delete_record_endpoint(
     record_id: int,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_admin),
 ):
-    await delete_record(db, record_id)
-    return None
+    try:
+        record = await get_record(db, record_id)
+        reference = record.reference or "-"
+        await delete_record(db, record_id)
+        await _log_record_audit(
+            db,
+            action="delete",
+            status="success",
+            current_user=current_user,
+            channel="api",
+            record_id=record_id,
+            detail=f"reference={reference}",
+        )
+        return None
+    except HTTPException as exc:
+        await _log_record_audit(
+            db,
+            action="delete",
+            status="failed",
+            current_user=current_user,
+            channel="api",
+            record_id=record_id,
+            detail=str(exc.detail),
+        )
+        raise
 
 
 @router.post("/api/records/import-csv")
 async def import_csv_endpoint(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_admin),
 ):
-    if not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Please upload a CSV file")
+    try:
+        if not file.filename.lower().endswith(".csv"):
+            raise HTTPException(status_code=400, detail="Please upload a CSV file")
 
-    file_bytes = await file.read()
-    result = await import_csv_records(db, file_bytes)
-    return result
+        file_bytes = await file.read()
+        result = await import_csv_records(db, file_bytes)
+        await _log_record_audit(
+            db,
+            action="import_csv",
+            status="success",
+            current_user=current_user,
+            channel="csv_upload",
+            detail=(
+                f"created={result.get('created', 0)}, "
+                f"duplicates={result.get('duplicates', 0)}, "
+                f"skipped={result.get('skipped', 0)}"
+            ),
+        )
+        return result
+    except HTTPException as exc:
+        await _log_record_audit(
+            db,
+            action="import_csv",
+            status="failed",
+            current_user=current_user,
+            channel="csv_upload",
+            detail=str(exc.detail),
+        )
+        raise

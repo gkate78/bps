@@ -14,6 +14,7 @@ function formatMoney(value) {
 
 const BILLER_CHARGES = window.BILLER_CHARGES || {};
 const BILLER_LATE_CHARGES = window.BILLER_LATE_CHARGES || {};
+const BILLER_ACCOUNT_DIGITS = window.BILLER_ACCOUNT_DIGITS || {};
 let lastSavedRecordId = null;
 
 const dom = {

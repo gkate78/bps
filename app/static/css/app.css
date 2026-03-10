@@ -342,6 +342,11 @@ input[readonly] {
     text-transform: none;
 }
 
+.audit-grid td,
+.audit-grid th {
+    text-transform: none;
+}
+
 .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     letter-spacing: 0.2px;
@@ -366,6 +371,27 @@ input[readonly] {
     background: #edf7ea;
     color: #235b2a;
     border: 1px solid #cfe9cc;
+}
+
+.status-pill {
+    display: inline-block;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.status-success {
+    background: #e9f9ee;
+    color: #1e6a33;
+    border: 1px solid #c9ebd4;
+}
+
+.status-failed {
+    background: #fff0f0;
+    color: #8c1d1d;
+    border: 1px solid #ffd0d0;
 }
 
 .entry-form {

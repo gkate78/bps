@@ -27,6 +27,12 @@ function round2(value) {
     return Math.round((parseNum(value) + Number.EPSILON) * 100) / 100;
 }
 
+function formatStatusPill(value) {
+    const status = String(value || "").toLowerCase();
+    const cls = status === "success" ? "status-success" : "status-failed";
+    return `<span class="status-pill ${cls}">${status || "-"}</span>`;
+}
+
 function showMessage(message, title = "Notice") {
     const dialog = document.getElementById("appMessageDialog");
     const titleEl = document.getElementById("appMessageTitle");
@@ -107,6 +113,7 @@ function showConfirm(message, title = "Please Confirm") {
 }
 
 const BILLER_CHARGES = window.BILLER_CHARGES || {};
+const BILLER_ACCOUNT_DIGITS = window.BILLER_ACCOUNT_DIGITS || {};
 
 const dom = {
     dialog: document.getElementById("recordDialog"),
@@ -240,6 +247,36 @@ const table = new DataTable("#recordsTable", {
     ],
     order: [[1, "desc"]],
 });
+
+const auditTableEl = document.getElementById("auditTable");
+const auditTableInstance = auditTableEl
+    ? new DataTable("#auditTable", {
+        processing: true,
+        ajax: {
+            url: "/api/admin/record-audit",
+            dataSrc: "logs",
+        },
+        pageLength: 10,
+        autoWidth: false,
+        columns: [
+            { data: "created_at", render: formatDateTime },
+            { data: "actor_name", render: (d) => d || "-" },
+            { data: "actor_role", render: (d) => d || "-" },
+            { data: "action", render: (d) => String(d || "").toUpperCase() },
+            { data: "channel", render: (d) => String(d || "").toUpperCase() },
+            { data: "status", render: formatStatusPill },
+            { data: "record_id", render: (d) => (d == null ? "-" : d) },
+            { data: "detail", render: (d) => d || "" },
+        ],
+        order: [[0, "desc"]],
+    })
+    : null;
+
+function reloadAuditLog() {
+    if (auditTableInstance) {
+        auditTableInstance.ajax.reload(null, false);
+    }
+}
 
 const usersDialog = document.getElementById("usersDialog");
 const openUsersBtn = document.getElementById("openUsersBtn");
@@ -430,10 +467,12 @@ async function removeRecord(id) {
     const response = await fetch(`/api/records/${id}`, { method: "DELETE" });
     if (!response.ok) {
         await showMessage("Delete failed. Please try again.", "Delete Failed");
+        reloadAuditLog();
         return;
     }
 
     table.ajax.reload(null, false);
+    reloadAuditLog();
 }
 
 function payloadFromForm() {
@@ -470,6 +509,22 @@ function validatePayload(payload) {
     if (!payload.account) {
         showMessage("Account is required.", "Validation");
         return false;
+    }
+
+    if (BILLER_CHARGES[normalizedBillerKey(payload.biller)] == null) {
+        showMessage("Biller rule is not configured. Please update Admin Settings.", "Validation");
+        return false;
+    }
+    const requiredDigits = BILLER_ACCOUNT_DIGITS[normalizedBillerKey(payload.biller)];
+    if (requiredDigits != null) {
+        const accountDigits = String(payload.account || "").replace(/\D/g, "");
+        if (accountDigits.length !== Number(requiredDigits)) {
+            showMessage(
+                `Account must be exactly ${requiredDigits} digits for ${payload.biller}.`,
+                "Validation"
+            );
+            return false;
+        }
     }
 
     if (!payload.due_date) {
@@ -521,11 +576,13 @@ async function saveRecord(event) {
         } else {
             await showMessage(err.detail || "Save failed.", "Save Failed");
         }
+        reloadAuditLog();
         return;
     }
 
     dom.dialog.close();
     table.ajax.reload(null, false);
+    reloadAuditLog();
 }
 
 async function importCsv(event) {
@@ -552,12 +609,14 @@ async function importCsv(event) {
 
     if (!response.ok) {
         statusEl.textContent = "Import failed";
+        reloadAuditLog();
         return;
     }
 
     const result = await response.json();
     statusEl.textContent = `Imported ${result.created}, duplicates ${result.duplicates || 0}, skipped ${result.skipped}`;
     table.ajax.reload();
+    reloadAuditLog();
     fileInput.value = "";
 }
 
@@ -579,6 +638,11 @@ document.getElementById("clearFiltersBtn").addEventListener("click", () => {
     filters.dueStatus.value = "";
     table.search("").draw();
 });
+
+const refreshAuditBtn = document.getElementById("refreshAuditBtn");
+if (refreshAuditBtn) {
+    refreshAuditBtn.addEventListener("click", reloadAuditLog);
+}
 
 Object.values(filters).forEach((el) => {
     el.addEventListener("change", () => table.ajax.reload());
