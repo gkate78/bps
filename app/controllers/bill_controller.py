@@ -2,7 +2,7 @@ import csv
 import io
 import math
 import secrets
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from fastapi import HTTPException
@@ -396,14 +396,20 @@ async def datatable_query(
     if to_date:
         base_filters.append(func.date(BillRecord.txn_datetime) <= to_date)
 
+    today = date.today()
     if due_status == "overdue":
         base_filters.append(BillRecord.due_date.is_not(None))
-        base_filters.append(BillRecord.due_date < date.today())
+        base_filters.append(BillRecord.due_date < today)
     elif due_status == "due_today":
-        base_filters.append(BillRecord.due_date == date.today())
+        base_filters.append(BillRecord.due_date == today)
     elif due_status == "upcoming":
         base_filters.append(BillRecord.due_date.is_not(None))
-        base_filters.append(BillRecord.due_date > date.today())
+        base_filters.append(BillRecord.due_date > today)
+    elif due_status == "urgent":
+        # Urgent queue: overdue or due within the next 3 days.
+        window_end = today + timedelta(days=3)
+        base_filters.append(BillRecord.due_date.is_not(None))
+        base_filters.append(BillRecord.due_date <= window_end)
     elif due_status == "no_due_date":
         base_filters.append(BillRecord.due_date.is_(None))
 
