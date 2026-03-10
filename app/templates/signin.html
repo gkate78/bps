@@ -2,7 +2,9 @@
 
 {% block title %}Sign In | Bills Admin{% endblock %}
 {% block topbar_title %}Welcome Back{% endblock %}
-{% block topbar_subtitle %}Sign in with your phone number and 4-digit PIN.{% endblock %}
+{% block topbar_subtitle %}
+Sign in with your phone number and 4-digit PIN. After several failed attempts, your account will be temporarily locked for your security.
+{% endblock %}
 {% block topbar_actions %}
 <a class="btn btn-secondary" href="/auth/signup">Sign Up</a>
 {% endblock %}
@@ -19,6 +21,10 @@
     {% if success %}
     <div class="alert-success">{{ success }}</div>
     {% endif %}
+
+    <p class="auth-hint">
+        Tip: If your account becomes locked after too many failed attempts, use <strong>Forgot PIN</strong> to reset via OTP.
+    </p>
 
     <form method="post" action="/auth/signin" class="auth-form">
         <label>Phone Number
