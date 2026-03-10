@@ -11,6 +11,7 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Server-side DataTables endpoint (search, sort, pagination)
 - Filters: biller, transaction date range, due status
 - CRUD: create, edit, delete records
+- Transaction audit log for record state changes (create, update, delete, CSV import) with admin visibility
 - CSV import endpoint for bulk loading sheet exports
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing

@@ -22,7 +22,7 @@
 
 ## LATER
 - [ ] BPS-207 | Theme: Routing | Outcome: Payment channel routing rules (`online` vs `branch/manual`) | Done when: routing decision engine works for limits/urgency/availability
-- [ ] BPS-208 | Theme: Biller standardization | Outcome: Biller directory for charges + required fields | Done when: biller config is editable and used by validation/computation
+- [x] BPS-208 | Theme: Biller standardization | Outcome: Biller directory for charges + required fields | Done when: biller config is editable and used by validation/computation
 - [ ] BPS-209 | Theme: Customer comms | Outcome: SMS/Viber confirmation with reference + posting ETA | Done when: message trigger is sent after submission (post-MVP)
 
 ## Done
@@ -30,3 +30,5 @@
 - [x] BPS-102 | Shipped on: 2026-03-05 | Notes: Dashboard/records view with filters and CRUD
 - [x] BPS-103 | Shipped on: 2026-03-05 | Notes: Duplicate detection (`date + account + biller + amount`)
 - [x] BPS-104 | Shipped on: 2026-03-06 | Notes: Auto reference generation + receipt print view
+- [x] BPS-202 | Shipped on: 2026-03-09 | Notes: Record audit trail with admin audit table (`who/when/channel/status`, plus action/detail)
+- [x] BPS-208 | Shipped on: 2026-03-09 | Notes: DB-backed biller rules with admin management; computation now reads service/late charges from active rules
