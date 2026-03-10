@@ -46,3 +46,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Payments should not be accepted for unconfigured billers or accounts that do not match the expected format, regardless of entry channel.
 - Alternatives considered: keep only generic validation (due date / amount) without biller-specific rules.
 - Follow-up: Consider richer per-biller schemas (e.g., required `cp_number` or reference formats) and bulk rule management tooling if operational needs grow.
+
+- Date: 2026-03-10
+- ID: DEC-007
+- Related task: BPS-204
+- Decision: Add an "urgent" due-status filter and view that surfaces records whose due dates are overdue or within the next 3 days, using the existing datatable and filters.
+- Why: Admins need a single prioritized view for payments that are at risk (overdue/near-due) rather than manually toggling multiple filters.
+- Alternatives considered: separate urgent-only page with custom queries; reusing only the "overdue" filter without near-due items.
+- Follow-up: Consider making the urgency window configurable and adding SLA countdown badges in the UI if operational needs increase.

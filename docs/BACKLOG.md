@@ -16,7 +16,7 @@
 - [x] BPS-203 | Theme: Validation | Outcome: Strengthen counter payment validation by biller rules | Done when: required fields/format are enforced per biller before save
 
 ## NEXT
-- [ ] BPS-204 | Theme: Operations speed | Outcome: Urgent queue with due-date SLA timer | Done when: overdue/near-due records have a dedicated prioritized view
+- [x] BPS-204 | Theme: Operations speed | Outcome: Urgent queue with due-date SLA timer | Done when: overdue/near-due records have a dedicated prioritized view
 - [ ] BPS-205 | Theme: Reconciliation | Outcome: End-of-day reconciliation summary | Done when: cash on hand vs collected vs submitted is computed with discrepancy flags
 - [ ] BPS-206 | Theme: Data quality | Outcome: Customer account lookup list per biller | Done when: encoder can search/select known accounts without retyping
 
