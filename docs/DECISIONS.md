@@ -38,3 +38,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: New/updated billers should not require code changes and redeploys to keep charge computation accurate.
 - Alternatives considered: keep hardcoded constants, JSON config file in repo, external spreadsheet only.
 - Follow-up: Extend rules to include per-biller required field validation (BPS-203) and add import/export tooling for large rule sets.
+
+- Date: 2026-03-10
+- ID: DEC-006
+- Related task: BPS-203
+- Decision: Enforce per-biller validation by requiring an active `biller_rules` entry, enforcing configured account digit length, and applying these rules consistently in API routes, entry form UI, and CSV import.
+- Why: Payments should not be accepted for unconfigured billers or accounts that do not match the expected format, regardless of entry channel.
+- Alternatives considered: keep only generic validation (due date / amount) without biller-specific rules.
+- Follow-up: Consider richer per-biller schemas (e.g., required `cp_number` or reference formats) and bulk rule management tooling if operational needs grow.
