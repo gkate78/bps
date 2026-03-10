@@ -36,7 +36,7 @@
             <label>Account<input type="text" id="account" required></label>
             <label>Biller<input type="text" id="biller" list="billerOptions" required></label>
             <label>Name<input type="text" id="customerName" required></label>
-            <label>CP Number<input type="text" id="cpNumber"></label>
+            <label>CP Number<input type="tel" id="cpNumber" minlength="11" maxlength="11" inputmode="numeric" pattern="\d{11}" placeholder="09XXXXXXXXX"></label>
             <label>Due Date<input type="date" id="dueDate" required></label>
         </div>
 

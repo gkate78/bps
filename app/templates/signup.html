@@ -2,7 +2,9 @@
 
 {% block title %}Sign Up | Bills Admin{% endblock %}
 {% block topbar_title %}Create Account{% endblock %}
-{% block topbar_subtitle %}Register with your name, phone number, and 4-digit PIN.{% endblock %}
+{% block topbar_subtitle %}
+Register with your name, phone number, and 4-digit PIN. We will send a one-time OTP to verify your phone before activating your account.
+{% endblock %}
 {% block topbar_actions %}
 <a class="btn btn-secondary" href="/auth/signin">Sign In</a>
 {% endblock %}
@@ -16,6 +18,10 @@
     {% if error %}
     <div class="alert-error">{{ error }}</div>
     {% endif %}
+
+    <p class="auth-hint">
+        After submitting this form, check your phone for an OTP code to complete signup.
+    </p>
 
     <form method="post" action="/auth/signup" class="auth-form">
         <label>First Name

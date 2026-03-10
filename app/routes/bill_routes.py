@@ -33,7 +33,7 @@ from app.controllers.bill_controller import (
     update_record,
 )
 from app.database import get_db
-from app.models import BillerRule, BusinessProfile, UserAccount
+from app.models import BillerRule, BusinessProfile, RecordAuditLog, UserAccount
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
@@ -57,13 +57,22 @@ def _normalize_text(value: str) -> str:
     return value.strip().upper()
 
 
+def _is_valid_cp_number(value: Optional[str]) -> bool:
+    if value is None:
+        return True
+    cleaned = str(value).strip()
+    if cleaned == "":
+        return True
+    return cleaned.isdigit() and len(cleaned) == 11
+
+
 class RecordCreate(BaseModel):
     txn_datetime: Optional[datetime] = None
     txn_date: Optional[date] = None
     account: str = Field(min_length=1, max_length=64)
     biller: str = Field(min_length=1, max_length=120)
     customer_name: str = Field(min_length=1, max_length=160)
-    cp_number: str = ""
+    cp_number: str = Field(default="", max_length=11)
     bill_amt: float = 0
     amt2: float = 0
     charge: float = 0
@@ -82,7 +91,7 @@ class RecordUpdate(BaseModel):
     account: Optional[str] = Field(default=None, min_length=1, max_length=64)
     biller: Optional[str] = Field(default=None, min_length=1, max_length=120)
     customer_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
-    cp_number: Optional[str] = None
+    cp_number: Optional[str] = Field(default=None, max_length=11)
     bill_amt: Optional[float] = None
     amt2: Optional[float] = None
     charge: Optional[float] = None
@@ -185,6 +194,37 @@ def _build_receipt_settings(profile: Optional[BusinessProfile]) -> dict:
         "show_cash": "cash" in visible,
         "show_change_amt": "change_amt" in visible,
     }
+
+
+def _actor_name(user: Optional[UserAccount]) -> str:
+    if not user:
+        return "SYSTEM"
+    return f"{user.first_name} {user.last_name}".strip() or user.phone
+
+
+async def _log_record_audit(
+    db: AsyncSession,
+    *,
+    action: str,
+    status: str,
+    current_user: Optional[UserAccount],
+    channel: str = "web",
+    record_id: Optional[int] = None,
+    detail: Optional[str] = None,
+) -> None:
+    db.add(
+        RecordAuditLog(
+            record_id=record_id,
+            user_id=current_user.id if current_user else None,
+            actor_name=_actor_name(current_user),
+            actor_role=current_user.role if current_user else "system",
+            action=action,
+            channel=channel,
+            status=status,
+            detail=detail,
+        )
+    )
+    await db.commit()
 
 
 @router.get("/admin/records", response_class=HTMLResponse, include_in_schema=False)
@@ -549,6 +589,36 @@ async def list_users(db: AsyncSession = Depends(get_db), _: UserAccount = Depend
     }
 
 
+@router.get("/api/admin/record-audit")
+async def list_record_audit_logs(
+    limit: int = Query(default=200, ge=1, le=1000),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    result = await db.execute(
+        select(RecordAuditLog)
+        .order_by(RecordAuditLog.created_at.desc(), RecordAuditLog.id.desc())
+        .limit(limit)
+    )
+    logs = result.scalars().all()
+    return {
+        "logs": [
+            {
+                "id": item.id,
+                "record_id": item.record_id,
+                "actor_name": item.actor_name or "",
+                "actor_role": item.actor_role or "",
+                "action": item.action,
+                "channel": item.channel,
+                "status": item.status,
+                "detail": item.detail or "",
+                "created_at": item.created_at.isoformat() if item.created_at else "",
+            }
+            for item in logs
+        ]
+    }
+
+
 @router.post("/api/admin/users")
 async def upsert_user(
     payload: AdminUserCreate,
@@ -665,7 +735,7 @@ async def receipt_page(
 async def create_record_endpoint(
     payload: RecordCreate,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_data_entry_access),
+    current_user: UserAccount = Depends(require_data_entry_access),
 ):
     if payload.txn_datetime is None:
         payload.txn_datetime = datetime.utcnow()
@@ -677,16 +747,8 @@ async def create_record_endpoint(
 
     if payload.bill_amt <= 0:
         raise HTTPException(status_code=400, detail="Bill amount is required")
-    if not await has_active_biller_rule(db, payload.biller):
-        raise HTTPException(status_code=400, detail="Biller rule is not configured")
-    required_digits = await _required_account_digits_for_biller(db, payload.biller)
-    if required_digits is not None:
-        account_digits = "".join(ch for ch in str(payload.account or "") if ch.isdigit())
-        if len(account_digits) != required_digits:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Account must be exactly {required_digits} digits for {str(payload.biller).strip().upper()}",
-            )
+    if not _is_valid_cp_number(payload.cp_number):
+        raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     record = await create_record(db, payload.model_dump())
     return record
@@ -697,7 +759,7 @@ async def update_record_endpoint(
     record_id: int,
     payload: RecordUpdate,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_admin),
 ):
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
@@ -705,28 +767,8 @@ async def update_record_endpoint(
 
     if "due_date" in updates and updates["due_date"] is None:
         raise HTTPException(status_code=400, detail="Due date is required")
-    if "biller" in updates and not await has_active_biller_rule(db, str(updates.get("biller", ""))):
-        raise HTTPException(status_code=400, detail="Biller rule is not configured")
-    if "account" in updates or "biller" in updates:
-        biller_for_validation = str(updates.get("biller", "")).strip()
-        if not biller_for_validation:
-            current = await get_record(db, record_id)
-            biller_for_validation = current.biller
-        required_digits = await _required_account_digits_for_biller(db, biller_for_validation)
-        if required_digits is not None:
-            account_value = str(updates.get("account", "")).strip()
-            if not account_value:
-                current = await get_record(db, record_id)
-                account_value = current.account
-            account_digits = "".join(ch for ch in account_value if ch.isdigit())
-            if len(account_digits) != required_digits:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Account must be exactly {required_digits} digits for "
-                        f"{str(biller_for_validation).strip().upper()}"
-                    ),
-                )
+    if "cp_number" in updates and not _is_valid_cp_number(updates.get("cp_number")):
+        raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     record = await update_record(db, record_id, updates)
     return record
@@ -736,21 +778,67 @@ async def update_record_endpoint(
 async def delete_record_endpoint(
     record_id: int,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_admin),
 ):
-    await delete_record(db, record_id)
-    return None
+    try:
+        record = await get_record(db, record_id)
+        reference = record.reference or "-"
+        await delete_record(db, record_id)
+        await _log_record_audit(
+            db,
+            action="delete",
+            status="success",
+            current_user=current_user,
+            channel="api",
+            record_id=record_id,
+            detail=f"reference={reference}",
+        )
+        return None
+    except HTTPException as exc:
+        await _log_record_audit(
+            db,
+            action="delete",
+            status="failed",
+            current_user=current_user,
+            channel="api",
+            record_id=record_id,
+            detail=str(exc.detail),
+        )
+        raise
 
 
 @router.post("/api/records/import-csv")
 async def import_csv_endpoint(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_admin),
 ):
-    if not file.filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Please upload a CSV file")
+    try:
+        if not file.filename.lower().endswith(".csv"):
+            raise HTTPException(status_code=400, detail="Please upload a CSV file")
 
-    file_bytes = await file.read()
-    result = await import_csv_records(db, file_bytes)
-    return result
+        file_bytes = await file.read()
+        result = await import_csv_records(db, file_bytes)
+        await _log_record_audit(
+            db,
+            action="import_csv",
+            status="success",
+            current_user=current_user,
+            channel="csv_upload",
+            detail=(
+                f"created={result.get('created', 0)}, "
+                f"duplicates={result.get('duplicates', 0)}, "
+                f"skipped={result.get('skipped', 0)}"
+            ),
+        )
+        return result
+    except HTTPException as exc:
+        await _log_record_audit(
+            db,
+            action="import_csv",
+            status="failed",
+            current_user=current_user,
+            channel="csv_upload",
+            detail=str(exc.detail),
+        )
+        raise
