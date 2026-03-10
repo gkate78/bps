@@ -54,3 +54,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Admins need a single prioritized view for payments that are at risk (overdue/near-due) rather than manually toggling multiple filters.
 - Alternatives considered: separate urgent-only page with custom queries; reusing only the "overdue" filter without near-due items.
 - Follow-up: Consider making the urgency window configurable and adding SLA countdown badges in the UI if operational needs increase.
+
+- Date: 2026-03-10
+- ID: DEC-008
+- Related task: BPS-205
+- Decision: (1) Keep `reference` as the auto-generated value used on customer receipts only. (2) Add `payment_reference` as a separate column set by staff when a transaction has been processed (e.g. biller/channel ref); when non-empty, the record counts as “processed” for reconciliation. (3) EOD reconciliation: collected = sum of total for date; processed = sum of total where payment_reference is set; pending = collected − processed; flag = match / short / pending. (4) Provide a Processing dashboard to update payment references and view the EOD report; optional “cash on hand” can be added later.
+- Why: Receipt reference must stay stable for customers; real processing refs come from billers/channels and are needed for reconciliation and audit.
+- Alternatives considered: reusing a single reference for both receipt and processing; reconciliation without a processed marker.
+- Follow-up: Optional cash-on-hand vs collected comparison; export of reconciliation report.

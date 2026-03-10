@@ -17,7 +17,6 @@
 
 ## NEXT
 - [x] BPS-204 | Theme: Operations speed | Outcome: Urgent queue with due-date SLA timer | Done when: overdue/near-due records have a dedicated prioritized view
-- [ ] BPS-205 | Theme: Reconciliation | Outcome: End-of-day reconciliation summary | Done when: cash on hand vs collected vs submitted is computed with discrepancy flags
 - [ ] BPS-206 | Theme: Data quality | Outcome: Customer account lookup list per biller | Done when: encoder can search/select known accounts without retyping
 
 ## LATER
@@ -33,3 +32,4 @@
 - [x] BPS-202 | Shipped on: 2026-03-09 | Notes: Record audit trail with admin audit table (`who/when/channel/status`, plus action/detail)
 - [x] BPS-203 | Shipped on: 2026-03-09 | Notes: Per-biller biller_rules validation (active rule required, account digit format enforced in API/UI/CSV)
 - [x] BPS-208 | Shipped on: 2026-03-09 | Notes: DB-backed biller rules with admin management; computation now reads service/late charges from active rules
+- [x] BPS-205 | Shipped on: 2026-03-10 | Notes: EOD reconciliation (collected vs processed, pending, flag); `payment_reference` column for “processed” marker; Processing dashboard to set payment refs and view report (DEC-008)

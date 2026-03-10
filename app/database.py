@@ -36,6 +36,8 @@ async def init_db() -> None:
                     """
                 )
             )
+        if "payment_reference" not in col_names:
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN payment_reference VARCHAR(120)"))
 
         # Lightweight migration: add receipt settings columns for business_profiles.
         profile_columns = (await conn.execute(text("PRAGMA table_info(business_profiles)"))).fetchall()

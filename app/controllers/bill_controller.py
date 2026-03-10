@@ -255,6 +255,7 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         due_date=payload.get("due_date"),
         notes=payload.get("notes"),
         reference=reference,
+        payment_reference=payload.get("payment_reference"),
     )
 
     db.add(record)
@@ -323,6 +324,7 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
             "due_date": updates.get("due_date", record.due_date),
             "notes": updates.get("notes", record.notes),
             "reference": updates.get("reference", record.reference),
+            "payment_reference": updates.get("payment_reference", record.payment_reference),
         }
     )
     updates = _apply_computations(
@@ -371,6 +373,54 @@ async def find_latest_by_account(db: AsyncSession, account: str) -> Optional[Bil
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def reconciliation_summary(db: AsyncSession, for_date: date) -> dict:
+    """EOD summary: collected (sum total), processed (sum total where payment_reference set), pending, counts, flag."""
+    base = (
+        select(
+            func.coalesce(func.sum(BillRecord.total), 0).label("collected"),
+            func.count().label("record_count"),
+        )
+        .select_from(BillRecord)
+        .where(BillRecord.txn_date == for_date)
+    )
+    row = (await db.execute(base)).one()
+    collected = round(float(row.collected), 2)
+    record_count = int(row.record_count or 0)
+
+    processed_q = (
+        select(
+            func.coalesce(func.sum(BillRecord.total), 0).label("processed"),
+            func.count().label("processed_count"),
+        )
+        .select_from(BillRecord)
+        .where(
+            BillRecord.txn_date == for_date,
+            BillRecord.payment_reference.is_not(None),
+            BillRecord.payment_reference != "",
+        )
+    )
+    proc_row = (await db.execute(processed_q)).one()
+    processed = round(float(proc_row.processed), 2)
+    processed_count = int(proc_row.processed_count or 0)
+
+    pending = round(collected - processed, 2)
+    if abs(processed - collected) < 0.01:
+        flag = "match"
+    elif processed > collected:
+        flag = "short"
+    else:
+        flag = "pending"
+    return {
+        "date": for_date.isoformat(),
+        "collected": collected,
+        "processed": processed,
+        "pending": pending,
+        "record_count": record_count,
+        "processed_count": processed_count,
+        "flag": flag,
+    }
 
 
 async def datatable_query(
@@ -448,6 +498,7 @@ async def datatable_query(
         "change_amt": BillRecord.change_amt,
         "due_date": BillRecord.due_date,
         "reference": BillRecord.reference,
+        "payment_reference": BillRecord.payment_reference,
         "id": BillRecord.id,
     }
     sort_col = order_map.get(order_column, BillRecord.txn_datetime)
@@ -478,6 +529,7 @@ async def datatable_query(
             "due_date": r.due_date.isoformat() if r.due_date else "",
             "notes": r.notes or "",
             "reference": r.reference or "",
+            "payment_reference": r.payment_reference or "",
         }
         for r in rows
     ]

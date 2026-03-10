@@ -29,6 +29,7 @@ from app.controllers.bill_controller import (
     get_record,
     has_active_biller_rule,
     import_csv_records,
+    reconciliation_summary,
     update_record,
 )
 from app.database import get_db
@@ -72,6 +73,7 @@ class RecordCreate(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     reference: Optional[str] = None
+    payment_reference: Optional[str] = None
 
 
 class RecordUpdate(BaseModel):
@@ -90,6 +92,7 @@ class RecordUpdate(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     reference: Optional[str] = None
+    payment_reference: Optional[str] = None
 
 
 class RecordResponse(RecordCreate):
@@ -207,6 +210,33 @@ async def admin_records_page(
             "current_user": current_user,
         },
     )
+
+
+@router.get("/admin/processing", response_class=HTMLResponse, include_in_schema=False)
+async def admin_processing_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
+    if not current_user:
+        return RedirectResponse(url="/auth/signin", status_code=303)
+    if current_user.role != "admin":
+        return RedirectResponse(url="/customer/dashboard", status_code=303)
+    billers = await get_distinct_billers(db)
+    return templates.TemplateResponse(
+        "processing.html",
+        {"request": request, "billers": billers, "current_user": current_user},
+    )
+
+
+@router.get("/api/admin/reconciliation-summary")
+async def get_reconciliation_summary(
+    summary_date: Optional[date] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    for_date = summary_date or date.today()
+    return await reconciliation_summary(db, for_date)
 
 
 @router.get("/admin/settings", response_class=HTMLResponse, include_in_schema=False)
