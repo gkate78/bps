@@ -17,7 +17,7 @@ def normalize_phone(phone: str) -> str:
 
 
 def validate_phone(phone: str) -> bool:
-    return 10 <= len(phone) <= 15
+    return phone.isdigit() and len(phone) == 11
 
 
 def validate_pin(pin: str) -> bool:
