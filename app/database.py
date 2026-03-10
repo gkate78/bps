@@ -140,3 +140,43 @@ async def init_db() -> None:
                 """
             )
         )
+
+        # Data normalization: keep form text fields uppercase in existing rows.
+        await conn.execute(
+            text(
+                """
+                UPDATE user_accounts
+                SET
+                    first_name = UPPER(TRIM(first_name)),
+                    last_name = UPPER(TRIM(last_name))
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                UPDATE business_profiles
+                SET
+                    business_name = UPPER(TRIM(business_name)),
+                    business_address = UPPER(TRIM(business_address)),
+                    business_phone = CASE WHEN business_phone IS NULL THEN NULL ELSE UPPER(TRIM(business_phone)) END,
+                    business_email = CASE WHEN business_email IS NULL THEN NULL ELSE UPPER(TRIM(business_email)) END,
+                    tin_number = CASE WHEN tin_number IS NULL THEN NULL ELSE UPPER(TRIM(tin_number)) END,
+                    receipt_footer = CASE WHEN receipt_footer IS NULL THEN NULL ELSE UPPER(TRIM(receipt_footer)) END
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                UPDATE bill_records
+                SET
+                    account = UPPER(TRIM(account)),
+                    biller = UPPER(TRIM(biller)),
+                    customer_name = UPPER(TRIM(customer_name)),
+                    cp_number = UPPER(TRIM(cp_number)),
+                    notes = CASE WHEN notes IS NULL THEN NULL ELSE UPPER(TRIM(notes)) END,
+                    reference = CASE WHEN reference IS NULL THEN NULL ELSE UPPER(TRIM(reference)) END
+                """
+            )
+        )
