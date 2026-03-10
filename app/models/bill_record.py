@@ -25,6 +25,7 @@ class BillRecord(SQLModel, table=True):
     due_date: Optional[date] = Field(default=None, index=True)
     notes: Optional[str] = Field(default=None, max_length=500)
     reference: Optional[str] = Field(default=None, max_length=120)
+    payment_reference: Optional[str] = Field(default=None, max_length=120)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
