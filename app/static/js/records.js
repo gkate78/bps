@@ -501,6 +501,11 @@ function validatePayload(payload) {
         return false;
     }
 
+    if (payload.cp_number && !/^\d{11}$/.test(payload.cp_number)) {
+        showMessage("CP number must be exactly 11 digits.", "Validation");
+        return false;
+    }
+
     if (!payload.account) {
         showMessage("Account is required.", "Validation");
         return false;

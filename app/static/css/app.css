@@ -121,6 +121,12 @@ select, input, textarea {
     width: 100%;
 }
 
+input[type="text"],
+input[type="email"],
+textarea {
+    text-transform: uppercase;
+}
+
 .btn {
     border: 1px solid var(--border);
     border-radius: 10px;
@@ -200,6 +206,17 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 
 .form-grid .full {
     grid-column: 1 / -1;
+}
+
+.amount-emphasis {
+    font-size: 0.98rem;
+    font-weight: 800;
+}
+
+.amount-emphasis input {
+    font-size: 1.08rem;
+    font-weight: 800;
+    letter-spacing: 0.2px;
 }
 
 .form-grid-pro {

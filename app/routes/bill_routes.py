@@ -52,13 +52,26 @@ RECEIPT_FIELD_KEYS = (
 )
 
 
+def _normalize_text(value: str) -> str:
+    return value.strip().upper()
+
+
+def _is_valid_cp_number(value: Optional[str]) -> bool:
+    if value is None:
+        return True
+    cleaned = str(value).strip()
+    if cleaned == "":
+        return True
+    return cleaned.isdigit() and len(cleaned) == 11
+
+
 class RecordCreate(BaseModel):
     txn_datetime: Optional[datetime] = None
     txn_date: Optional[date] = None
     account: str = Field(min_length=1, max_length=64)
     biller: str = Field(min_length=1, max_length=120)
     customer_name: str = Field(min_length=1, max_length=160)
-    cp_number: str = ""
+    cp_number: str = Field(default="", max_length=11)
     bill_amt: float = 0
     amt2: float = 0
     charge: float = 0
@@ -76,7 +89,7 @@ class RecordUpdate(BaseModel):
     account: Optional[str] = Field(default=None, min_length=1, max_length=64)
     biller: Optional[str] = Field(default=None, min_length=1, max_length=120)
     customer_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
-    cp_number: Optional[str] = None
+    cp_number: Optional[str] = Field(default=None, max_length=11)
     bill_amt: Optional[float] = None
     amt2: Optional[float] = None
     charge: Optional[float] = None
@@ -97,7 +110,7 @@ class RecordResponse(RecordCreate):
 class AdminUserCreate(BaseModel):
     first_name: str = Field(min_length=1, max_length=80)
     last_name: str = Field(min_length=1, max_length=80)
-    phone: str = Field(min_length=1, max_length=20)
+    phone: str = Field(min_length=11, max_length=11)
     pin: str = Field(min_length=4, max_length=4)
     role: str = Field(min_length=1, max_length=20)
 
@@ -281,8 +294,8 @@ async def update_business_settings(
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(require_admin),
 ):
-    cleaned_name = business_name.strip()
-    cleaned_address = business_address.strip()
+    cleaned_name = _normalize_text(business_name)
+    cleaned_address = _normalize_text(business_address)
     if not cleaned_name:
         return RedirectResponse(url="/admin/settings?error=Business+name+is+required", status_code=303)
     if not cleaned_address:
@@ -294,10 +307,10 @@ async def update_business_settings(
             admin_user_id=current_user.id,
             business_name=cleaned_name,
             business_address=cleaned_address,
-            business_phone=business_phone.strip() or None,
-            business_email=business_email.strip() or None,
-            tin_number=tin_number.strip() or None,
-            receipt_footer=receipt_footer.strip() or None,
+            business_phone=_normalize_text(business_phone) or None,
+            business_email=_normalize_text(business_email) or None,
+            tin_number=_normalize_text(tin_number) or None,
+            receipt_footer=_normalize_text(receipt_footer) or None,
             receipt_show_headings=receipt_show_headings is not None,
             receipt_visible_fields=_serialize_visible_fields(list(RECEIPT_FIELD_KEYS)),
             receipt_show_business_name=receipt_show_business_name is not None,
@@ -309,10 +322,10 @@ async def update_business_settings(
     else:
         profile.business_name = cleaned_name
         profile.business_address = cleaned_address
-        profile.business_phone = business_phone.strip() or None
-        profile.business_email = business_email.strip() or None
-        profile.tin_number = tin_number.strip() or None
-        profile.receipt_footer = receipt_footer.strip() or None
+        profile.business_phone = _normalize_text(business_phone) or None
+        profile.business_email = _normalize_text(business_email) or None
+        profile.tin_number = _normalize_text(tin_number) or None
+        profile.receipt_footer = _normalize_text(receipt_footer) or None
         profile.receipt_show_headings = receipt_show_headings is not None
         profile.receipt_visible_fields = _serialize_visible_fields(list(RECEIPT_FIELD_KEYS))
         profile.receipt_show_business_name = receipt_show_business_name is not None
@@ -336,8 +349,8 @@ async def create_encoder_user(
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_admin),
 ):
-    cleaned_first = first_name.strip()
-    cleaned_last = last_name.strip()
+    cleaned_first = _normalize_text(first_name)
+    cleaned_last = _normalize_text(last_name)
     normalized_phone = normalize_phone(phone)
 
     if not cleaned_first or not cleaned_last:
@@ -593,8 +606,8 @@ async def upsert_user(
     if not pin_ok:
         raise HTTPException(status_code=400, detail=pin_error or "Invalid PIN")
 
-    first_name = payload.first_name.strip()
-    last_name = payload.last_name.strip()
+    first_name = _normalize_text(payload.first_name)
+    last_name = _normalize_text(payload.last_name)
     if not first_name or not last_name:
         raise HTTPException(status_code=400, detail="First name and last name are required")
 
@@ -694,53 +707,21 @@ async def create_record_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(require_data_entry_access),
 ):
-    try:
-        if payload.txn_datetime is None:
-            payload.txn_datetime = datetime.utcnow()
-        if payload.txn_date is None:
-            payload.txn_date = payload.txn_datetime.date()
+    if payload.txn_datetime is None:
+        payload.txn_datetime = datetime.utcnow()
+    if payload.txn_date is None:
+        payload.txn_date = payload.txn_datetime.date()
 
-        if payload.due_date is None:
-            raise HTTPException(status_code=400, detail="Due date is required")
+    if payload.due_date is None:
+        raise HTTPException(status_code=400, detail="Due date is required")
 
-        if payload.bill_amt <= 0:
-            raise HTTPException(status_code=400, detail="Bill amount is required")
+    if payload.bill_amt <= 0:
+        raise HTTPException(status_code=400, detail="Bill amount is required")
+    if not _is_valid_cp_number(payload.cp_number):
+        raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
-        if not await has_active_biller_rule(db, payload.biller):
-            raise HTTPException(status_code=400, detail="Biller rule is not configured")
-        required_digits = await _required_account_digits_for_biller(db, payload.biller)
-        if required_digits is not None:
-            account_digits = "".join(ch for ch in str(payload.account or "") if ch.isdigit())
-            if len(account_digits) != required_digits:
-                raise HTTPException(
-                    status_code=400,
-                    detail=(
-                        f"Account must be exactly {required_digits} digits for "
-                        f"{str(payload.biller).strip().upper()}"
-                    ),
-                )
-
-        record = await create_record(db, payload.model_dump())
-        await _log_record_audit(
-            db,
-            action="create",
-            status="success",
-            current_user=current_user,
-            channel="api",
-            record_id=record.id,
-            detail=f"reference={record.reference or '-'}",
-        )
-        return record
-    except HTTPException as exc:
-        await _log_record_audit(
-            db,
-            action="create",
-            status="failed",
-            current_user=current_user,
-            channel="api",
-            detail=str(exc.detail),
-        )
-        raise
+    record = await create_record(db, payload.model_dump())
+    return record
 
 
 @router.put("/api/records/{record_id}", response_model=RecordResponse)
@@ -750,58 +731,17 @@ async def update_record_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(require_admin),
 ):
-    try:
-        updates = payload.model_dump(exclude_unset=True)
-        if not updates:
-            raise HTTPException(status_code=400, detail="No fields to update")
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
 
-        if "due_date" in updates and updates["due_date"] is None:
-            raise HTTPException(status_code=400, detail="Due date is required")
-        if "biller" in updates and not await has_active_biller_rule(db, str(updates.get("biller", ""))):
-            raise HTTPException(status_code=400, detail="Biller rule is not configured")
-        if "account" in updates or "biller" in updates:
-            biller_for_validation = str(updates.get("biller", "")).strip()
-            if not biller_for_validation:
-                current = await get_record(db, record_id)
-                biller_for_validation = current.biller
-            required_digits = await _required_account_digits_for_biller(db, biller_for_validation)
-            if required_digits is not None:
-                account_value = str(updates.get("account", "")).strip()
-                if not account_value:
-                    current = await get_record(db, record_id)
-                    account_value = current.account
-                account_digits = "".join(ch for ch in account_value if ch.isdigit())
-                if len(account_digits) != required_digits:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=(
-                            f"Account must be exactly {required_digits} digits for "
-                            f"{str(biller_for_validation).strip().upper()}"
-                        ),
-                    )
+    if "due_date" in updates and updates["due_date"] is None:
+        raise HTTPException(status_code=400, detail="Due date is required")
+    if "cp_number" in updates and not _is_valid_cp_number(updates.get("cp_number")):
+        raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
-        record = await update_record(db, record_id, updates)
-        await _log_record_audit(
-            db,
-            action="update",
-            status="success",
-            current_user=current_user,
-            channel="api",
-            record_id=record.id,
-            detail=f"reference={record.reference or '-'}",
-        )
-        return record
-    except HTTPException as exc:
-        await _log_record_audit(
-            db,
-            action="update",
-            status="failed",
-            current_user=current_user,
-            channel="api",
-            record_id=record_id,
-            detail=str(exc.detail),
-        )
-        raise
+    record = await update_record(db, record_id, updates)
+    return record
 
 
 @router.delete("/api/records/{record_id}", status_code=204)
