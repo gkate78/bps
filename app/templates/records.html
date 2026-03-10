@@ -121,7 +121,7 @@
             <input type="text" id="addUserLastName" required maxlength="80">
         </label>
         <label>Phone Number
-            <input type="tel" id="addUserPhone" required maxlength="20" placeholder="09XXXXXXXXX">
+            <input type="tel" id="addUserPhone" required minlength="11" maxlength="11" inputmode="numeric" pattern="\d{11}" placeholder="09XXXXXXXXX">
         </label>
         <label>4-digit PIN
             <input type="password" id="addUserPin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
@@ -173,9 +173,9 @@
             <label>Bill Amount<input type="number" step="0.01" id="billAmt" value="0" min="0"></label>
             <label>Late Charge<input type="number" step="0.01" id="amt2" value="0" min="0"></label>
             <label>Service Charge<input type="number" step="0.01" id="charge" value="0" readonly></label>
-            <label>Total<input type="number" step="0.01" id="total" value="0" readonly></label>
+            <label class="amount-emphasis">Total<input type="number" step="0.01" id="total" value="0" readonly></label>
             <label>Cash<input type="number" step="0.01" id="cash" value="0" min="0"></label>
-            <label>Change<input type="number" step="0.01" id="changeAmt" value="0" readonly></label>
+            <label class="amount-emphasis">Change<input type="number" step="0.01" id="changeAmt" value="0" readonly></label>
             <label>Reference<input type="text" id="reference" placeholder="Auto-generate if blank"></label>
             <label class="full">Notes<textarea id="notes" rows="2"></textarea></label>
         </div>

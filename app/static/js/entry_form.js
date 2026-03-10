@@ -7,6 +7,11 @@ function round2(value) {
     return Math.round((parseNum(value) + Number.EPSILON) * 100) / 100;
 }
 
+function formatMoney(value) {
+    const num = round2(value);
+    return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 const BILLER_CHARGES = window.BILLER_CHARGES || {};
 const BILLER_LATE_CHARGES = window.BILLER_LATE_CHARGES || {};
 const BILLER_ACCOUNT_DIGITS = window.BILLER_ACCOUNT_DIGITS || {};
@@ -188,12 +193,12 @@ function confirmDetails(payload) {
         ["NAME", payload.customer_name],
         ["CP NUMBER", payload.cp_number || "-"],
         ["DUE DATE", payload.due_date || "-"],
-        ["BILL AMOUNT", payload.bill_amt.toFixed(2)],
-        ["LATE CHARGE", payload.amt2.toFixed(2)],
-        ["SERVICE CHARGE", payload.charge.toFixed(2)],
-        ["TOTAL", payload.total.toFixed(2)],
-        ["CASH", payload.cash.toFixed(2)],
-        ["CHANGE", payload.change_amt.toFixed(2)],
+        ["BILL AMOUNT", formatMoney(payload.bill_amt)],
+        ["LATE CHARGE", formatMoney(payload.amt2)],
+        ["SERVICE CHARGE", formatMoney(payload.charge)],
+        ["TOTAL", formatMoney(payload.total)],
+        ["CASH", formatMoney(payload.cash)],
+        ["CHANGE", formatMoney(payload.change_amt)],
     ];
 
     dom.confirmSummary.innerHTML = rows

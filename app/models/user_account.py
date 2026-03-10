@@ -10,7 +10,7 @@ class UserAccount(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     first_name: str = Field(max_length=80)
     last_name: str = Field(max_length=80)
-    phone: str = Field(max_length=20, index=True, unique=True)
+    phone: str = Field(max_length=11, index=True, unique=True)
     pin_hash: str = Field(max_length=128)
     pin_salt: str = Field(max_length=64)
     role: str = Field(default="customer", max_length=20, index=True)
