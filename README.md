@@ -14,6 +14,8 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save
+- DB-backed biller rules (service/late charge) managed in Admin Settings
+- Save protection for unconfigured billers (requires active biller rule)
 
 ## Run
 ```bash

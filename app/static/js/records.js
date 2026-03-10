@@ -113,6 +113,7 @@ function showConfirm(message, title = "Please Confirm") {
 }
 
 const BILLER_CHARGES = window.BILLER_CHARGES || {};
+const BILLER_ACCOUNT_DIGITS = window.BILLER_ACCOUNT_DIGITS || {};
 
 const dom = {
     dialog: document.getElementById("recordDialog"),
@@ -503,6 +504,22 @@ function validatePayload(payload) {
     if (!payload.account) {
         showMessage("Account is required.", "Validation");
         return false;
+    }
+
+    if (BILLER_CHARGES[normalizedBillerKey(payload.biller)] == null) {
+        showMessage("Biller rule is not configured. Please update Admin Settings.", "Validation");
+        return false;
+    }
+    const requiredDigits = BILLER_ACCOUNT_DIGITS[normalizedBillerKey(payload.biller)];
+    if (requiredDigits != null) {
+        const accountDigits = String(payload.account || "").replace(/\D/g, "");
+        if (accountDigits.length !== Number(requiredDigits)) {
+            showMessage(
+                `Account must be exactly ${requiredDigits} digits for ${payload.biller}.`,
+                "Validation"
+            );
+            return false;
+        }
     }
 
     if (!payload.due_date) {

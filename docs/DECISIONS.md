@@ -38,3 +38,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: We need traceability of operational changes directly in admin tooling without relying on external logs.
 - Alternatives considered: reusing auth event logs table, filesystem logs only, no UI exposure.
 - Follow-up: Expand audit coverage to future record status transitions and add filter/search controls on the audit table if volume grows.
+
+- Date: 2026-03-09
+- ID: DEC-005
+- Related task: BPS-208
+- Decision: Replace hardcoded biller charge maps with a DB-backed `biller_rules` directory managed from Admin Settings.
+- Why: New/updated billers should not require code changes and redeploys to keep charge computation accurate.
+- Alternatives considered: keep hardcoded constants, JSON config file in repo, external spreadsheet only.
+- Follow-up: Extend rules to include per-biller required field validation (BPS-203) and add import/export tooling for large rule sets.

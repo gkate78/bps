@@ -50,6 +50,7 @@ A task is done only if:
 1. Correct behavior for role-based users (`admin`, `encoder`, `customer`)
 2. Validation and duplicate detection still pass
 3. Main UI flow is manually tested
+   For auth changes, execute and update `docs/AUTH_TEST_MATRIX.md`.
 4. `./scripts/dev.ps1 check` passes
 5. `docs/BACKLOG.md` and `docs/DECISIONS.md` are updated
 

@@ -213,6 +213,7 @@
 {% block scripts %}
 <script>
 window.BILLER_CHARGES = {{ biller_charges | tojson }};
+window.BILLER_ACCOUNT_DIGITS = {{ biller_account_digits | tojson }};
 </script>
 <script src="/static/js/records.js"></script>
 {% endblock %}
