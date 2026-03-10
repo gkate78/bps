@@ -11,8 +11,8 @@
   - [x] BPS-201.7 Recovery flow: add PIN reset request + OTP confirm + new PIN set
   - [x] BPS-201.8 Auth logging: log signin success/failure, lockout events, OTP verify events
   - [x] BPS-201.9 UI updates: signup/signin templates show OTP and lockout states with clear errors
-  - [x] BPS-201.10 Verification: manual test matrix for happy path, invalid OTP, expired OTP, lockout, reset flow (see `docs/AUTH_TEST_MATRIX.md`)
-- [x] BPS-202 | Theme: Reliability | Outcome: Add transaction audit log (`who`, `when`, `channel`, `status`) | Done when: each record state change writes an audit entry and is viewable in admin
+  - [ ] BPS-201.10 Verification: manual test matrix for happy path, invalid OTP, expired OTP, lockout, reset flow
+- [ ] BPS-202 | Theme: Reliability | Outcome: Add transaction audit log (`who`, `when`, `channel`, `status`) | Done when: each record state change writes an audit entry and is viewable in admin
 - [ ] BPS-203 | Theme: Validation | Outcome: Strengthen counter payment validation by biller rules | Done when: required fields/format are enforced per biller before save
 
 ## NEXT

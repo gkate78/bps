@@ -28,7 +28,7 @@ Sign in with your phone number and 4-digit PIN. After several failed attempts, y
 
     <form method="post" action="/auth/signin" class="auth-form">
         <label>Phone Number
-            <input type="tel" name="phone" value="{{ phone }}" required maxlength="20" placeholder="09XXXXXXXXX">
+            <input type="tel" name="phone" value="{{ phone }}" required minlength="11" maxlength="11" inputmode="numeric" pattern="\d{11}" placeholder="09XXXXXXXXX">
         </label>
         <label>4-digit PIN
             <input type="password" name="pin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
