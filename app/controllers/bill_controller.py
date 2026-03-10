@@ -10,30 +10,8 @@ from sqlalchemy import and_, asc, desc, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.models.biller_rule import BillerRule
 from app.models.bill_record import BillRecord
-
-BILLER_CHARGES = {
-    "MERALCO": 15.0,
-    "CONVERGE": 25.0,
-    "PLDT FIBER": 25.0,
-    "SSS": 30.0,
-    "GLOBE AT HOME": 25.0,
-    "STA MARIA WATER": 15.0,
-    "PLDT": 25.0,
-    "SMART POSTPAID": 25.0,
-    "BPICC": 25.0,
-    "PSA": 30.0,
-    "PRIME WATER": 25.0,
-    "GLOBE POSTPAID": 25.0,
-    "EASY TRIP": 25.0,
-    "AUTO SWEEP RFID": 25.0,
-    "SUN POSTPAID": 25.0,
-    "NORZAGARAY WATER DISTRICT": 25.0,
-}
-
-_BILLER_LATE_CHARGES = {
-    "MERALCO": 35.0,
-}
 
 
 def _parse_date(value: str | None) -> Optional[date]:
@@ -90,19 +68,65 @@ def _normalize_text_fields(payload: dict) -> dict:
     return payload
 
 
-def get_biller_charges() -> dict[str, float]:
-    return dict(BILLER_CHARGES)
+def _normalized_biller_key(value: str) -> str:
+    return str(value or "").strip().upper()
 
 
-def get_biller_late_charges() -> dict[str, float]:
-    return dict(_BILLER_LATE_CHARGES)
+async def _get_biller_rule_maps(db: AsyncSession) -> tuple[dict[str, float], dict[str, float]]:
+    result = await db.execute(select(BillerRule).where(BillerRule.is_active == True))  # noqa: E712
+    rules = result.scalars().all()
+
+    charge_map = {
+        str(item.biller or "").strip().upper(): round(float(item.service_charge or 0), 2)
+        for item in rules
+        if str(item.biller or "").strip()
+    }
+    late_map = {
+        str(item.biller or "").strip().upper(): round(float(item.late_charge or 0), 2)
+        for item in rules
+        if str(item.biller or "").strip()
+    }
+    return charge_map, late_map
 
 
-def _compute_charge(biller: str, bill_amount: float) -> float:
+async def get_biller_charges(db: AsyncSession) -> dict[str, float]:
+    charge_map, _ = await _get_biller_rule_maps(db)
+    return charge_map
+
+
+async def get_biller_late_charges(db: AsyncSession) -> dict[str, float]:
+    _, late_map = await _get_biller_rule_maps(db)
+    return late_map
+
+
+async def get_biller_account_digits(db: AsyncSession) -> dict[str, int]:
+    result = await db.execute(select(BillerRule).where(BillerRule.is_active == True))  # noqa: E712
+    rules = result.scalars().all()
+    return {
+        _normalized_biller_key(item.biller): int(item.account_digits)
+        for item in rules
+        if item.account_digits is not None and int(item.account_digits) > 0
+    }
+
+
+async def has_active_biller_rule(db: AsyncSession, biller: str) -> bool:
+    key = _normalized_biller_key(biller)
+    if not key:
+        return False
+    result = await db.execute(
+        select(BillerRule.id)
+        .where(BillerRule.biller == key)
+        .where(BillerRule.is_active == True)  # noqa: E712
+        .limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
+
+def _compute_charge(biller: str, bill_amount: float, charge_map: dict[str, float]) -> float:
     if not biller or bill_amount <= 0:
         return 0.0
 
-    predefined_charge = BILLER_CHARGES.get(biller.strip().upper())
+    predefined_charge = charge_map.get(biller.strip().upper())
     if predefined_charge is None:
         return 0.0
 
@@ -113,24 +137,29 @@ def _compute_charge(biller: str, bill_amount: float) -> float:
     return round(float(computed), 2)
 
 
-def _compute_late_charge(biller: str, due_date: Optional[date], ref_date: Optional[date] = None) -> float:
+def _compute_late_charge(
+    biller: str,
+    due_date: Optional[date],
+    late_map: dict[str, float],
+    ref_date: Optional[date] = None,
+) -> float:
     if due_date is None:
         return 0.0
     basis_date = ref_date or date.today()
     if due_date >= basis_date:
         return 0.0
-    return round(float(_BILLER_LATE_CHARGES.get(biller.strip().upper(), 0.0)), 2)
+    return round(float(late_map.get(biller.strip().upper(), 0.0)), 2)
 
 
-def _apply_computations(payload: dict) -> dict:
+def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: dict[str, float]) -> dict:
     bill_amt = round(float(payload.get("bill_amt", 0) or 0), 2)
     due_date = payload.get("due_date")
     txn_date = payload.get("txn_date")
-    late_charge = _compute_late_charge(str(payload.get("biller", "") or ""), due_date, txn_date)
+    late_charge = _compute_late_charge(str(payload.get("biller", "") or ""), due_date, late_map, txn_date)
     cash = round(float(payload.get("cash", 0) or 0), 2)
     biller = str(payload.get("biller", "") or "").strip()
 
-    charge = _compute_charge(biller, bill_amt)
+    charge = _compute_charge(biller, bill_amt, charge_map)
     total = round(bill_amt + late_charge + charge, 2)
     change_amt = round(cash - total, 2)
 
@@ -190,7 +219,8 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
     payload["txn_date"] = txn_date
 
     payload = _normalize_text_fields(payload)
-    payload = _apply_computations(payload)
+    charge_map, late_map = await _get_biller_rule_maps(db)
+    payload = _apply_computations(payload, charge_map, late_map)
 
     amount = _normalized_amount(payload)
     if await _is_duplicate_record(
@@ -253,7 +283,8 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
     }
 
     merged = _normalize_text_fields(merged)
-    merged = _apply_computations(merged)
+    charge_map, late_map = await _get_biller_rule_maps(db)
+    merged = _apply_computations(merged, charge_map, late_map)
     amount = _normalized_amount(merged)
     if float(merged.get("bill_amt", 0) or 0) <= 0:
         raise HTTPException(status_code=400, detail="Bill amount is required")
@@ -297,7 +328,9 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
     updates = _apply_computations(
         {
             **updates
-        }
+        },
+        charge_map,
+        late_map,
     )
 
     for key, value in updates.items():
@@ -321,8 +354,12 @@ async def delete_record(db: AsyncSession, record_id: int) -> None:
 
 
 async def get_distinct_billers(db: AsyncSession) -> list[str]:
-    result = await db.execute(select(BillRecord.biller).distinct().order_by(BillRecord.biller.asc()))
-    return [row[0] for row in result.all() if row[0]]
+    records_result = await db.execute(select(BillRecord.biller).distinct().order_by(BillRecord.biller.asc()))
+    record_billers = {row[0] for row in records_result.all() if row[0]}
+
+    rules_result = await db.execute(select(BillerRule.biller).where(BillerRule.is_active == True))  # noqa: E712
+    rule_billers = {row[0] for row in rules_result.all() if row[0]}
+    return sorted(record_billers | rule_billers)
 
 
 async def find_latest_by_account(db: AsyncSession, account: str) -> Optional[BillRecord]:
@@ -450,6 +487,7 @@ async def datatable_query(
 async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
     text = file_bytes.decode("utf-8-sig", errors="ignore")
     reader = csv.DictReader(io.StringIO(text))
+    charge_map, late_map = await _get_biller_rule_maps(db)
 
     created = 0
     skipped = 0
@@ -485,7 +523,11 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
             skipped += 1
             continue
 
-        payload = _apply_computations(payload)
+        if _normalized_biller_key(payload.get("biller", "")) not in charge_map:
+            skipped += 1
+            continue
+
+        payload = _apply_computations(payload, charge_map, late_map)
 
         amount = _normalized_amount(payload)
         is_duplicate = await _is_duplicate_record(
