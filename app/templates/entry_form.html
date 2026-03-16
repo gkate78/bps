@@ -36,7 +36,7 @@
             <label>Account<input type="text" id="account" required></label>
             <label>Biller<input type="text" id="biller" list="billerOptions" required></label>
             <label>Name<input type="text" id="customerName" required></label>
-            <label>CP Number<input type="text" id="cpNumber"></label>
+            <label>CP Number<input type="tel" id="cpNumber" minlength="11" maxlength="11" inputmode="numeric" pattern="\d{11}" placeholder="09XXXXXXXXX"></label>
             <label>Due Date<input type="date" id="dueDate" required></label>
         </div>
 
@@ -47,6 +47,18 @@
             <label>Cash<input type="number" step="0.01" id="cash" min="0"></label>
             <label class="amount-emphasis">Total<input type="number" step="0.01" id="total" readonly></label>
             <label class="amount-emphasis">Change<input type="number" step="0.01" id="changeAmt" readonly></label>
+            <label>Payment Reference<input type="text" id="paymentReference" maxlength="120" placeholder="Real ref from biller/channel"></label>
+            <label>Mode of Payment
+                <select id="paymentMethod">
+                    <option value="">Select mode</option>
+                    <option value="CASH">Cash</option>
+                    <option value="GCASH">GCash</option>
+                    <option value="MAYA">Maya</option>
+                    <option value="BAYAD">Bayad</option>
+                    <option value="BPI_CC">BPI Credit Card</option>
+                    <option value="BPI">BPI</option>
+                </select>
+            </label>
         </div>
 
         <div class="dialog-actions entry-actions">

@@ -18,10 +18,26 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db() -> None:
-    from app.models import BillerRule, BillRecord, BusinessProfile, UserAccount  # noqa: F401
+    from app.models import BillerRule, BillRecord, BusinessProfile, Customer, RecordAuditLog, UserAccount  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        # Enforce unique account on customer_accounts: dedupe (keep one per account) then add index.
+        await conn.execute(
+            text(
+                "DELETE FROM customer_accounts WHERE id NOT IN ("
+                "SELECT MAX(id) FROM customer_accounts GROUP BY account)"
+            )
+        )
+        await conn.execute(
+            text("DROP INDEX IF EXISTS uq_customer_account_biller")
+        )
+        await conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_account "
+                "ON customer_accounts(account)"
+            )
+        )
         # Lightweight migration: add txn_datetime for existing databases.
         columns = (await conn.execute(text("PRAGMA table_info(bill_records)"))).fetchall()
         col_names = {row[1] for row in columns}
@@ -36,6 +52,8 @@ async def init_db() -> None:
                     """
                 )
             )
+        if "payment_reference" not in col_names:
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN payment_reference VARCHAR(120)"))
 
         # Lightweight migration: add receipt settings columns for business_profiles.
         profile_columns = (await conn.execute(text("PRAGMA table_info(business_profiles)"))).fetchall()
@@ -88,55 +106,42 @@ async def init_db() -> None:
         if "locked_until" not in user_col_names:
             await conn.execute(text("ALTER TABLE user_accounts ADD COLUMN locked_until DATETIME"))
 
-        rule_columns = (await conn.execute(text("PRAGMA table_info(biller_rules)"))).fetchall()
-        rule_col_names = {row[1] for row in rule_columns}
-        if "account_digits" not in rule_col_names:
-            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN account_digits INTEGER"))
-
-        # Seed default biller rules when empty.
-        existing_rules = (await conn.execute(text("SELECT COUNT(1) FROM biller_rules"))).scalar_one()
-        if int(existing_rules or 0) == 0:
-            await conn.execute(
-                text(
-                    """
-                    INSERT INTO biller_rules (biller, service_charge, late_charge, account_digits, is_active, created_at, updated_at)
-                    VALUES
-                      ('MERALCO', 15, 35, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('CONVERGE', 25, 0, 13, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('PLDT FIBER', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('SSS', 30, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('GLOBE AT HOME', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('STA MARIA WATER', 15, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('PLDT', 25, 0, 10, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('SMART POSTPAID', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('BPICC', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('PSA', 30, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('PRIME WATER', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('GLOBE POSTPAID', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('EASY TRIP', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('AUTO SWEEP RFID', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('SUN POSTPAID', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-                      ('NORZAGARAY WATER DISTRICT', 25, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                    """
-                )
-            )
+        # Data normalization: keep form text fields uppercase in existing rows.
         await conn.execute(
             text(
                 """
-                UPDATE biller_rules
-                SET account_digits = 13
-                WHERE UPPER(TRIM(biller)) = 'CONVERGE'
-                  AND (account_digits IS NULL OR account_digits <= 0)
+                UPDATE user_accounts
+                SET
+                    first_name = UPPER(TRIM(first_name)),
+                    last_name = UPPER(TRIM(last_name))
                 """
             )
         )
         await conn.execute(
             text(
                 """
-                UPDATE biller_rules
-                SET account_digits = 10
-                WHERE UPPER(TRIM(biller)) = 'PLDT'
-                  AND (account_digits IS NULL OR account_digits <= 0)
+                UPDATE business_profiles
+                SET
+                    business_name = UPPER(TRIM(business_name)),
+                    business_address = UPPER(TRIM(business_address)),
+                    business_phone = CASE WHEN business_phone IS NULL THEN NULL ELSE UPPER(TRIM(business_phone)) END,
+                    business_email = CASE WHEN business_email IS NULL THEN NULL ELSE UPPER(TRIM(business_email)) END,
+                    tin_number = CASE WHEN tin_number IS NULL THEN NULL ELSE UPPER(TRIM(tin_number)) END,
+                    receipt_footer = CASE WHEN receipt_footer IS NULL THEN NULL ELSE UPPER(TRIM(receipt_footer)) END
+                """
+            )
+        )
+        await conn.execute(
+            text(
+                """
+                UPDATE bill_records
+                SET
+                    account = UPPER(TRIM(account)),
+                    biller = UPPER(TRIM(biller)),
+                    customer_name = UPPER(TRIM(customer_name)),
+                    cp_number = UPPER(TRIM(cp_number)),
+                    notes = CASE WHEN notes IS NULL THEN NULL ELSE UPPER(TRIM(notes)) END,
+                    reference = CASE WHEN reference IS NULL THEN NULL ELSE UPPER(TRIM(reference)) END
                 """
             )
         )
