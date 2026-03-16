@@ -25,12 +25,14 @@ from app.controllers.bill_controller import (
     find_latest_by_account,
     get_biller_charges,
     get_biller_late_charges,
+    get_customer_by_account,
     get_distinct_billers,
     get_record,
     has_active_biller_rule,
     import_csv_records,
     reconciliation_summary,
     update_record,
+    upsert_customer_from_record,
 )
 from app.database import get_db
 from app.models import BillerRule, BusinessProfile, RecordAuditLog, UserAccount
@@ -83,6 +85,7 @@ class RecordCreate(BaseModel):
     notes: Optional[str] = None
     reference: Optional[str] = None
     payment_reference: Optional[str] = None
+    payment_method: Optional[str] = None
 
 
 class RecordUpdate(BaseModel):
@@ -102,6 +105,7 @@ class RecordUpdate(BaseModel):
     notes: Optional[str] = None
     reference: Optional[str] = None
     payment_reference: Optional[str] = None
+    payment_method: Optional[str] = None
 
 
 class RecordResponse(RecordCreate):
@@ -683,6 +687,24 @@ async def list_biller_charges(
     return {"biller_charges": await get_biller_charges(db)}
 
 
+@router.get("/api/customers/lookup")
+async def lookup_customer(
+    account: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_data_entry_access),
+):
+    """Lookup by account only (unique). Returns biller, name, phone to prefill. 404 if account does not exist."""
+    customer = await get_customer_by_account(db, account)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Account does not exist")
+    return {
+        "account": customer.account,
+        "biller": customer.biller or "",
+        "customer_name": customer.customer_name or "",
+        "phone": customer.phone or "",
+    }
+
+
 @router.get("/api/records/by-account/{account}")
 async def lookup_by_account(
     account: str,
@@ -738,7 +760,7 @@ async def create_record_endpoint(
     current_user: UserAccount = Depends(require_data_entry_access),
 ):
     if payload.txn_datetime is None:
-        payload.txn_datetime = datetime.utcnow()
+        payload.txn_datetime = datetime.now()
     if payload.txn_date is None:
         payload.txn_date = payload.txn_datetime.date()
 
@@ -751,6 +773,22 @@ async def create_record_endpoint(
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     record = await create_record(db, payload.model_dump())
+    await upsert_customer_from_record(
+        db,
+        account=record.account,
+        biller=record.biller,
+        customer_name=record.customer_name,
+        phone=record.cp_number or "",
+    )
+    await _log_record_audit(
+        db,
+        action="create",
+        status="success",
+        current_user=current_user,
+        channel="web",
+        record_id=record.id,
+        detail=f"reference={record.reference or '-'}",
+    )
     return record
 
 
@@ -771,6 +809,22 @@ async def update_record_endpoint(
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     record = await update_record(db, record_id, updates)
+    await upsert_customer_from_record(
+        db,
+        account=record.account,
+        biller=record.biller,
+        customer_name=record.customer_name,
+        phone=record.cp_number or "",
+    )
+    await _log_record_audit(
+        db,
+        action="update",
+        status="success",
+        current_user=current_user,
+        channel="web",
+        record_id=record_id,
+        detail=f"reference={record.reference or '-'}",
+    )
     return record
 
 

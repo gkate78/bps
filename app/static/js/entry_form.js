@@ -1,3 +1,15 @@
+/** Return current local date/time as YYYY-MM-DDTHH:mm:ss (no timezone) so server stores and returns same, and display matches. */
+function toLocalISOString(d) {
+    const date = d || new Date();
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const h = String(date.getHours()).padStart(2, "0");
+    const min = String(date.getMinutes()).padStart(2, "0");
+    const s = String(date.getSeconds()).padStart(2, "0");
+    return `${y}-${m}-${day}T${h}:${min}:${s}`;
+}
+
 function parseNum(value) {
     const num = Number(value);
     return Number.isFinite(num) ? num : 0;
@@ -39,6 +51,8 @@ const dom = {
     clearBtn: document.getElementById("clearEntryBtn"),
     printReceiptBtn: document.getElementById("printReceiptBtn"),
     saveStatus: document.getElementById("saveStatus"),
+    paymentReference: document.getElementById("paymentReference"),
+    paymentMethod: document.getElementById("paymentMethod"),
 };
 
 function normalizedBillerKey(value) {
@@ -117,21 +131,30 @@ function clearForm() {
     recomputeFinancials();
 }
 
+/** Lookup by account only; if found, fill biller, name, phone. If not, show message so user can enter details (saved to customer DB on save). */
 async function lookupAccountDetails() {
     const account = dom.account.value.trim();
     if (!account) {
+        if (dom.saveStatus) dom.saveStatus.textContent = "";
         return;
     }
 
-    const response = await fetch(`/api/records/by-account/${encodeURIComponent(account)}`);
+    const params = new URLSearchParams({ account });
+    const response = await fetch(`/api/customers/lookup?${params}`);
     if (!response.ok) {
+        if (response.status === 404) {
+            alert("Account does not exist. You may enter the details below.");
+            if (dom.saveStatus) dom.saveStatus.textContent = "Account does not exist. Enter biller, name, and CP number.";
+        }
         return;
     }
 
+    if (dom.saveStatus) dom.saveStatus.textContent = "";
     const data = await response.json();
     dom.biller.value = data.biller || "";
     dom.customerName.value = data.customer_name || "";
-    dom.cpNumber.value = data.cp_number || "";
+    dom.cpNumber.value = data.phone || "";
+    [dom.biller, dom.customerName, dom.cpNumber].forEach(setUppercaseInput);
     recomputeFinancials();
 }
 
@@ -139,6 +162,7 @@ function payloadFromForm() {
     [dom.account, dom.biller, dom.customerName, dom.cpNumber].forEach(setUppercaseInput);
     recomputeFinancials();
     return {
+        txn_datetime: toLocalISOString(),
         account: dom.account.value.trim(),
         biller: dom.biller.value.trim(),
         customer_name: dom.customerName.value.trim(),
@@ -150,6 +174,8 @@ function payloadFromForm() {
         cash: round2(dom.cash.value),
         change_amt: round2(dom.changeAmt.value),
         due_date: dom.dueDate.value || null,
+        payment_reference: dom.paymentReference ? dom.paymentReference.value.trim() || null : null,
+        payment_method: dom.paymentMethod ? (dom.paymentMethod.value || null) : null,
     };
 }
 
@@ -290,13 +316,7 @@ function moveToNextControl(current) {
     el.addEventListener("change", recomputeFinancials);
 });
 
-let lookupTimer = null;
-dom.account.addEventListener("input", () => {
-    if (lookupTimer) {
-        clearTimeout(lookupTimer);
-    }
-    lookupTimer = setTimeout(lookupAccountDetails, 350);
-});
+/* Lookup only when user leaves the account field (blur), not while typing */
 dom.account.addEventListener("blur", lookupAccountDetails);
 
 dom.form.addEventListener("submit", saveEntry);

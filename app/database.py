@@ -18,10 +18,26 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db() -> None:
-    from app.models import BillerRule, BillRecord, BusinessProfile, RecordAuditLog, UserAccount  # noqa: F401
+    from app.models import BillerRule, BillRecord, BusinessProfile, Customer, RecordAuditLog, UserAccount  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        # Enforce unique account on customer_accounts: dedupe (keep one per account) then add index.
+        await conn.execute(
+            text(
+                "DELETE FROM customer_accounts WHERE id NOT IN ("
+                "SELECT MAX(id) FROM customer_accounts GROUP BY account)"
+            )
+        )
+        await conn.execute(
+            text("DROP INDEX IF EXISTS uq_customer_account_biller")
+        )
+        await conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_customer_account "
+                "ON customer_accounts(account)"
+            )
+        )
         # Lightweight migration: add txn_datetime for existing databases.
         columns = (await conn.execute(text("PRAGMA table_info(bill_records)"))).fetchall()
         col_names = {row[1] for row in columns}
