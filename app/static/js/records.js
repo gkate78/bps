@@ -3,6 +3,18 @@ function currency(value) {
     return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Return current local date/time as YYYY-MM-DDTHH:mm:ss (no timezone) so server stores and returns same, and display matches. */
+function toLocalISOString(d) {
+    const date = d || new Date();
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const h = String(date.getHours()).padStart(2, "0");
+    const min = String(date.getMinutes()).padStart(2, "0");
+    const s = String(date.getSeconds()).padStart(2, "0");
+    return `${y}-${m}-${day}T${h}:${min}:${s}`;
+}
+
 function formatDateTime(value) {
     if (!value) {
         return "-";
@@ -25,6 +37,12 @@ function parseNum(value) {
 
 function round2(value) {
     return Math.round((parseNum(value) + Number.EPSILON) * 100) / 100;
+}
+
+function formatStatusPill(value) {
+    const status = String(value || "").toLowerCase();
+    const cls = status === "success" ? "status-success" : "status-failed";
+    return `<span class="status-pill ${cls}">${status || "-"}</span>`;
 }
 
 function showMessage(message, title = "Notice") {
@@ -129,6 +147,8 @@ const dom = {
     dueDate: document.getElementById("dueDate"),
     notes: document.getElementById("notes"),
     reference: document.getElementById("reference"),
+    paymentReference: document.getElementById("paymentReference"),
+    paymentMethod: document.getElementById("paymentMethod"),
 };
 
 const filters = {
@@ -226,6 +246,10 @@ const table = new DataTable("#recordsTable", {
         { data: "customer_name" },
         { data: "bill_amt", render: currency },
         { data: "due_date", render: (d) => d || "-" },
+        {
+            data: null,
+            render: (row) => (row.payment_reference ? "PAID" : "PENDING"),
+        },
         { data: "reference", render: (d) => d || "" },
         {
             data: null,
@@ -241,6 +265,36 @@ const table = new DataTable("#recordsTable", {
     ],
     order: [[1, "desc"]],
 });
+
+const auditTableEl = document.getElementById("auditTable");
+const auditTableInstance = auditTableEl
+    ? new DataTable("#auditTable", {
+        processing: true,
+        ajax: {
+            url: "/api/admin/record-audit",
+            dataSrc: "logs",
+        },
+        pageLength: 10,
+        autoWidth: false,
+        columns: [
+            { data: "created_at", render: formatDateTime },
+            { data: "actor_name", render: (d) => d || "-" },
+            { data: "actor_role", render: (d) => d || "-" },
+            { data: "action", render: (d) => String(d || "").toUpperCase() },
+            { data: "channel", render: (d) => String(d || "").toUpperCase() },
+            { data: "status", render: formatStatusPill },
+            { data: "record_id", render: (d) => (d == null ? "-" : d) },
+            { data: "detail", render: (d) => d || "" },
+        ],
+        order: [[0, "desc"]],
+    })
+    : null;
+
+function reloadAuditLog() {
+    if (auditTableInstance) {
+        auditTableInstance.ajax.reload(null, false);
+    }
+}
 
 const usersDialog = document.getElementById("usersDialog");
 const openUsersBtn = document.getElementById("openUsersBtn");
@@ -368,24 +422,35 @@ function clearForm() {
     dom.amt2.value = "0";
     dom.cash.value = "0";
     dom.reference.value = "";
+     if (dom.paymentReference) {
+        dom.paymentReference.value = "";
+    }
+    if (dom.paymentMethod) {
+        dom.paymentMethod.value = "";
+    }
     recomputeFinancials();
 }
 
+/** Lookup by account only; if found, fill biller, name, phone. If not, show message so user can enter details (saved to customer DB on save). */
 async function lookupAccountDetails() {
     const account = dom.account.value.trim();
     if (!account) {
         return;
     }
 
-    const response = await fetch(`/api/records/by-account/${encodeURIComponent(account)}`);
+    const params = new URLSearchParams({ account });
+    const response = await fetch(`/api/customers/lookup?${params}`);
     if (!response.ok) {
+        if (response.status === 404) {
+            alert("Account does not exist. You may enter the details below.");
+        }
         return;
     }
 
     const data = await response.json();
     dom.biller.value = valueOrEmpty(data.biller);
     dom.customerName.value = valueOrEmpty(data.customer_name);
-    dom.cpNumber.value = valueOrEmpty(data.cp_number);
+    dom.cpNumber.value = valueOrEmpty(data.phone);
     recomputeFinancials();
 }
 
@@ -416,6 +481,12 @@ async function openEdit(id) {
     dom.dueDate.value = valueOrEmpty(data.due_date);
     dom.notes.value = valueOrEmpty(data.notes);
     dom.reference.value = valueOrEmpty(data.reference);
+    if (dom.paymentReference) {
+        dom.paymentReference.value = valueOrEmpty(data.payment_reference);
+    }
+    if (dom.paymentMethod) {
+        dom.paymentMethod.value = valueOrEmpty(data.payment_method || "");
+    }
     updateCurrentDateTime();
     recomputeFinancials();
 
@@ -431,15 +502,18 @@ async function removeRecord(id) {
     const response = await fetch(`/api/records/${id}`, { method: "DELETE" });
     if (!response.ok) {
         await showMessage("Delete failed. Please try again.", "Delete Failed");
+        reloadAuditLog();
         return;
     }
 
     table.ajax.reload(null, false);
+    reloadAuditLog();
 }
 
 function payloadFromForm() {
     recomputeFinancials();
     return {
+        txn_datetime: toLocalISOString(),
         txn_date: dom.txnDate.value,
         account: dom.account.value.trim(),
         biller: dom.biller.value.trim(),
@@ -454,12 +528,19 @@ function payloadFromForm() {
         due_date: dom.dueDate.value || null,
         notes: dom.notes.value.trim() || null,
         reference: dom.reference.value.trim() || null,
+        payment_reference: dom.paymentReference ? dom.paymentReference.value.trim() || null : null,
+        payment_method: dom.paymentMethod ? (dom.paymentMethod.value || null) : null,
     };
 }
 
 function validatePayload(payload) {
     if (!payload.txn_date) {
         showMessage("Transaction date is required.", "Validation");
+        return false;
+    }
+
+    if (payload.cp_number && !/^\d{11}$/.test(payload.cp_number)) {
+        showMessage("CP number must be exactly 11 digits.", "Validation");
         return false;
     }
 
@@ -533,11 +614,13 @@ async function saveRecord(event) {
         } else {
             await showMessage(err.detail || "Save failed.", "Save Failed");
         }
+        reloadAuditLog();
         return;
     }
 
     dom.dialog.close();
     table.ajax.reload(null, false);
+    reloadAuditLog();
 }
 
 async function importCsv(event) {
@@ -564,12 +647,14 @@ async function importCsv(event) {
 
     if (!response.ok) {
         statusEl.textContent = "Import failed";
+        reloadAuditLog();
         return;
     }
 
     const result = await response.json();
     statusEl.textContent = `Imported ${result.created}, duplicates ${result.duplicates || 0}, skipped ${result.skipped}`;
     table.ajax.reload();
+    reloadAuditLog();
     fileInput.value = "";
 }
 
@@ -592,6 +677,11 @@ document.getElementById("clearFiltersBtn").addEventListener("click", () => {
     table.search("").draw();
 });
 
+const refreshAuditBtn = document.getElementById("refreshAuditBtn");
+if (refreshAuditBtn) {
+    refreshAuditBtn.addEventListener("click", reloadAuditLog);
+}
+
 Object.values(filters).forEach((el) => {
     el.addEventListener("change", () => table.ajax.reload());
 });
@@ -601,13 +691,6 @@ Object.values(filters).forEach((el) => {
     el.addEventListener("change", recomputeFinancials);
 });
 
-let lookupTimer = null;
-dom.account.addEventListener("input", () => {
-    if (lookupTimer) {
-        clearTimeout(lookupTimer);
-    }
-    lookupTimer = setTimeout(lookupAccountDetails, 350);
-});
 dom.account.addEventListener("blur", lookupAccountDetails);
 
 updateCurrentDateTime();

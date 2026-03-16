@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Processing & Reconciliation{% endblock %}
+{% block topbar_title %}Processing & Reconciliation{% endblock %}
+{% block topbar_subtitle %}Set payment references and view EOD report.{% endblock %}
+{% block topbar_actions %}
+<a href="/admin/records" class="btn btn-secondary">Records</a>
+<a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
+<form method="post" action="/auth/logout" class="inline-action">
+    <button type="submit" class="btn btn-secondary">Logout</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <h2>EOD Reconciliation Report</h2>
+    </div>
+    <div class="controls-grid">
+        <div class="field">
+            <label for="reportDate">Report date</label>
+            <input type="date" id="reportDate">
+        </div>
+        <div class="field field-actions">
+            <button type="button" class="btn btn-primary" id="loadReportBtn">Load report</button>
+        </div>
+    </div>
+    <div id="reportBlock" class="is-hidden">
+        <table class="report-table">
+            <tbody>
+                <tr><th>Date</th><td id="reportDateDisp"></td></tr>
+                <tr><th>Collected</th><td id="reportCollected"></td></tr>
+                <tr><th>Processed</th><td id="reportProcessed"></td></tr>
+                <tr><th>Pending</th><td id="reportPending"></td></tr>
+                <tr><th>Record count</th><td id="reportRecordCount"></td></tr>
+                <tr><th>Processed count</th><td id="reportProcessedCount"></td></tr>
+                <tr><th>Status</th><td id="reportFlag"></td></tr>
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Transactions</h2>
+    </div>
+    <div class="controls-grid">
+        <div class="field">
+            <label for="billerFilter">Biller</label>
+            <select id="billerFilter">
+                <option value="">All billers</option>
+                {% for biller in billers %}
+                <option value="{{ biller }}">{{ biller }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="fromDateFilter">Txn Date From</label>
+            <input type="date" id="fromDateFilter">
+        </div>
+        <div class="field">
+            <label for="toDateFilter">Txn Date To</label>
+            <input type="date" id="toDateFilter">
+        </div>
+        <div class="field field-actions">
+            <button type="button" class="btn btn-secondary" id="clearFiltersBtn">Clear filters</button>
+        </div>
+    </div>
+    <table id="processingTable" class="display" style="width:100%">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Txn Date</th>
+                <th>Account</th>
+                <th>Biller</th>
+                <th>Name</th>
+                <th>Total</th>
+                <th>Receipt ref</th>
+                <th>Payment ref</th>
+                <th>Set ref</th>
+            </tr>
+        </thead>
+    </table>
+</section>
+
+<dialog id="paymentRefDialog" class="app-dialog">
+    <div class="app-dialog-head">
+        <h3>Set payment reference</h3>
+        <button type="button" class="btn btn-ghost" id="closePaymentRefBtn">Close</button>
+    </div>
+    <form id="paymentRefForm" onsubmit="return false;">
+        <input type="hidden" id="paymentRefRecordId">
+        <label>Payment reference (from biller/channel)
+            <input type="text" id="paymentRefInput" maxlength="120" placeholder="e.g. GC-12345">
+        </label>
+        <div class="dialog-actions">
+            <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/processing.js"></script>
+{% endblock %}

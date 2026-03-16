@@ -17,7 +17,7 @@ Track meaningful technical and product decisions so future changes stay consiste
 
 - Date: 2026-03-07
 - ID: DEC-001
-- Related task: BPS-130
+- Related task: N/A (Process)
 - Decision: Standardize workflow around docs-based backlog + decision log + PowerShell helper script.
 - Why: Keep planning and delivery consistent without introducing heavyweight tooling.
 - Alternatives considered: external PM tools only, ad-hoc TODO files.
@@ -30,6 +30,22 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The PDF captures business intent, risks, and sequencing better than generic placeholders.
 - Alternatives considered: continue with placeholder backlog, or prioritize by technical ease only.
 - Follow-up: Re-rank `NOW/NEXT/LATER` every Friday based on incident risk, reconciliation impact, and operational speed.
+
+- Date: 2026-03-09
+- ID: DEC-003
+- Related task: BPS-203
+- Decision: Enforce strict numeric length rules for identity/contact inputs (`phone` and optional `cp_number`) with both frontend and backend validation.
+- Why: Prevent invalid data at source and avoid inconsistent records caused by client-side bypasses.
+- Alternatives considered: frontend-only validation, backend-only validation.
+- Follow-up: Keep templates, JS validators, and API models aligned whenever field rules change.
+
+- Date: 2026-03-09
+- ID: DEC-004
+- Related task: BPS-203
+- Decision: Standardize text-form input persistence to uppercase and normalize existing DB rows during init.
+- Why: Improve data consistency for search, reporting, and receipt output.
+- Alternatives considered: preserve input casing, normalize only at display time.
+- Follow-up: Ensure new text fields are included in normalization rules.
 
 - Date: 2026-03-09
 - ID: DEC-005
@@ -54,3 +70,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Admins need a single prioritized view for payments that are at risk (overdue/near-due) rather than manually toggling multiple filters.
 - Alternatives considered: separate urgent-only page with custom queries; reusing only the "overdue" filter without near-due items.
 - Follow-up: Consider making the urgency window configurable and adding SLA countdown badges in the UI if operational needs increase.
+
+- Date: 2026-03-10
+- ID: DEC-008
+- Related task: BPS-205
+- Decision: (1) Keep `reference` as the auto-generated value used on customer receipts only. (2) Add `payment_reference` as a separate column set by staff when a transaction has been processed (e.g. biller/channel ref); when non-empty, the record counts as “processed” for reconciliation. (3) EOD reconciliation: collected = sum of total for date; processed = sum of total where payment_reference is set; pending = collected − processed; flag = match / short / pending. (4) Provide a Processing dashboard to update payment references and view the EOD report; optional “cash on hand” can be added later.
+- Why: Receipt reference must stay stable for customers; real processing refs come from billers/channels and are needed for reconciliation and audit.
+- Alternatives considered: reusing a single reference for both receipt and processing; reconciliation without a processed marker.
+- Follow-up: Optional cash-on-hand vs collected comparison; export of reconciliation report.

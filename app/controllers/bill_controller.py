@@ -12,6 +12,7 @@ from sqlmodel import select
 
 from app.models.biller_rule import BillerRule
 from app.models.bill_record import BillRecord
+from app.models.customer import Customer
 
 
 def _parse_date(value: str | None) -> Optional[date]:
@@ -213,7 +214,7 @@ async def _generate_reference(db: AsyncSession, txn_date: date) -> str:
 
 
 async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
-    txn_datetime = payload.get("txn_datetime") or datetime.utcnow()
+    txn_datetime = payload.get("txn_datetime") or datetime.now()
     txn_date = payload.get("txn_date") or txn_datetime.date()
     payload["txn_datetime"] = txn_datetime
     payload["txn_date"] = txn_date
@@ -255,6 +256,8 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         due_date=payload.get("due_date"),
         notes=payload.get("notes"),
         reference=reference,
+        payment_reference=payload.get("payment_reference"),
+        payment_method=payload.get("payment_method"),
     )
 
     db.add(record)
@@ -323,6 +326,8 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
             "due_date": updates.get("due_date", record.due_date),
             "notes": updates.get("notes", record.notes),
             "reference": updates.get("reference", record.reference),
+            "payment_reference": updates.get("payment_reference", record.payment_reference),
+            "payment_method": updates.get("payment_method", record.payment_method),
         }
     )
     updates = _apply_computations(
@@ -339,7 +344,7 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
     if not record.reference:
         record.reference = await _generate_reference(db, record.txn_date)
 
-    record.updated_at = datetime.utcnow()
+    record.updated_at = datetime.now()
 
     db.add(record)
     await db.commit()
@@ -371,6 +376,96 @@ async def find_latest_by_account(db: AsyncSession, account: str) -> Optional[Bil
     )
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def get_customer_by_account(db: AsyncSession, account: str) -> Optional[Customer]:
+    """Return the customer for this account (account is unique). Used to prefill form when user enters account."""
+    stmt = select(Customer).where(Customer.account == account.strip())
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def upsert_customer_from_record(
+    db: AsyncSession,
+    *,
+    account: str,
+    biller: str,
+    customer_name: str,
+    phone: str,
+) -> Customer:
+    """Insert or update customer_accounts by account (unique). New accounts saved so next entry can auto-fill."""
+    account = account.strip()
+    biller = (biller or "").strip()
+    customer_name = (customer_name or "").strip()
+    phone = (phone or "").strip()[:11]
+    existing = await get_customer_by_account(db, account)
+    if existing:
+        existing.biller = biller or existing.biller
+        existing.customer_name = customer_name or existing.customer_name
+        existing.phone = phone or existing.phone
+        existing.updated_at = datetime.utcnow()
+        db.add(existing)
+        await db.commit()
+        await db.refresh(existing)
+        return existing
+    customer = Customer(
+        account=account,
+        biller=biller,
+        customer_name=customer_name,
+        phone=phone,
+    )
+    db.add(customer)
+    await db.commit()
+    await db.refresh(customer)
+    return customer
+
+
+async def reconciliation_summary(db: AsyncSession, for_date: date) -> dict:
+    """EOD summary: collected (sum total), processed (sum total where payment_reference set), pending, counts, flag."""
+    base = (
+        select(
+            func.coalesce(func.sum(BillRecord.total), 0).label("collected"),
+            func.count().label("record_count"),
+        )
+        .select_from(BillRecord)
+        .where(BillRecord.txn_date == for_date)
+    )
+    row = (await db.execute(base)).one()
+    collected = round(float(row.collected), 2)
+    record_count = int(row.record_count or 0)
+
+    processed_q = (
+        select(
+            func.coalesce(func.sum(BillRecord.total), 0).label("processed"),
+            func.count().label("processed_count"),
+        )
+        .select_from(BillRecord)
+        .where(
+            BillRecord.txn_date == for_date,
+            BillRecord.payment_reference.is_not(None),
+            BillRecord.payment_reference != "",
+        )
+    )
+    proc_row = (await db.execute(processed_q)).one()
+    processed = round(float(proc_row.processed), 2)
+    processed_count = int(proc_row.processed_count or 0)
+
+    pending = round(collected - processed, 2)
+    if abs(processed - collected) < 0.01:
+        flag = "match"
+    elif processed > collected:
+        flag = "short"
+    else:
+        flag = "pending"
+    return {
+        "date": for_date.isoformat(),
+        "collected": collected,
+        "processed": processed,
+        "pending": pending,
+        "record_count": record_count,
+        "processed_count": processed_count,
+        "flag": flag,
+    }
 
 
 async def datatable_query(
@@ -448,6 +543,8 @@ async def datatable_query(
         "change_amt": BillRecord.change_amt,
         "due_date": BillRecord.due_date,
         "reference": BillRecord.reference,
+        "payment_reference": BillRecord.payment_reference,
+        "payment_method": BillRecord.payment_method,
         "id": BillRecord.id,
     }
     sort_col = order_map.get(order_column, BillRecord.txn_datetime)
@@ -478,6 +575,8 @@ async def datatable_query(
             "due_date": r.due_date.isoformat() if r.due_date else "",
             "notes": r.notes or "",
             "reference": r.reference or "",
+            "payment_reference": r.payment_reference or "",
+            "payment_method": r.payment_method or "",
         }
         for r in rows
     ]
@@ -552,6 +651,14 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
 
         db.add(BillRecord(**payload))
         created += 1
+        # Keep customer_accounts in sync so lookup can prefill for this account
+        await upsert_customer_from_record(
+            db,
+            account=payload["account"],
+            biller=payload["biller"],
+            customer_name=payload["customer_name"],
+            phone=payload.get("cp_number", ""),
+        )
 
     await db.commit()
     return {"created": created, "skipped": skipped, "duplicates": duplicates}

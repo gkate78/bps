@@ -342,6 +342,11 @@ input[readonly] {
     text-transform: none;
 }
 
+.audit-grid td,
+.audit-grid th {
+    text-transform: none;
+}
+
 .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     letter-spacing: 0.2px;
@@ -366,6 +371,27 @@ input[readonly] {
     background: #edf7ea;
     color: #235b2a;
     border: 1px solid #cfe9cc;
+}
+
+.status-pill {
+    display: inline-block;
+    padding: 0.15rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.status-success {
+    background: #e9f9ee;
+    color: #1e6a33;
+    border: 1px solid #c9ebd4;
+}
+
+.status-failed {
+    background: #fff0f0;
+    color: #8c1d1d;
+    border: 1px solid #ffd0d0;
 }
 
 .entry-form {
@@ -463,6 +489,23 @@ input[readonly] {
         grid-template-columns: repeat(2, minmax(170px, 1fr));
     }
 }
+
+.report-table {
+    margin-top: 0.75rem;
+    border-collapse: collapse;
+}
+.report-table th {
+    text-align: left;
+    padding: 0.35rem 0.75rem 0.35rem 0;
+    color: var(--muted);
+    font-weight: 600;
+}
+.report-table td {
+    padding: 0.35rem 0.75rem 0.35rem 0;
+}
+.report-flag-match { color: #0d7a0d; font-weight: 600; }
+.report-flag-pending { color: #b86a00; font-weight: 600; }
+.report-flag-short { color: #b91c1c; font-weight: 600; }
 
 @media (max-width: 680px) {
     .topbar {
