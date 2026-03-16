@@ -81,6 +81,7 @@
                 <th>Name</th>
                 <th>Bill Amt</th>
                 <th>Due Date</th>
+                <th>Status</th>
                 <th>Reference</th>
                 <th>Actions</th>
             </tr>
@@ -202,6 +203,18 @@
             <label>Cash<input type="number" step="0.01" id="cash" value="0" min="0"></label>
             <label class="amount-emphasis">Change<input type="number" step="0.01" id="changeAmt" value="0" readonly></label>
             <label>Reference<input type="text" id="reference" placeholder="Auto-generate if blank"></label>
+            <label>Payment Reference<input type="text" id="paymentReference" maxlength="120" placeholder="Real ref from biller/channel"></label>
+            <label>Mode of Payment
+                <select id="paymentMethod">
+                    <option value="">Select mode</option>
+                    <option value="CASH">Cash</option>
+                    <option value="GCASH">GCash</option>
+                    <option value="MAYA">Maya</option>
+                    <option value="BAYAD">Bayad</option>
+                    <option value="BPI_CC">BPI Credit Card</option>
+                    <option value="BPI">BPI</option>
+                </select>
+            </label>
             <label class="full">Notes<textarea id="notes" rows="2"></textarea></label>
         </div>
 

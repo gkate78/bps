@@ -3,6 +3,18 @@ function currency(value) {
     return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/** Return current local date/time as YYYY-MM-DDTHH:mm:ss (no timezone) so server stores and returns same, and display matches. */
+function toLocalISOString(d) {
+    const date = d || new Date();
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const h = String(date.getHours()).padStart(2, "0");
+    const min = String(date.getMinutes()).padStart(2, "0");
+    const s = String(date.getSeconds()).padStart(2, "0");
+    return `${y}-${m}-${day}T${h}:${min}:${s}`;
+}
+
 function formatDateTime(value) {
     if (!value) {
         return "-";
@@ -135,6 +147,8 @@ const dom = {
     dueDate: document.getElementById("dueDate"),
     notes: document.getElementById("notes"),
     reference: document.getElementById("reference"),
+    paymentReference: document.getElementById("paymentReference"),
+    paymentMethod: document.getElementById("paymentMethod"),
 };
 
 const filters = {
@@ -232,6 +246,10 @@ const table = new DataTable("#recordsTable", {
         { data: "customer_name" },
         { data: "bill_amt", render: currency },
         { data: "due_date", render: (d) => d || "-" },
+        {
+            data: null,
+            render: (row) => (row.payment_reference ? "PAID" : "PENDING"),
+        },
         { data: "reference", render: (d) => d || "" },
         {
             data: null,
@@ -404,24 +422,35 @@ function clearForm() {
     dom.amt2.value = "0";
     dom.cash.value = "0";
     dom.reference.value = "";
+     if (dom.paymentReference) {
+        dom.paymentReference.value = "";
+    }
+    if (dom.paymentMethod) {
+        dom.paymentMethod.value = "";
+    }
     recomputeFinancials();
 }
 
+/** Lookup by account only; if found, fill biller, name, phone. If not, show message so user can enter details (saved to customer DB on save). */
 async function lookupAccountDetails() {
     const account = dom.account.value.trim();
     if (!account) {
         return;
     }
 
-    const response = await fetch(`/api/records/by-account/${encodeURIComponent(account)}`);
+    const params = new URLSearchParams({ account });
+    const response = await fetch(`/api/customers/lookup?${params}`);
     if (!response.ok) {
+        if (response.status === 404) {
+            alert("Account does not exist. You may enter the details below.");
+        }
         return;
     }
 
     const data = await response.json();
     dom.biller.value = valueOrEmpty(data.biller);
     dom.customerName.value = valueOrEmpty(data.customer_name);
-    dom.cpNumber.value = valueOrEmpty(data.cp_number);
+    dom.cpNumber.value = valueOrEmpty(data.phone);
     recomputeFinancials();
 }
 
@@ -452,6 +481,12 @@ async function openEdit(id) {
     dom.dueDate.value = valueOrEmpty(data.due_date);
     dom.notes.value = valueOrEmpty(data.notes);
     dom.reference.value = valueOrEmpty(data.reference);
+    if (dom.paymentReference) {
+        dom.paymentReference.value = valueOrEmpty(data.payment_reference);
+    }
+    if (dom.paymentMethod) {
+        dom.paymentMethod.value = valueOrEmpty(data.payment_method || "");
+    }
     updateCurrentDateTime();
     recomputeFinancials();
 
@@ -478,6 +513,7 @@ async function removeRecord(id) {
 function payloadFromForm() {
     recomputeFinancials();
     return {
+        txn_datetime: toLocalISOString(),
         txn_date: dom.txnDate.value,
         account: dom.account.value.trim(),
         biller: dom.biller.value.trim(),
@@ -492,6 +528,8 @@ function payloadFromForm() {
         due_date: dom.dueDate.value || null,
         notes: dom.notes.value.trim() || null,
         reference: dom.reference.value.trim() || null,
+        payment_reference: dom.paymentReference ? dom.paymentReference.value.trim() || null : null,
+        payment_method: dom.paymentMethod ? (dom.paymentMethod.value || null) : null,
     };
 }
 
@@ -653,13 +691,6 @@ Object.values(filters).forEach((el) => {
     el.addEventListener("change", recomputeFinancials);
 });
 
-let lookupTimer = null;
-dom.account.addEventListener("input", () => {
-    if (lookupTimer) {
-        clearTimeout(lookupTimer);
-    }
-    lookupTimer = setTimeout(lookupAccountDetails, 350);
-});
 dom.account.addEventListener("blur", lookupAccountDetails);
 
 updateCurrentDateTime();

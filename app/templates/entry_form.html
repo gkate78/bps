@@ -47,6 +47,18 @@
             <label>Cash<input type="number" step="0.01" id="cash" min="0"></label>
             <label class="amount-emphasis">Total<input type="number" step="0.01" id="total" readonly></label>
             <label class="amount-emphasis">Change<input type="number" step="0.01" id="changeAmt" readonly></label>
+            <label>Payment Reference<input type="text" id="paymentReference" maxlength="120" placeholder="Real ref from biller/channel"></label>
+            <label>Mode of Payment
+                <select id="paymentMethod">
+                    <option value="">Select mode</option>
+                    <option value="CASH">Cash</option>
+                    <option value="GCASH">GCash</option>
+                    <option value="MAYA">Maya</option>
+                    <option value="BAYAD">Bayad</option>
+                    <option value="BPI_CC">BPI Credit Card</option>
+                    <option value="BPI">BPI</option>
+                </select>
+            </label>
         </div>
 
         <div class="dialog-actions entry-actions">
