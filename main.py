@@ -23,10 +23,12 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+_behind_https = os.getenv("BEHIND_HTTPS", "").strip().lower() in ("1", "true", "yes")
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("SESSION_SECRET", "dev-only-change-me"),
     same_site="lax",
+    https_only=_behind_https,
 )
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
