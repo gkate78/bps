@@ -1,4 +1,5 @@
 import os
+import inspect
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -24,12 +25,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 _behind_https = os.getenv("BEHIND_HTTPS", "").strip().lower() in ("1", "true", "yes")
-app.add_middleware(
-    SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET", "dev-only-change-me"),
-    same_site="lax",
-    https_only=_behind_https,
-)
+session_kwargs = {
+    "secret_key": os.getenv("SESSION_SECRET", "dev-only-change-me"),
+    "same_site": "lax",
+}
+# Backward-compatible: older Starlette may not support `https_only`.
+if "https_only" in inspect.signature(SessionMiddleware.__init__).parameters:
+    session_kwargs["https_only"] = _behind_https
+
+app.add_middleware(SessionMiddleware, **session_kwargs)
 
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(auth_router)
