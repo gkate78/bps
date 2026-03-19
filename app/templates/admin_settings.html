@@ -63,6 +63,11 @@
     <div class="panel-head">
         <h2>Biller Rules</h2>
     </div>
+    <form method="post" action="/admin/settings/biller-rules/import-csv" class="inline-form" enctype="multipart/form-data" style="margin-bottom:0.8rem;">
+        <input type="file" name="file" accept=".csv" required>
+        <button type="submit" class="btn btn-secondary">Import Biller Rules CSV</button>
+        <span class="status-text">Headers: BILLER, SERVICE_CHARGE, LATE_CHARGE, ACCOUNT_DIGITS, IS_ACTIVE</span>
+    </form>
     <form method="post" action="/admin/settings/biller-rules" class="auth-form">
         <label>Biller
             <input type="text" name="biller" required maxlength="120" placeholder="e.g., MERALCO">
