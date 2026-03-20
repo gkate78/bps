@@ -50,7 +50,7 @@
         <label for="settings_business_phone">Business Phone</label>
         <input id="settings_business_phone" type="tel" name="business_phone" value="{{ business_profile.business_phone if business_profile else '' }}" maxlength="40" inputmode="tel" autocomplete="section-business tel">
         <label for="settings_business_email">Business Email</label>
-        <input id="settings_business_email" type="email" name="business_email" value="{{ business_profile.business_email if business_profile else '' }}" maxlength="120" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false" data-1p-ignore data-lpignore="true">
+        <input id="settings_business_email" type="email" name="business_email" value="{{ business_profile.business_email if business_profile else '' }}" maxlength="120" inputmode="email" autocomplete="email" autocapitalize="none" spellcheck="false" data-1p-ignore data-lpignore="true">
         <label>TIN Number
             <input type="text" name="tin_number" value="{{ business_profile.tin_number if business_profile else '' }}" maxlength="64">
         </label>
