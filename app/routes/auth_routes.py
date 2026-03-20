@@ -11,6 +11,7 @@ from sqlmodel import select
 from app.auth import (
     get_current_user_optional,
     hash_pin,
+    is_business_owner,
     normalize_phone,
     resolve_role_from_phone,
     validate_phone,
@@ -30,6 +31,12 @@ PIN_LOCKOUT_MINUTES = int(os.getenv("PIN_LOCKOUT_MINUTES", "15"))
 
 def _normalize_text(value: str) -> str:
     return value.strip().upper()
+
+
+def _normalize_business_email(value: str) -> Optional[str]:
+    """Strip only; do not uppercase (emails are case-insensitive but users expect normal casing)."""
+    s = (value or "").strip()
+    return s or None
 
 
 def _render_signup(
@@ -710,7 +717,7 @@ async def admin_signup_submit(
         business_name=cleaned_business_name,
         business_address=cleaned_business_address,
         business_phone=_normalize_text(business_phone) or None,
-        business_email=_normalize_text(business_email) or None,
+        business_email=_normalize_business_email(business_email),
         tin_number=_normalize_text(tin_number) or None,
         receipt_footer=_normalize_text(receipt_footer) or None,
     )
@@ -720,7 +727,7 @@ async def admin_signup_submit(
     await db.refresh(user)
 
     request.session["user_id"] = user.id
-    return RedirectResponse(url="/dashboard", status_code=303)
+    return RedirectResponse(url="/admin/settings?welcome=1", status_code=303)
 
 
 @router.get("/auth/signin", response_class=HTMLResponse, include_in_schema=False)
@@ -848,11 +855,16 @@ async def logout(request: Request):
 
 
 @router.get("/dashboard", include_in_schema=False)
-async def dashboard(current_user: Optional[UserAccount] = Depends(get_current_user_optional)):
+async def dashboard(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
     if not current_user:
         return RedirectResponse(url="/auth/signin", status_code=303)
 
     if current_user.role == "admin":
+        return RedirectResponse(url="/admin/records", status_code=303)
+    if await is_business_owner(db, current_user.id):
         return RedirectResponse(url="/admin/records", status_code=303)
     if current_user.role == "encoder":
         return RedirectResponse(url="/entry/form", status_code=303)
@@ -869,6 +881,8 @@ async def customer_dashboard(
         return RedirectResponse(url="/auth/signin", status_code=303)
 
     if current_user.role == "admin":
+        return RedirectResponse(url="/admin/records", status_code=303)
+    if await is_business_owner(db, current_user.id):
         return RedirectResponse(url="/admin/records", status_code=303)
     if current_user.role == "encoder":
         return RedirectResponse(url="/entry/form", status_code=303)

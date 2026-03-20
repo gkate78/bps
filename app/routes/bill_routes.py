@@ -14,9 +14,10 @@ from sqlmodel import select
 from app.auth import (
     get_current_user_optional,
     hash_pin,
+    is_business_owner,
     normalize_phone,
-    require_admin,
     require_data_entry_access,
+    require_owner_or_admin,
     validate_phone,
     validate_pin_policy,
 )
@@ -60,6 +61,11 @@ RECEIPT_FIELD_KEYS = (
 
 def _normalize_text(value: str) -> str:
     return value.strip().upper()
+
+
+def _normalize_business_email(value: str) -> Optional[str]:
+    s = (value or "").strip()
+    return s or None
 
 
 def _is_valid_cp_number(value: Optional[str]) -> bool:
@@ -155,7 +161,9 @@ async def _required_account_digits_for_biller(db: AsyncSession, biller: str) -> 
 async def _get_receipt_business_profile(
     db: AsyncSession, current_user: Optional[UserAccount]
 ) -> Optional[BusinessProfile]:
-    if current_user and current_user.role == "admin":
+    if current_user and (
+        current_user.role == "admin" or await is_business_owner(db, current_user.id)
+    ):
         profile = await _get_profile_for_admin(db, current_user.id)
         if profile:
             return profile
@@ -242,7 +250,7 @@ async def admin_records_page(
     ):
     if not current_user:
         return RedirectResponse(url="/auth/signin", status_code=303)
-    if current_user.role != "admin":
+    if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
         return RedirectResponse(url="/customer/dashboard", status_code=303)
 
     billers = await get_distinct_billers(db)
@@ -267,7 +275,7 @@ async def admin_processing_page(
 ):
     if not current_user:
         return RedirectResponse(url="/auth/signin", status_code=303)
-    if current_user.role != "admin":
+    if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
         return RedirectResponse(url="/customer/dashboard", status_code=303)
     billers = await get_distinct_billers(db)
     return templates.TemplateResponse(
@@ -280,7 +288,7 @@ async def admin_processing_page(
 async def get_reconciliation_summary(
     summary_date: Optional[date] = Query(default=None),
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     for_date = summary_date or date.today()
     return await reconciliation_summary(db, for_date)
@@ -290,10 +298,12 @@ async def get_reconciliation_summary(
 async def admin_settings_page(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_owner_or_admin),
 ):
     profile = await _get_profile_for_admin(db, current_user.id)
     biller_rules = await _list_biller_rules(db)
+    show_welcome_guide = request.query_params.get("welcome", "").strip() == "1"
+    needs_biller_setup = not any(getattr(r, "is_active", False) for r in biller_rules)
     return templates.TemplateResponse(
         "admin_settings.html",
         {
@@ -309,6 +319,8 @@ async def admin_settings_page(
             "biller_rules": biller_rules,
             "error": request.query_params.get("error", "").strip(),
             "success": request.query_params.get("success", "").strip(),
+            "show_welcome_guide": show_welcome_guide,
+            "needs_biller_setup": needs_biller_setup,
         },
     )
 
@@ -329,7 +341,7 @@ async def update_business_settings(
     receipt_show_business_email: Optional[str] = Form(None),
     receipt_show_business_tin: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
-    current_user: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_owner_or_admin),
 ):
     cleaned_name = _normalize_text(business_name)
     cleaned_address = _normalize_text(business_address)
@@ -345,7 +357,7 @@ async def update_business_settings(
             business_name=cleaned_name,
             business_address=cleaned_address,
             business_phone=_normalize_text(business_phone) or None,
-            business_email=_normalize_text(business_email) or None,
+            business_email=_normalize_business_email(business_email),
             tin_number=_normalize_text(tin_number) or None,
             receipt_footer=_normalize_text(receipt_footer) or None,
             receipt_show_headings=receipt_show_headings is not None,
@@ -360,7 +372,7 @@ async def update_business_settings(
         profile.business_name = cleaned_name
         profile.business_address = cleaned_address
         profile.business_phone = _normalize_text(business_phone) or None
-        profile.business_email = _normalize_text(business_email) or None
+        profile.business_email = _normalize_business_email(business_email)
         profile.tin_number = _normalize_text(tin_number) or None
         profile.receipt_footer = _normalize_text(receipt_footer) or None
         profile.receipt_show_headings = receipt_show_headings is not None
@@ -384,7 +396,7 @@ async def create_encoder_user(
     phone: str = Form(...),
     pin: str = Form(...),
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     cleaned_first = _normalize_text(first_name)
     cleaned_last = _normalize_text(last_name)
@@ -435,7 +447,7 @@ async def upsert_biller_rule(
     account_digits: Optional[int] = Form(None),
     is_active: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     cleaned_biller = biller.strip().upper()
     if not cleaned_biller:
@@ -471,7 +483,7 @@ async def upsert_biller_rule(
 async def import_biller_rules_csv(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     if not file.filename or not file.filename.lower().endswith(".csv"):
         return RedirectResponse(url="/admin/settings?error=Please+upload+a+CSV+file", status_code=303)
@@ -551,7 +563,7 @@ async def import_biller_rules_csv(
 async def delete_biller_rule(
     rule_id: int,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     result = await db.execute(select(BillerRule).where(BillerRule.id == rule_id))
     rule = result.scalar_one_or_none()
@@ -567,7 +579,7 @@ async def delete_biller_rule(
 async def remove_encoder_role(
     encoder_id: int,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     result = await db.execute(select(UserAccount).where(UserAccount.id == encoder_id))
     user = result.scalar_one_or_none()
@@ -595,6 +607,9 @@ async def entry_form_page(
         return RedirectResponse(url="/customer/dashboard", status_code=303)
 
     billers = await get_distinct_billers(db)
+    show_admin_records_link = current_user.role == "admin" or await is_business_owner(
+        db, current_user.id
+    )
     return templates.TemplateResponse(
         "entry_form.html",
         {
@@ -604,6 +619,7 @@ async def entry_form_page(
             "biller_late_charges": await get_biller_late_charges(db),
             "biller_account_digits": await get_biller_account_digits(db),
             "current_user": current_user,
+            "show_admin_records_link": show_admin_records_link,
         },
     )
 
@@ -616,7 +632,7 @@ async def records_datatable(
     to_date: Optional[date] = Query(default=None),
     due_status: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     params = request.query_params
 
@@ -649,12 +665,12 @@ async def records_datatable(
 
 
 @router.get("/api/records/billers")
-async def list_billers(db: AsyncSession = Depends(get_db), _: UserAccount = Depends(require_admin)):
+async def list_billers(db: AsyncSession = Depends(get_db), _: UserAccount = Depends(require_owner_or_admin)):
     return {"billers": await get_distinct_billers(db)}
 
 
 @router.get("/api/admin/users")
-async def list_users(db: AsyncSession = Depends(get_db), _: UserAccount = Depends(require_admin)):
+async def list_users(db: AsyncSession = Depends(get_db), _: UserAccount = Depends(require_owner_or_admin)):
     result = await db.execute(
         select(UserAccount)
         .where(UserAccount.role.in_(["encoder", "customer"]))
@@ -680,7 +696,7 @@ async def list_users(db: AsyncSession = Depends(get_db), _: UserAccount = Depend
 async def list_record_audit_logs(
     limit: int = Query(default=200, ge=1, le=1000),
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     result = await db.execute(
         select(RecordAuditLog)
@@ -710,7 +726,7 @@ async def list_record_audit_logs(
 async def upsert_user(
     payload: AdminUserCreate,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     role = payload.role.strip().lower()
     if role not in {"encoder", "customer"}:
@@ -811,7 +827,7 @@ async def lookup_by_account(
 async def get_record_endpoint(
     record_id: int,
     db: AsyncSession = Depends(get_db),
-    _: UserAccount = Depends(require_admin),
+    _: UserAccount = Depends(require_owner_or_admin),
 ):
     return await get_record(db, record_id)
 
@@ -880,7 +896,7 @@ async def update_record_endpoint(
     record_id: int,
     payload: RecordUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_owner_or_admin),
 ):
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
@@ -915,7 +931,7 @@ async def update_record_endpoint(
 async def delete_record_endpoint(
     record_id: int,
     db: AsyncSession = Depends(get_db),
-    current_user: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_owner_or_admin),
 ):
     try:
         record = await get_record(db, record_id)
@@ -948,7 +964,7 @@ async def delete_record_endpoint(
 async def import_csv_endpoint(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: UserAccount = Depends(require_admin),
+    current_user: UserAccount = Depends(require_owner_or_admin),
 ):
     try:
         if not file.filename.lower().endswith(".csv"):

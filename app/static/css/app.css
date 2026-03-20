@@ -313,6 +313,54 @@ input[readonly] {
     font-weight: 700;
 }
 
+.panel-onboarding {
+    border: 1px solid #c5d6f5;
+    background: linear-gradient(165deg, #f4f7ff 0%, #eef5ff 100%);
+}
+
+.panel-onboarding-lead {
+    margin: 0 0 0.75rem;
+    font-size: 1.02rem;
+    line-height: 1.45;
+}
+
+.alert-onboarding {
+    margin: 0 0 0.85rem;
+    border: 1px solid #e8d4a8;
+    background: #fff9e9;
+    color: #5c4a1a;
+    padding: 0.55rem 0.7rem;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.panel-onboarding-title {
+    margin: 0 0 0.4rem;
+    font-size: 1rem;
+}
+
+.setup-steps {
+    margin: 0.25rem 0 0;
+    padding-left: 1.35rem;
+    line-height: 1.55;
+}
+
+.setup-steps li {
+    margin-bottom: 0.35rem;
+}
+
+.panel-onboarding-foot {
+    margin: 0.85rem 0 0;
+    font-size: 0.9rem;
+    color: #4a5568;
+}
+
+.field-hint {
+    font-weight: 500;
+    color: #64748b;
+    font-size: 0.9em;
+}
+
 .encoder-table td,
 .encoder-table th {
     text-transform: none;
