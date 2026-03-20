@@ -347,6 +347,44 @@ input[readonly] {
     text-transform: none;
 }
 
+table thead th,
+table tbody td {
+    text-align: left;
+    vertical-align: middle;
+}
+
+.display thead th {
+    letter-spacing: 0.2px;
+}
+
+/* Admin records table alignment (data cells) */
+#recordsTable tbody td:nth-child(1),
+#recordsTable tbody td:nth-child(7),
+#recordsTable tbody td:nth-child(8),
+#recordsTable tbody td:nth-child(10) {
+    text-align: center;
+}
+#recordsTable tbody td:nth-child(6) {
+    text-align: right;
+}
+
+/* Audit log and users table alignment (data cells) */
+#auditTable tbody td:nth-child(6),
+#auditTable tbody td:nth-child(7),
+#usersTable tbody td:nth-child(1),
+#usersTable tbody td:nth-child(4),
+#usersTable tbody td:nth-child(5) {
+    text-align: center;
+}
+
+/* Customer bills table alignment (data cells) */
+.customer-bills-table tbody td:nth-child(3) {
+    text-align: right;
+}
+.customer-bills-table tbody td:nth-child(4) {
+    text-align: center;
+}
+
 .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     letter-spacing: 0.2px;

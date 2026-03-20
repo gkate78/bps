@@ -18,7 +18,7 @@ from app.auth import (
     verify_pin,
 )
 from app.database import get_db
-from app.models import AuthEventLog, BusinessProfile, UserAccount
+from app.models import AuthEventLog, BillRecord, BusinessProfile, Customer, UserAccount
 from app.services import get_otp_service
 
 router = APIRouter(tags=["auth"])
@@ -862,6 +862,7 @@ async def dashboard(current_user: Optional[UserAccount] = Depends(get_current_us
 @router.get("/customer/dashboard", response_class=HTMLResponse, include_in_schema=False)
 async def customer_dashboard(
     request: Request,
+    db: AsyncSession = Depends(get_db),
     current_user: Optional[UserAccount] = Depends(get_current_user_optional),
 ):
     if not current_user:
@@ -872,10 +873,35 @@ async def customer_dashboard(
     if current_user.role == "encoder":
         return RedirectResponse(url="/entry/form", status_code=303)
 
+    customer_result = await db.execute(
+        select(Customer)
+        .where((Customer.user_id == current_user.id) | (Customer.phone == current_user.phone))
+        .order_by(Customer.updated_at.desc(), Customer.id.desc())
+        .limit(1)
+    )
+    customer_profile = customer_result.scalar_one_or_none()
+    if customer_profile and customer_profile.user_id is None:
+        customer_profile.user_id = current_user.id
+        db.add(customer_profile)
+        await db.commit()
+        await db.refresh(customer_profile)
+
+    bills = []
+    if customer_profile:
+        bills_result = await db.execute(
+            select(BillRecord)
+            .where(BillRecord.account == customer_profile.account)
+            .order_by(BillRecord.txn_datetime.desc(), BillRecord.id.desc())
+            .limit(300)
+        )
+        bills = bills_result.scalars().all()
+
     return templates.TemplateResponse(
         "customer_dashboard.html",
         {
             "request": request,
             "current_user": current_user,
+            "customer_profile": customer_profile,
+            "bills": bills,
         },
     )
