@@ -1,5 +1,8 @@
+import csv
+import io
 from datetime import date, datetime
 from typing import Optional
+from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -462,6 +465,86 @@ async def upsert_biller_rule(
     db.add(rule)
     await db.commit()
     return RedirectResponse(url="/admin/settings?success=Biller+rule+saved", status_code=303)
+
+
+@router.post("/admin/settings/biller-rules/import-csv", include_in_schema=False)
+async def import_biller_rules_csv(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_admin),
+):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
+        return RedirectResponse(url="/admin/settings?error=Please+upload+a+CSV+file", status_code=303)
+
+    content = (await file.read()).decode("utf-8-sig", errors="ignore")
+    reader = csv.DictReader(io.StringIO(content))
+    if not reader.fieldnames:
+        return RedirectResponse(url="/admin/settings?error=CSV+is+empty+or+invalid", status_code=303)
+
+    created = 0
+    updated = 0
+    skipped = 0
+
+    def _parse_float(value: Optional[str]) -> Optional[float]:
+        raw = str(value or "").strip()
+        if raw == "":
+            return 0.0
+        try:
+            return round(float(raw), 2)
+        except ValueError:
+            return None
+
+    def _parse_active(value: Optional[str]) -> bool:
+        raw = str(value or "").strip().lower()
+        if raw == "":
+            return True
+        return raw in {"1", "true", "yes", "y", "active"}
+
+    for row in reader:
+        biller = str(row.get("BILLER") or "").strip().upper()
+        if not biller:
+            skipped += 1
+            continue
+
+        service_charge = _parse_float(row.get("SERVICE_CHARGE"))
+        late_charge = _parse_float(row.get("LATE_CHARGE"))
+        if service_charge is None or late_charge is None or service_charge < 0 or late_charge < 0:
+            skipped += 1
+            continue
+
+        raw_digits = str(row.get("ACCOUNT_DIGITS") or "").strip()
+        account_digits: Optional[int] = None
+        if raw_digits:
+            if not raw_digits.isdigit() or int(raw_digits) <= 0:
+                skipped += 1
+                continue
+            account_digits = int(raw_digits)
+
+        is_active = _parse_active(row.get("IS_ACTIVE"))
+
+        existing = await db.execute(select(BillerRule).where(BillerRule.biller == biller))
+        rule = existing.scalar_one_or_none()
+        if rule is None:
+            rule = BillerRule(
+                biller=biller,
+                service_charge=service_charge,
+                late_charge=late_charge,
+                account_digits=account_digits,
+                is_active=is_active,
+            )
+            created += 1
+        else:
+            rule.service_charge = service_charge
+            rule.late_charge = late_charge
+            rule.account_digits = account_digits
+            rule.is_active = is_active
+            rule.updated_at = datetime.utcnow()
+            updated += 1
+        db.add(rule)
+
+    await db.commit()
+    message = quote_plus(f"Biller rules import done: created={created}, updated={updated}, skipped={skipped}")
+    return RedirectResponse(url=f"/admin/settings?success={message}", status_code=303)
 
 
 @router.post("/admin/settings/biller-rules/{rule_id}/delete", include_in_schema=False)

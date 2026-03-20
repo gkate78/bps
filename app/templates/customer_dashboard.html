@@ -16,6 +16,48 @@
     </div>
     <p><strong>Phone:</strong> {{ current_user.phone }}</p>
     <p><strong>Role:</strong> {{ current_user.role }}</p>
-    <p class="status-text">Customer view is ready. Additional customer features can be added next.</p>
+    {% if customer_profile %}
+    <p><strong>Account:</strong> {{ customer_profile.account }}</p>
+    <p><strong>Biller:</strong> {{ customer_profile.biller }}</p>
+    <p><strong>Name:</strong> {{ customer_profile.customer_name }}</p>
+    {% else %}
+    <p class="status-text">No linked customer account yet. Please contact support to link your account.</p>
+    {% endif %}
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>My Bills</h2>
+    </div>
+    {% if customer_profile and bills %}
+    <div class="table-wrap">
+        <table class="display customer-bills-table" style="width:100%">
+            <thead>
+                <tr>
+                    <th>Txn Date/Time</th>
+                    <th>Biller</th>
+                    <th>Bill Amount</th>
+                    <th>Status</th>
+                    <th>Reference</th>
+                    <th>Payment Ref</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in bills %}
+                <tr>
+                    <td>{{ r.txn_datetime.strftime("%Y-%m-%d %I:%M:%S %p") if r.txn_datetime else "-" }}</td>
+                    <td>{{ r.biller }}</td>
+                    <td>{{ "%.2f"|format(r.bill_amt or 0) }}</td>
+                    <td>{{ "PAID" if r.payment_reference else "PENDING" }}</td>
+                    <td>{{ r.reference or "-" }}</td>
+                    <td>{{ r.payment_reference or "-" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% elif customer_profile %}
+    <p class="status-text">No bills found for your account yet.</p>
+    {% endif %}
 </section>
 {% endblock %}
