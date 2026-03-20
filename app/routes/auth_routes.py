@@ -642,18 +642,60 @@ async def admin_signup_submit(
 
     if not cleaned_first or not cleaned_last:
         return _render_admin_signup(
-            request, "First name and last name are required", cleaned_first, cleaned_last, phone
+            request,
+            "First name and last name are required",
+            cleaned_first,
+            cleaned_last,
+            phone,
+            business_name,
+            business_address,
+            business_phone,
+            business_email,
+            tin_number,
+            receipt_footer,
         )
     if not validate_phone(normalized_phone):
         return _render_admin_signup(
-            request, "Please enter a valid phone number", cleaned_first, cleaned_last, phone
+            request,
+            "Please enter a valid phone number",
+            cleaned_first,
+            cleaned_last,
+            phone,
+            business_name,
+            business_address,
+            business_phone,
+            business_email,
+            tin_number,
+            receipt_footer,
         )
     pin_ok, pin_error = validate_pin_policy(pin)
     if not pin_ok:
-        return _render_admin_signup(request, pin_error or "Invalid PIN", cleaned_first, cleaned_last, phone)
+        return _render_admin_signup(
+            request,
+            pin_error or "Invalid PIN",
+            cleaned_first,
+            cleaned_last,
+            phone,
+            business_name,
+            business_address,
+            business_phone,
+            business_email,
+            tin_number,
+            receipt_footer,
+        )
     if pin != pin_confirm:
         return _render_admin_signup(
-            request, "PIN entries do not match", cleaned_first, cleaned_last, phone
+            request,
+            "PIN entries do not match",
+            cleaned_first,
+            cleaned_last,
+            phone,
+            business_name,
+            business_address,
+            business_phone,
+            business_email,
+            tin_number,
+            receipt_footer,
         )
     if not cleaned_business_name:
         return _render_admin_signup(
@@ -662,8 +704,8 @@ async def admin_signup_submit(
             cleaned_first,
             cleaned_last,
             phone,
-            cleaned_business_name,
-            cleaned_business_address,
+            business_name,
+            business_address,
             business_phone,
             business_email,
             tin_number,
@@ -676,8 +718,8 @@ async def admin_signup_submit(
             cleaned_first,
             cleaned_last,
             phone,
-            cleaned_business_name,
-            cleaned_business_address,
+            business_name,
+            business_address,
             business_phone,
             business_email,
             tin_number,
@@ -692,8 +734,8 @@ async def admin_signup_submit(
             cleaned_first,
             cleaned_last,
             phone,
-            cleaned_business_name,
-            cleaned_business_address,
+            business_name,
+            business_address,
             business_phone,
             business_email,
             tin_number,
