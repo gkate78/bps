@@ -78,3 +78,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Receipt reference must stay stable for customers; real processing refs come from billers/channels and are needed for reconciliation and audit.
 - Alternatives considered: reusing a single reference for both receipt and processing; reconciliation without a processed marker.
 - Follow-up: Optional cash-on-hand vs collected comparison; export of reconciliation report.
+
+- Date: 2026-03-10
+- ID: DEC-009
+- Related task: BPS-205 / operations
+- Decision: Treat `BusinessProfile.admin_user_id` as the **registered business owner**: they get the same admin-area access as `role=admin` (records, processing, settings, related APIs) even if their role is not `admin`, and `/dashboard` sends them to `/admin/records`. CSV bill-record import maps optional `payment_reference` / `payment_method` (including export-style lowercase headers) so round-tripped rows stay “processed” when those columns are present.
+- Why: Owners must see the full record set and reconciliation state; imports from app exports were losing processing metadata and showed everything as pending.
+- Alternatives considered: introduce a distinct `owner` role column; restrict owner to read-only admin views.
+- Follow-up: If multi-tenant profiles exist, scope owner checks to the correct profile row.
