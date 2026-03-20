@@ -15,39 +15,28 @@
     {% endif %}
 
     <form method="post" action="/auth/admin/signup" class="auth-form">
-        <label>First Name
-            <input type="text" name="first_name" value="{{ first_name }}" required maxlength="80">
-        </label>
-        <label>Last Name
-            <input type="text" name="last_name" value="{{ last_name }}" required maxlength="80">
-        </label>
-        <label>Phone Number
-            <input type="tel" name="phone" value="{{ phone }}" required minlength="11" maxlength="11" inputmode="numeric" pattern="\d{11}" placeholder="09XXXXXXXXX">
-        </label>
-        <label>4-digit PIN
-            <input type="password" name="pin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
-        </label>
-        <label>Re-enter PIN
-            <input type="password" name="pin_confirm" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}">
-        </label>
-        <label>Business Name
-            <input type="text" name="business_name" value="{{ business_name }}" required maxlength="160">
-        </label>
-        <label>Business Address
-            <textarea name="business_address" rows="2" required maxlength="255">{{ business_address }}</textarea>
-        </label>
-        <label>Business Phone
-            <input type="text" name="business_phone" value="{{ business_phone }}" maxlength="40">
-        </label>
-        <label>Business Email
-            <input type="email" name="business_email" value="{{ business_email }}" maxlength="120">
-        </label>
-        <label>TIN Number
-            <input type="text" name="tin_number" value="{{ tin_number }}" maxlength="64">
-        </label>
-        <label>Receipt Footer
-            <input type="text" name="receipt_footer" value="{{ receipt_footer }}" maxlength="255" placeholder="e.g., Thank you and come again">
-        </label>
+        <label for="admin_signup_first_name">First Name</label>
+        <input id="admin_signup_first_name" type="text" name="first_name" value="{{ first_name }}" required maxlength="80" autocomplete="section-account given-name">
+        <label for="admin_signup_last_name">Last Name</label>
+        <input id="admin_signup_last_name" type="text" name="last_name" value="{{ last_name }}" required maxlength="80" autocomplete="section-account family-name">
+        <label for="admin_signup_phone">Phone Number</label>
+        <input id="admin_signup_phone" type="tel" name="phone" value="{{ phone }}" required minlength="11" maxlength="11" inputmode="numeric" pattern="\d{11}" placeholder="09XXXXXXXXX" autocomplete="section-account tel">
+        <label for="admin_signup_pin">4-digit PIN</label>
+        <input id="admin_signup_pin" type="password" name="pin" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}" autocomplete="section-account new-password">
+        <label for="admin_signup_pin_confirm">Re-enter PIN</label>
+        <input id="admin_signup_pin_confirm" type="password" name="pin_confirm" required minlength="4" maxlength="4" inputmode="numeric" pattern="\d{4}" autocomplete="section-account new-password">
+        <label for="admin_signup_business_name">Business Name</label>
+        <input id="admin_signup_business_name" type="text" name="business_name" value="{{ business_name }}" required maxlength="160" autocomplete="section-business organization">
+        <label for="admin_signup_business_address">Business Address</label>
+        <textarea id="admin_signup_business_address" name="business_address" rows="2" required maxlength="255" autocomplete="section-business street-address">{{ business_address }}</textarea>
+        <label for="admin_signup_business_phone">Business Phone</label>
+        <input id="admin_signup_business_phone" type="tel" name="business_phone" value="{{ business_phone }}" maxlength="40" inputmode="tel" autocomplete="section-business tel">
+        <label for="admin_signup_business_email">Business Email <span class="field-hint">(optional)</span></label>
+        <input id="admin_signup_business_email" type="email" name="business_email" value="{{ business_email }}" maxlength="120" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false" data-1p-ignore data-lpignore="true">
+        <label for="admin_signup_tin">TIN Number</label>
+        <input id="admin_signup_tin" type="text" name="tin_number" value="{{ tin_number }}" maxlength="64" autocomplete="off">
+        <label for="admin_signup_receipt_footer">Receipt Footer</label>
+        <input id="admin_signup_receipt_footer" type="text" name="receipt_footer" value="{{ receipt_footer }}" maxlength="255" placeholder="e.g., Thank you and come again" autocomplete="off">
         <button type="submit" class="btn btn-primary">Create Admin Account</button>
     </form>
 </section>

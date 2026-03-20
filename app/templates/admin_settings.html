@@ -18,23 +18,39 @@
 <section class="panel"><div class="alert-success">{{ success }}</div></section>
 {% endif %}
 
+{% if show_welcome_guide or needs_biller_setup %}
+<section class="panel panel-onboarding" aria-label="Setup guide">
+    {% if show_welcome_guide %}
+    <p class="panel-onboarding-lead"><strong>Welcome!</strong> You landed on Admin Settings first—complete the steps below, then you can take payments and import data.</p>
+    {% endif %}
+    {% if needs_biller_setup %}
+    <p class="alert-onboarding"><strong>Biller rules required:</strong> The entry form and bill-record CSV import only accept billers that have an <em>active</em> rule here. Import a rules CSV or add each biller manually before encoding or importing bills.</p>
+    {% endif %}
+    <h3 class="panel-onboarding-title">How to proceed</h3>
+    <ol class="setup-steps">
+        <li>Confirm your <strong>business profile</strong> below and click <strong>Save Business Details</strong> (used on receipts).</li>
+        <li>Add <strong>biller rules</strong>: use <strong>Import Biller Rules CSV</strong> (repo file <code>sample_biller_rules.csv</code> is a starter) or fill the form and <strong>Add / Update Rule</strong> for each biller.</li>
+        <li>Open <a href="/entry/form">Payment Entry</a> to encode new payments, or <a href="/admin/records">Records</a> to search, edit, and import historical bill CSVs.</li>
+    </ol>
+    {% if show_welcome_guide %}
+    <p class="panel-onboarding-foot"><a href="/admin/settings">Hide welcome message</a> (setup tips stay visible until you have at least one active biller rule).</p>
+    {% endif %}
+</section>
+{% endif %}
+
 <section class="panel">
     <div class="panel-head">
         <h2>Business Profile</h2>
     </div>
     <form method="post" action="/admin/settings/business" class="auth-form">
-        <label>Business Name
-            <input type="text" name="business_name" value="{{ business_profile.business_name if business_profile else '' }}" required maxlength="160">
-        </label>
-        <label>Business Address
-            <textarea name="business_address" rows="2" required maxlength="255">{{ business_profile.business_address if business_profile else '' }}</textarea>
-        </label>
-        <label>Business Phone
-            <input type="text" name="business_phone" value="{{ business_profile.business_phone if business_profile else '' }}" maxlength="40">
-        </label>
-        <label>Business Email
-            <input type="email" name="business_email" value="{{ business_profile.business_email if business_profile else '' }}" maxlength="120">
-        </label>
+        <label for="settings_business_name">Business Name</label>
+        <input id="settings_business_name" type="text" name="business_name" value="{{ business_profile.business_name if business_profile else '' }}" required maxlength="160" autocomplete="section-business organization">
+        <label for="settings_business_address">Business Address</label>
+        <textarea id="settings_business_address" name="business_address" rows="2" required maxlength="255" autocomplete="section-business street-address">{{ business_profile.business_address if business_profile else '' }}</textarea>
+        <label for="settings_business_phone">Business Phone</label>
+        <input id="settings_business_phone" type="tel" name="business_phone" value="{{ business_profile.business_phone if business_profile else '' }}" maxlength="40" inputmode="tel" autocomplete="section-business tel">
+        <label for="settings_business_email">Business Email</label>
+        <input id="settings_business_email" type="email" name="business_email" value="{{ business_profile.business_email if business_profile else '' }}" maxlength="120" inputmode="email" autocomplete="off" autocapitalize="none" spellcheck="false" data-1p-ignore data-lpignore="true">
         <label>TIN Number
             <input type="text" name="tin_number" value="{{ business_profile.tin_number if business_profile else '' }}" maxlength="64">
         </label>

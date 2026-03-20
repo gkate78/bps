@@ -33,12 +33,38 @@ def _parse_datetime(value: str | None) -> Optional[datetime]:
         return None
 
     cleaned = value.strip()
-    for fmt in ("%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+    for fmt in (
+        "%m/%d/%Y %H:%M:%S",
+        "%m/%d/%Y %H:%M",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S.%f",
+    ):
         try:
             return datetime.strptime(cleaned, fmt)
         except ValueError:
             continue
     return None
+
+
+def _csv_cell(row: dict, *names: str) -> str:
+    """First non-empty value for any header alias (exact key, then case-insensitive)."""
+    for name in names:
+        if not name:
+            continue
+        if name in row:
+            v = row.get(name)
+            if v is not None and str(v).strip():
+                return str(v).strip()
+    lowered = {(k or "").strip().lower(): v for k, v in row.items()}
+    for name in names:
+        lk = (name or "").strip().lower()
+        if lk in lowered:
+            v = lowered[lk]
+            if v is not None and str(v).strip():
+                return str(v).strip()
+    return ""
 
 
 def _parse_float(value: str | None) -> float:
@@ -599,28 +625,42 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
     duplicates = 0
 
     for row in reader:
-        txn_date = _parse_date(row.get("DATE") or row.get("DATE/TIME"))
+        date_raw = _csv_cell(row, "DATE", "txn_date", "TXN_DATE")
+        txn_date = _parse_date(date_raw)
+        if txn_date is None:
+            dt_probe = _parse_datetime(_csv_cell(row, "DATE/TIME", "txn_datetime", "TXN_DATETIME"))
+            if dt_probe is not None:
+                txn_date = dt_probe.date()
         if txn_date is None:
             skipped += 1
             continue
-        txn_datetime = _parse_datetime(row.get("DATE/TIME")) or datetime.combine(txn_date, datetime.min.time())
+
+        dt_raw = _csv_cell(row, "DATE/TIME", "txn_datetime", "TXN_DATETIME")
+        txn_datetime = _parse_datetime(dt_raw) or datetime.combine(txn_date, datetime.min.time())
+
+        notes_raw = _csv_cell(row, "NOTES", "notes")
+        ref_raw = _csv_cell(row, "REFERENCE", "reference")
+        pay_ref = _csv_cell(row, "payment_reference", "PAYMENT_REFERENCE", "PAYMENT REFERENCE")
+        pay_method = _csv_cell(row, "payment_method", "PAYMENT_METHOD", "PAYMENT METHOD")
 
         payload = {
             "txn_datetime": txn_datetime,
             "txn_date": txn_date,
-            "account": (row.get("ACCOUNT") or "").strip(),
-            "biller": (row.get("BILLER") or "").strip(),
-            "customer_name": (row.get("NAME") or "").strip(),
-            "cp_number": (row.get("NUMBER") or row.get("CP NUM") or "").strip(),
-            "bill_amt": _parse_float(row.get("AMT") or row.get("BILL AMT")),
-            "amt2": _parse_float(row.get("AMT2")),
-            "charge": _parse_float(row.get("CHARGE") or row.get("LATE CHARGE")),
-            "total": _parse_float(row.get("TOTAL")),
-            "cash": _parse_float(row.get("CASH")),
-            "change_amt": _parse_float(row.get("CHANGE")),
-            "due_date": _parse_date(row.get("DUE DATE")),
-            "notes": (row.get("NOTES") or "").strip() or None,
-            "reference": (row.get("REFERENCE") or "").strip() or None,
+            "account": _csv_cell(row, "ACCOUNT", "account"),
+            "biller": _csv_cell(row, "BILLER", "biller"),
+            "customer_name": _csv_cell(row, "NAME", "customer_name", "CUSTOMER_NAME"),
+            "cp_number": _csv_cell(row, "NUMBER", "CP NUM", "cp_number", "CP_NUMBER"),
+            "bill_amt": _parse_float(_csv_cell(row, "AMT", "BILL AMT", "bill_amt", "BILL_AMT")),
+            "amt2": _parse_float(_csv_cell(row, "AMT2", "amt2")),
+            "charge": _parse_float(_csv_cell(row, "CHARGE", "LATE CHARGE", "charge")),
+            "total": _parse_float(_csv_cell(row, "TOTAL", "total")),
+            "cash": _parse_float(_csv_cell(row, "CASH", "cash")),
+            "change_amt": _parse_float(_csv_cell(row, "CHANGE", "change_amt", "CHANGE_AMT")),
+            "due_date": _parse_date(_csv_cell(row, "DUE DATE", "due_date", "DUE_DATE")),
+            "notes": notes_raw or None,
+            "reference": ref_raw or None,
+            "payment_reference": pay_ref or None,
+            "payment_method": pay_method or None,
         }
         payload = _normalize_text_fields(payload)
 

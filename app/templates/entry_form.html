@@ -4,7 +4,7 @@
 {% block topbar_title %}Payment Entry{% endblock %}
 {% block topbar_subtitle %}Encode payments quickly with auto-compute and account lookup.{% endblock %}
 {% block topbar_actions %}
-{% if current_user.role == "admin" %}
+{% if show_admin_records_link %}
 <a href="/admin/records" class="btn btn-secondary">Open Admin Table</a>
 {% endif %}
 <form method="post" action="/auth/logout" class="inline-action">
