@@ -40,6 +40,12 @@ app.include_router(auth_router)
 app.include_router(bills_router)
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> RedirectResponse:
+    # Browsers request /favicon.ico by default; redirect to our SVG.
+    return RedirectResponse(url="/static/favicon.svg", status_code=307)
+
+
 @app.get("/", include_in_schema=False)
 async def root(request: Request):
     if request.session.get("user_id"):

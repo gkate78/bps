@@ -184,6 +184,18 @@ function validatePayload(payload) {
         alert("ACCOUNT, BILLER, AND NAME ARE REQUIRED");
         return false;
     }
+    if (BILLER_CHARGES[normalizedBillerKey(payload.biller)] == null) {
+        alert("BILLER RULE IS NOT CONFIGURED. PLEASE UPDATE ADMIN SETTINGS.");
+        return false;
+    }
+    const requiredDigits = BILLER_ACCOUNT_DIGITS[normalizedBillerKey(payload.biller)];
+    if (requiredDigits != null) {
+        const accountDigits = String(payload.account || "").replace(/\D/g, "");
+        if (accountDigits.length !== Number(requiredDigits)) {
+            alert(`ACCOUNT MUST BE EXACTLY ${requiredDigits} DIGITS FOR ${payload.biller}.`);
+            return false;
+        }
+    }
     if (payload.cp_number && !/^\d{11}$/.test(payload.cp_number)) {
         alert("CP NUMBER MUST BE EXACTLY 11 DIGITS");
         return false;
