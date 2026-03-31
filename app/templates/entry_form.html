@@ -33,12 +33,13 @@
         </div>
 
         <div class="form-grid form-grid-pro entry-grid-main">
-            <label>Account<input type="text" id="account" required></label>
+            <label>Account<input type="text" id="account" list="accountOptions" required></label>
             <label>Biller<input type="text" id="biller" list="billerOptions" required></label>
             <label>Name<input type="text" id="customerName" required></label>
             <label>CP Number<input type="tel" id="cpNumber" minlength="11" maxlength="11" inputmode="numeric" pattern="\d{11}" placeholder="09XXXXXXXXX"></label>
             <label>Due Date<input type="date" id="dueDate" required></label>
         </div>
+        <datalist id="accountOptions"></datalist>
 
         <div class="form-grid form-grid-pro entry-grid-amounts">
             <label>Bill Amount<input type="number" step="0.01" id="billAmt" min="0"></label>

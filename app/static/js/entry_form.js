@@ -28,6 +28,8 @@ const BILLER_CHARGES = window.BILLER_CHARGES || {};
 const BILLER_LATE_CHARGES = window.BILLER_LATE_CHARGES || {};
 const BILLER_ACCOUNT_DIGITS = window.BILLER_ACCOUNT_DIGITS || {};
 let lastSavedRecordId = null;
+let accountOptionsAbortController = null;
+let accountOptionsDebounceTimer = null;
 
 const dom = {
     form: document.getElementById("entryForm"),
@@ -38,6 +40,7 @@ const dom = {
     confirmCloseBtn: document.getElementById("confirmCloseBtn"),
     currentDateTime: document.getElementById("currentDateTime"),
     account: document.getElementById("account"),
+    accountOptions: document.getElementById("accountOptions"),
     biller: document.getElementById("biller"),
     customerName: document.getElementById("customerName"),
     cpNumber: document.getElementById("cpNumber"),
@@ -131,6 +134,62 @@ function clearForm() {
     recomputeFinancials();
 }
 
+function renderAccountOptions(items) {
+    if (!dom.accountOptions) {
+        return;
+    }
+    dom.accountOptions.innerHTML = "";
+    for (const item of items) {
+        const option = document.createElement("option");
+        option.value = item.account || "";
+        option.label = [item.customer_name, item.phone].filter(Boolean).join(" | ");
+        dom.accountOptions.appendChild(option);
+    }
+}
+
+async function fetchKnownAccounts({ query = "" } = {}) {
+    const biller = dom.biller.value.trim();
+    if (!biller) {
+        renderAccountOptions([]);
+        return;
+    }
+
+    if (accountOptionsAbortController) {
+        accountOptionsAbortController.abort();
+    }
+    accountOptionsAbortController = new AbortController();
+
+    const params = new URLSearchParams({ biller, limit: "50" });
+    const q = String(query || "").trim();
+    if (q) {
+        params.set("query", q);
+    }
+
+    try {
+        const response = await fetch(`/api/customers?${params}`, {
+            signal: accountOptionsAbortController.signal,
+        });
+        if (!response.ok) {
+            return;
+        }
+        const data = await response.json();
+        renderAccountOptions(Array.isArray(data.items) ? data.items : []);
+    } catch (err) {
+        if (err && err.name !== "AbortError") {
+            console.error("Failed to load customer accounts", err);
+        }
+    }
+}
+
+function scheduleKnownAccountsLookup() {
+    if (accountOptionsDebounceTimer) {
+        clearTimeout(accountOptionsDebounceTimer);
+    }
+    accountOptionsDebounceTimer = setTimeout(() => {
+        fetchKnownAccounts({ query: dom.account.value });
+    }, 250);
+}
+
 /** Lookup by account only; if found, fill biller, name, phone. If not, show message so user can enter details (saved to customer DB on save). */
 async function lookupAccountDetails() {
     const account = dom.account.value.trim();
@@ -155,6 +214,7 @@ async function lookupAccountDetails() {
     dom.customerName.value = data.customer_name || "";
     dom.cpNumber.value = data.phone || "";
     [dom.biller, dom.customerName, dom.cpNumber].forEach(setUppercaseInput);
+    await fetchKnownAccounts({ query: dom.account.value });
     recomputeFinancials();
 }
 
@@ -323,6 +383,10 @@ function moveToNextControl(current) {
     el.addEventListener("input", () => setUppercaseInput(el));
 });
 
+dom.account.addEventListener("input", scheduleKnownAccountsLookup);
+dom.biller.addEventListener("input", scheduleKnownAccountsLookup);
+dom.biller.addEventListener("change", () => fetchKnownAccounts({ query: dom.account.value }));
+
 [dom.biller, dom.billAmt, dom.cash, dom.dueDate].forEach((el) => {
     el.addEventListener("input", recomputeFinancials);
     el.addEventListener("change", recomputeFinancials);
@@ -347,3 +411,4 @@ if (dom.currentDateTime) {
     setInterval(updateCurrentDateTime, 1000);
 }
 clearForm();
+fetchKnownAccounts();

@@ -86,3 +86,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Owners must see the full record set and reconciliation state; imports from app exports were losing processing metadata and showed everything as pending.
 - Alternatives considered: introduce a distinct `owner` role column; restrict owner to read-only admin views.
 - Follow-up: If multi-tenant profiles exist, scope owner checks to the correct profile row.
+
+- Date: 2026-03-31
+- ID: DEC-010
+- Related task: BPS-206
+- Decision: Implement customer lookup as a per-biller known-account index (`/api/customers`) and keep direct account lookup (`/api/customers/lookup`) for fast prefill, with encoder UI using a biller-filtered datalist on the account field.
+- Why: Encoders need faster entry with fewer typing errors; biller-scoped suggestions keep account selection relevant while preserving existing account-first workflows.
+- Alternatives considered: account-only lookup without list suggestions; separate full-screen customer search modal.
+- Follow-up: If account volume grows, add pagination and optional server-ranked search (recently used / frequency).

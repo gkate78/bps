@@ -30,6 +30,7 @@ from app.controllers.bill_controller import (
     get_biller_charges,
     get_biller_late_charges,
     get_customer_by_account,
+    list_customers,
     get_distinct_billers,
     get_record,
     has_active_biller_rule,
@@ -801,6 +802,33 @@ async def lookup_customer(
         "biller": customer.biller or "",
         "customer_name": customer.customer_name or "",
         "phone": customer.phone or "",
+    }
+
+
+@router.get("/api/customers")
+async def list_customer_accounts(
+    biller: Optional[str] = Query(default=None),
+    query: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_data_entry_access),
+):
+    customers = await list_customers(
+        db,
+        biller=biller,
+        query=query,
+        limit=limit,
+    )
+    return {
+        "items": [
+            {
+                "account": item.account,
+                "biller": item.biller or "",
+                "customer_name": item.customer_name or "",
+                "phone": item.phone or "",
+            }
+            for item in customers
+        ]
     }
 
 

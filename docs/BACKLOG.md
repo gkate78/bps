@@ -17,7 +17,7 @@
 
 ## NEXT
 - [x] BPS-204 | Theme: Operations speed | Outcome: Urgent queue with due-date SLA timer | Done when: overdue/near-due records have a dedicated prioritized view
-- [ ] BPS-206 | Theme: Data quality | Outcome: Customer account lookup list per biller | Done when: encoder can search/select known accounts without retyping
+- [x] BPS-206 | Theme: Data quality | Outcome: Customer account lookup list per biller | Done when: encoder can search/select known accounts without retyping
 
 ## LATER
 - [ ] BPS-207 | Theme: Routing | Outcome: Payment channel routing rules (`online` vs `branch/manual`) | Done when: routing decision engine works for limits/urgency/availability
@@ -33,3 +33,4 @@
 - [x] BPS-203 | Shipped on: 2026-03-09 | Notes: Per-biller biller_rules validation (active rule required, account digit format enforced in API/UI/CSV)
 - [x] BPS-208 | Shipped on: 2026-03-09 | Notes: DB-backed biller rules with admin management; computation now reads service/late charges from active rules
 - [x] BPS-205 | Shipped on: 2026-03-10 | Notes: EOD reconciliation (collected vs processed, pending, flag); `payment_reference` column for “processed” marker; Processing dashboard to set payment refs and view report (DEC-008)
+- [x] BPS-206 | Shipped on: 2026-03-31 | Notes: Added per-biller known-account search/list endpoint and encoder entry-form account picker (datalist) so users can select existing accounts instead of retyping.
