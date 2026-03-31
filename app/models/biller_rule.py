@@ -13,5 +13,7 @@ class BillerRule(SQLModel, table=True):
     late_charge: float = Field(default=0, nullable=False)
     account_digits: Optional[int] = Field(default=None, nullable=True)
     is_active: bool = Field(default=True, nullable=False, index=True)
+    route_online_enabled: bool = Field(default=True, nullable=False)
+    route_online_max_amount: Optional[float] = Field(default=None, nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

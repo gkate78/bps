@@ -94,3 +94,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Encoders need faster entry with fewer typing errors; biller-scoped suggestions keep account selection relevant while preserving existing account-first workflows.
 - Alternatives considered: account-only lookup without list suggestions; separate full-screen customer search modal.
 - Follow-up: If account volume grows, add pagination and optional server-ranked search (recently used / frequency).
+
+- Date: 2026-03-31
+- ID: DEC-011
+- Related task: BPS-207
+- Decision: Use biller-level routing policy fields (`route_online_enabled`, optional `route_online_max_amount`) plus an urgency window to compute a suggested `payment_channel` (`ONLINE` or `BRANCH_MANUAL`) server-side; expose this via `/api/routing/decision` and persist the resolved channel on each record.
+- Why: Routing must be deterministic and auditable across entry and updates, while still allowing per-biller operational control without code changes.
+- Alternatives considered: hardcoded routing in frontend only; global (non-biller) routing limits; manual route tagging without a decision engine.
+- Follow-up: Add online availability signal from real channel status provider and complete scenario matrix for routing verification.
