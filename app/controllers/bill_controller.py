@@ -180,7 +180,7 @@ async def decide_payment_channel(
     """
     Decide suggested payment channel (ONLINE or BRANCH_MANUAL) using:
     - biller availability/policy
-    - urgency window (due within N days, including overdue)
+    - urgency window (due within N days, including overdue) with online priority
     - online amount cap
     """
     key = _normalized_biller_key(biller)
@@ -197,7 +197,7 @@ async def decide_payment_channel(
     if due_date is not None:
         urgent_until = today + timedelta(days=ROUTING_URGENT_WINDOW_DAYS)
         if due_date <= urgent_until:
-            return {"channel": "BRANCH_MANUAL", "reason": "URGENT_DUE_DATE", "policy": policy}
+            return {"channel": "ONLINE", "reason": "URGENT_DUE_DATE_ONLINE_PRIORITY", "policy": policy}
 
     total_value = round(float(total or 0), 2)
     max_amount = policy.get("online_max_amount")
@@ -742,8 +742,8 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
             "customer_name": _csv_cell(row, "NAME", "customer_name", "CUSTOMER_NAME"),
             "cp_number": _csv_cell(row, "NUMBER", "CP NUM", "cp_number", "CP_NUMBER"),
             "bill_amt": _parse_float(_csv_cell(row, "AMT", "BILL AMT", "bill_amt", "BILL_AMT")),
-            "amt2": _parse_float(_csv_cell(row, "AMT2", "amt2")),
-            "charge": _parse_float(_csv_cell(row, "CHARGE", "LATE CHARGE", "charge")),
+            "amt2": _parse_float(_csv_cell(row, "AMT2", "LATE CHARGE", "amt2")),
+            "charge": _parse_float(_csv_cell(row, "CHARGE", "SERVICE CHARGE", "charge")),
             "total": _parse_float(_csv_cell(row, "TOTAL", "total")),
             "cash": _parse_float(_csv_cell(row, "CASH", "cash")),
             "change_amt": _parse_float(_csv_cell(row, "CHANGE", "change_amt", "CHANGE_AMT")),
