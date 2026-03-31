@@ -102,3 +102,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Routing must be deterministic and auditable across entry and updates, while still allowing per-biller operational control without code changes.
 - Alternatives considered: hardcoded routing in frontend only; global (non-biller) routing limits; manual route tagging without a decision engine.
 - Follow-up: Add online availability signal from real channel status provider and complete scenario matrix for routing verification.
+
+- Date: 2026-03-31
+- ID: DEC-012
+- Related task: BPS-207
+- Decision: For overdue and near-due accounts (within urgency window), prioritize suggested `payment_channel=ONLINE` when online is available and enabled for the biller.
+- Why: Urgent liabilities benefit from faster posting paths; suggesting online for near/past due cases reduces late-payment risk and aligns with operations priority.
+- Alternatives considered: urgent -> branch/manual default; leave urgent behavior neutral and use amount-cap only.
+- Follow-up: Observe operational outcomes and adjust urgency window or cap precedence if edge cases appear.
