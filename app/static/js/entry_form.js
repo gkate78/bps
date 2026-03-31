@@ -30,6 +30,8 @@ const BILLER_ACCOUNT_DIGITS = window.BILLER_ACCOUNT_DIGITS || {};
 let lastSavedRecordId = null;
 let accountOptionsAbortController = null;
 let accountOptionsDebounceTimer = null;
+let routingAbortController = null;
+let routingDebounceTimer = null;
 
 const dom = {
     form: document.getElementById("entryForm"),
@@ -56,6 +58,7 @@ const dom = {
     saveStatus: document.getElementById("saveStatus"),
     paymentReference: document.getElementById("paymentReference"),
     paymentMethod: document.getElementById("paymentMethod"),
+    paymentChannel: document.getElementById("paymentChannel"),
 };
 
 function normalizedBillerKey(value) {
@@ -112,6 +115,7 @@ function recomputeFinancials() {
     dom.charge.value = rawBillAmt ? charge.toFixed(2) : "";
     dom.total.value = rawBillAmt ? total.toFixed(2) : "";
     dom.changeAmt.value = rawBillAmt && rawCash ? change.toFixed(2) : "";
+    scheduleRoutingDecision();
 }
 
 function updateCurrentDateTime() {
@@ -130,8 +134,65 @@ function clearForm() {
     dom.saveStatus.textContent = "";
     dom.printReceiptBtn.disabled = true;
     lastSavedRecordId = null;
+    if (dom.paymentChannel) {
+        dom.paymentChannel.value = "";
+    }
     updateCurrentDateTime();
     recomputeFinancials();
+}
+
+function applyRoutingDecision(decision) {
+    if (!dom.paymentChannel) {
+        return;
+    }
+    const channel = String(decision?.channel || "").toUpperCase();
+    const reason = String(decision?.reason || "").replaceAll("_", " ");
+    dom.paymentChannel.value = channel ? `${channel}${reason ? ` (${reason})` : ""}` : "";
+}
+
+async function fetchRoutingDecision() {
+    const biller = dom.biller.value.trim();
+    if (!biller) {
+        applyRoutingDecision(null);
+        return;
+    }
+    const total = round2(dom.total.value || dom.billAmt.value || 0);
+    const params = new URLSearchParams({
+        biller,
+        total: String(total),
+        online_available: "true",
+    });
+    if (dom.dueDate.value) {
+        params.set("due_date", dom.dueDate.value);
+    }
+
+    if (routingAbortController) {
+        routingAbortController.abort();
+    }
+    routingAbortController = new AbortController();
+
+    try {
+        const response = await fetch(`/api/routing/decision?${params.toString()}`, {
+            signal: routingAbortController.signal,
+        });
+        if (!response.ok) {
+            applyRoutingDecision(null);
+            return;
+        }
+        const decision = await response.json();
+        applyRoutingDecision(decision);
+    } catch (err) {
+        if (err && err.name !== "AbortError") {
+            console.error("Failed to resolve routing decision", err);
+        }
+    }
+}
+
+function scheduleRoutingDecision() {
+    if (routingDebounceTimer) {
+        clearTimeout(routingDebounceTimer);
+    }
+    routingDebounceTimer = setTimeout(fetchRoutingDecision, 250);
 }
 
 function renderAccountOptions(items) {
@@ -236,6 +297,9 @@ function payloadFromForm() {
         due_date: dom.dueDate.value || null,
         payment_reference: dom.paymentReference ? dom.paymentReference.value.trim() || null : null,
         payment_method: dom.paymentMethod ? (dom.paymentMethod.value || null) : null,
+        payment_channel: dom.paymentChannel
+            ? (String(dom.paymentChannel.value || "").split(" (")[0] || null)
+            : null,
     };
 }
 

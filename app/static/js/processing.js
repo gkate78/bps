@@ -108,6 +108,7 @@
             { data: "biller" },
             { data: "customer_name" },
             { data: "total", render: currency },
+            { data: "payment_channel", render: (d) => (d ? String(d).replaceAll("_", " ") : "—") },
             { data: "reference", render: (d) => d || "" },
             { data: "payment_reference", render: (d) => (d ? String(d) : "—") },
             {

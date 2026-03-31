@@ -60,6 +60,7 @@
                     <option value="BPI">BPI</option>
                 </select>
             </label>
+            <label>Suggested Route<input type="text" id="paymentChannel" readonly placeholder="AUTO"></label>
         </div>
 
         <div class="dialog-actions entry-actions">
@@ -90,6 +91,8 @@
 window.BILLER_CHARGES = {{ biller_charges | tojson }};
 window.BILLER_LATE_CHARGES = {{ biller_late_charges | tojson }};
 window.BILLER_ACCOUNT_DIGITS = {{ biller_account_digits | tojson }};
+window.BILLER_ROUTING_POLICIES = {{ biller_routing_policies | tojson }};
+window.ROUTING_URGENT_WINDOW_DAYS = {{ routing_urgent_window_days | tojson }};
 </script>
 <script src="/static/js/entry_form.js"></script>
 {% endblock %}
