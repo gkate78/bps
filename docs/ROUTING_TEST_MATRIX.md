@@ -12,7 +12,7 @@ Environment baseline:
 | ID | Scenario | Inputs | Expected | Actual | Status |
 |---|---|---|---|---|---|
 | ROUTE-001 | Within policy | biller=`ROUTING-TEST`, total=1500, due_date=today+10, online_available=true | `ONLINE` + `WITHIN_ROUTING_POLICY` | `ONLINE` + `WITHIN_ROUTING_POLICY` | PASS |
-| ROUTE-002 | Urgent due window | biller=`ROUTING-TEST`, total=1500, due_date=today+1, online_available=true | `BRANCH_MANUAL` + `URGENT_DUE_DATE` | `BRANCH_MANUAL` + `URGENT_DUE_DATE` | PASS |
+| ROUTE-002 | Urgent due window | biller=`ROUTING-TEST`, total=1500, due_date=today+1, online_available=true | `ONLINE` + `URGENT_DUE_DATE_ONLINE_PRIORITY` | `ONLINE` + `URGENT_DUE_DATE_ONLINE_PRIORITY` | PASS |
 | ROUTE-003 | Above online cap | biller=`ROUTING-TEST`, total=7000, due_date=today+10, online_available=true | `BRANCH_MANUAL` + `ABOVE_ONLINE_LIMIT` | `BRANCH_MANUAL` + `ABOVE_ONLINE_LIMIT` | PASS |
 | ROUTE-004 | Online unavailable | biller=`ROUTING-TEST`, total=1500, due_date=today+10, online_available=false | `BRANCH_MANUAL` + `ONLINE_UNAVAILABLE` | `BRANCH_MANUAL` + `ONLINE_UNAVAILABLE` | PASS |
 
