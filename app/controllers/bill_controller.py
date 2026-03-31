@@ -411,6 +411,35 @@ async def get_customer_by_account(db: AsyncSession, account: str) -> Optional[Cu
     return result.scalar_one_or_none()
 
 
+async def list_customers(
+    db: AsyncSession,
+    *,
+    biller: Optional[str] = None,
+    query: Optional[str] = None,
+    limit: int = 50,
+) -> list[Customer]:
+    """List known customer accounts, optionally filtered by biller and search term."""
+    safe_limit = max(1, min(int(limit or 50), 200))
+    stmt = select(Customer)
+
+    if biller and biller.strip():
+        stmt = stmt.where(func.upper(Customer.biller) == biller.strip().upper())
+
+    if query and query.strip():
+        like = f"%{query.strip()}%"
+        stmt = stmt.where(
+            or_(
+                Customer.account.ilike(like),
+                Customer.customer_name.ilike(like),
+                Customer.phone.ilike(like),
+            )
+        )
+
+    stmt = stmt.order_by(asc(Customer.customer_name), asc(Customer.account)).limit(safe_limit)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
 async def upsert_customer_from_record(
     db: AsyncSession,
     *,
