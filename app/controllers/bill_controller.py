@@ -1,6 +1,7 @@
 import csv
 import io
 import math
+import os
 import secrets
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -13,6 +14,8 @@ from sqlmodel import select
 from app.models.biller_rule import BillerRule
 from app.models.bill_record import BillRecord
 from app.models.customer import Customer
+
+ROUTING_URGENT_WINDOW_DAYS = max(0, int(os.getenv("ROUTING_URGENT_WINDOW_DAYS", "3")))
 
 
 def _parse_date(value: str | None) -> Optional[date]:
@@ -87,7 +90,7 @@ def _normalized_amount(payload: dict) -> float:
 
 
 def _normalize_text_fields(payload: dict) -> dict:
-    for key in ("account", "biller", "customer_name", "cp_number", "reference", "notes"):
+    for key in ("account", "biller", "customer_name", "cp_number", "reference", "notes", "payment_channel"):
         value = payload.get(key)
         if value is None:
             continue
@@ -147,6 +150,61 @@ async def has_active_biller_rule(db: AsyncSession, biller: str) -> bool:
         .limit(1)
     )
     return result.scalar_one_or_none() is not None
+
+
+async def get_biller_routing_policies(db: AsyncSession) -> dict[str, dict]:
+    """Return biller-level routing policy map keyed by normalized biller."""
+    result = await db.execute(select(BillerRule).where(BillerRule.is_active == True))  # noqa: E712
+    rules = result.scalars().all()
+    policies: dict[str, dict] = {}
+    for item in rules:
+        key = _normalized_biller_key(item.biller)
+        if not key:
+            continue
+        max_amount = item.route_online_max_amount
+        policies[key] = {
+            "online_enabled": bool(item.route_online_enabled),
+            "online_max_amount": round(float(max_amount), 2) if max_amount is not None else None,
+        }
+    return policies
+
+
+async def decide_payment_channel(
+    db: AsyncSession,
+    *,
+    biller: str,
+    total: float,
+    due_date: Optional[date],
+    online_available: bool = True,
+) -> dict:
+    """
+    Decide suggested payment channel (ONLINE or BRANCH_MANUAL) using:
+    - biller availability/policy
+    - urgency window (due within N days, including overdue)
+    - online amount cap
+    """
+    key = _normalized_biller_key(biller)
+    policies = await get_biller_routing_policies(db)
+    policy = policies.get(key)
+    if not key or policy is None:
+        return {"channel": "BRANCH_MANUAL", "reason": "NO_ACTIVE_BILLER_RULE", "policy": None}
+    if not online_available:
+        return {"channel": "BRANCH_MANUAL", "reason": "ONLINE_UNAVAILABLE", "policy": policy}
+    if not policy.get("online_enabled", True):
+        return {"channel": "BRANCH_MANUAL", "reason": "BILLER_ONLINE_DISABLED", "policy": policy}
+
+    today = date.today()
+    if due_date is not None:
+        urgent_until = today + timedelta(days=ROUTING_URGENT_WINDOW_DAYS)
+        if due_date <= urgent_until:
+            return {"channel": "BRANCH_MANUAL", "reason": "URGENT_DUE_DATE", "policy": policy}
+
+    total_value = round(float(total or 0), 2)
+    max_amount = policy.get("online_max_amount")
+    if max_amount is not None and total_value > float(max_amount):
+        return {"channel": "BRANCH_MANUAL", "reason": "ABOVE_ONLINE_LIMIT", "policy": policy}
+
+    return {"channel": "ONLINE", "reason": "WITHIN_ROUTING_POLICY", "policy": policy}
 
 
 def _compute_charge(biller: str, bill_amount: float, charge_map: dict[str, float]) -> float:
@@ -284,6 +342,7 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         reference=reference,
         payment_reference=payload.get("payment_reference"),
         payment_method=payload.get("payment_method"),
+        payment_channel=payload.get("payment_channel"),
     )
 
     db.add(record)
@@ -354,6 +413,7 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
             "reference": updates.get("reference", record.reference),
             "payment_reference": updates.get("payment_reference", record.payment_reference),
             "payment_method": updates.get("payment_method", record.payment_method),
+            "payment_channel": updates.get("payment_channel", record.payment_channel),
         }
     )
     updates = _apply_computations(
@@ -600,6 +660,7 @@ async def datatable_query(
         "reference": BillRecord.reference,
         "payment_reference": BillRecord.payment_reference,
         "payment_method": BillRecord.payment_method,
+        "payment_channel": BillRecord.payment_channel,
         "id": BillRecord.id,
     }
     sort_col = order_map.get(order_column, BillRecord.txn_datetime)
@@ -632,6 +693,7 @@ async def datatable_query(
             "reference": r.reference or "",
             "payment_reference": r.payment_reference or "",
             "payment_method": r.payment_method or "",
+            "payment_channel": r.payment_channel or "",
         }
         for r in rows
     ]
@@ -690,6 +752,7 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
             "reference": ref_raw or None,
             "payment_reference": pay_ref or None,
             "payment_method": pay_method or None,
+            "payment_channel": _csv_cell(row, "payment_channel", "PAYMENT_CHANNEL", "PAYMENT CHANNEL") or None,
         }
         payload = _normalize_text_fields(payload)
 

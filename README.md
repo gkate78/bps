@@ -13,6 +13,7 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - CRUD: create, edit, delete records
 - Transaction audit log for record state changes (create, update, delete, CSV import) with admin visibility
 - CSV import endpoint for bulk loading sheet exports
+- Routing decision engine (BPS-207 slice): suggests `ONLINE` vs `BRANCH_MANUAL` per biller policy, urgency window, and amount cap
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save
@@ -52,6 +53,7 @@ export OTP_TTL_SECONDS=300
 export PIN_MAX_FAILED_ATTEMPTS=5
 export PIN_LOCKOUT_MINUTES=15
 export PIN_WEAK_LIST=0000,1111,1234,4321
+export ROUTING_URGENT_WINDOW_DAYS=3
 ```
 
 PIN recovery flow is available from Sign In via `Forgot PIN` (`/auth/pin/reset`).
@@ -90,8 +92,17 @@ Headers supported (case-sensitive):
 - `DUE DATE`
 - `NOTES`
 - `REFERENCE`
+- `payment_reference` (optional)
+- `payment_method` (optional)
+- `payment_channel` (optional)
 
 A masked sample is included: `sample_masked_records.csv`
+
+### Biller rules CSV
+Use `sample_biller_rules.csv` as a starter for Admin Settings import.
+Routing policy columns supported:
+- `ROUTE_ONLINE_ENABLED` (`1/0`, `true/false`, `yes/no`; default `true`)
+- `ROUTE_ONLINE_MAX_AMOUNT` (optional numeric cap for online route)
 
 ## Workflow
 Use these files as your working system:

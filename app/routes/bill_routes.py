@@ -22,7 +22,10 @@ from app.auth import (
     validate_pin_policy,
 )
 from app.controllers.bill_controller import (
+    ROUTING_URGENT_WINDOW_DAYS,
+    decide_payment_channel,
     get_biller_account_digits,
+    get_biller_routing_policies,
     create_record,
     datatable_query,
     delete_record,
@@ -96,6 +99,7 @@ class RecordCreate(BaseModel):
     reference: Optional[str] = None
     payment_reference: Optional[str] = None
     payment_method: Optional[str] = None
+    payment_channel: Optional[str] = None
 
 
 class RecordUpdate(BaseModel):
@@ -116,6 +120,7 @@ class RecordUpdate(BaseModel):
     reference: Optional[str] = None
     payment_reference: Optional[str] = None
     payment_method: Optional[str] = None
+    payment_channel: Optional[str] = None
 
 
 class RecordResponse(RecordCreate):
@@ -446,6 +451,8 @@ async def upsert_biller_rule(
     service_charge: float = Form(0),
     late_charge: float = Form(0),
     account_digits: Optional[int] = Form(None),
+    route_online_enabled: Optional[str] = Form(None),
+    route_online_max_amount: Optional[float] = Form(None),
     is_active: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
@@ -457,6 +464,8 @@ async def upsert_biller_rule(
         return RedirectResponse(url="/admin/settings?error=Charges+must+not+be+negative", status_code=303)
     if account_digits is not None and account_digits <= 0:
         return RedirectResponse(url="/admin/settings?error=Account+digits+must+be+greater+than+zero", status_code=303)
+    if route_online_max_amount is not None and route_online_max_amount < 0:
+        return RedirectResponse(url="/admin/settings?error=Online+max+amount+must+not+be+negative", status_code=303)
 
     existing = await db.execute(select(BillerRule).where(BillerRule.biller == cleaned_biller))
     rule = existing.scalar_one_or_none()
@@ -466,12 +475,20 @@ async def upsert_biller_rule(
             service_charge=round(float(service_charge), 2),
             late_charge=round(float(late_charge), 2),
             account_digits=int(account_digits) if account_digits else None,
+            route_online_enabled=route_online_enabled is not None,
+            route_online_max_amount=(
+                round(float(route_online_max_amount), 2) if route_online_max_amount is not None else None
+            ),
             is_active=is_active is not None,
         )
     else:
         rule.service_charge = round(float(service_charge), 2)
         rule.late_charge = round(float(late_charge), 2)
         rule.account_digits = int(account_digits) if account_digits else None
+        rule.route_online_enabled = route_online_enabled is not None
+        rule.route_online_max_amount = (
+            round(float(route_online_max_amount), 2) if route_online_max_amount is not None else None
+        )
         rule.is_active = is_active is not None
         rule.updated_at = datetime.utcnow()
 
@@ -513,6 +530,16 @@ async def import_biller_rules_csv(
             return True
         return raw in {"1", "true", "yes", "y", "active"}
 
+    def _parse_optional_float(value: Optional[str]) -> Optional[float]:
+        raw = str(value or "").strip()
+        if raw == "":
+            return None
+        try:
+            parsed = round(float(raw), 2)
+        except ValueError:
+            return None
+        return parsed if parsed >= 0 else None
+
     for row in reader:
         biller = str(row.get("BILLER") or "").strip().upper()
         if not biller:
@@ -534,6 +561,12 @@ async def import_biller_rules_csv(
             account_digits = int(raw_digits)
 
         is_active = _parse_active(row.get("IS_ACTIVE"))
+        route_online_enabled = _parse_active(row.get("ROUTE_ONLINE_ENABLED"))
+        route_online_max_amount = _parse_optional_float(row.get("ROUTE_ONLINE_MAX_AMOUNT"))
+        raw_max = str(row.get("ROUTE_ONLINE_MAX_AMOUNT") or "").strip()
+        if raw_max and route_online_max_amount is None:
+            skipped += 1
+            continue
 
         existing = await db.execute(select(BillerRule).where(BillerRule.biller == biller))
         rule = existing.scalar_one_or_none()
@@ -543,6 +576,8 @@ async def import_biller_rules_csv(
                 service_charge=service_charge,
                 late_charge=late_charge,
                 account_digits=account_digits,
+                route_online_enabled=route_online_enabled,
+                route_online_max_amount=route_online_max_amount,
                 is_active=is_active,
             )
             created += 1
@@ -550,6 +585,8 @@ async def import_biller_rules_csv(
             rule.service_charge = service_charge
             rule.late_charge = late_charge
             rule.account_digits = account_digits
+            rule.route_online_enabled = route_online_enabled
+            rule.route_online_max_amount = route_online_max_amount
             rule.is_active = is_active
             rule.updated_at = datetime.utcnow()
             updated += 1
@@ -619,6 +656,8 @@ async def entry_form_page(
             "biller_charges": await get_biller_charges(db),
             "biller_late_charges": await get_biller_late_charges(db),
             "biller_account_digits": await get_biller_account_digits(db),
+            "biller_routing_policies": await get_biller_routing_policies(db),
+            "routing_urgent_window_days": ROUTING_URGENT_WINDOW_DAYS,
             "current_user": current_user,
             "show_admin_records_link": show_admin_records_link,
         },
@@ -787,6 +826,25 @@ async def list_biller_charges(
     return {"biller_charges": await get_biller_charges(db)}
 
 
+@router.get("/api/routing/decision")
+async def get_routing_decision(
+    biller: str = Query(..., min_length=1),
+    total: float = Query(default=0),
+    due_date: Optional[date] = Query(default=None),
+    online_available: bool = Query(default=True),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_data_entry_access),
+):
+    decision = await decide_payment_channel(
+        db,
+        biller=biller,
+        total=total,
+        due_date=due_date,
+        online_available=online_available,
+    )
+    return decision
+
+
 @router.get("/api/customers/lookup")
 async def lookup_customer(
     account: str = Query(..., min_length=1),
@@ -899,7 +957,16 @@ async def create_record_endpoint(
     if not _is_valid_cp_number(payload.cp_number):
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
-    record = await create_record(db, payload.model_dump())
+    initial_payload = payload.model_dump()
+    decision = await decide_payment_channel(
+        db,
+        biller=initial_payload.get("biller", ""),
+        total=initial_payload.get("total", initial_payload.get("bill_amt", 0) or 0),
+        due_date=initial_payload.get("due_date"),
+        online_available=True,
+    )
+    initial_payload["payment_channel"] = decision["channel"]
+    record = await create_record(db, initial_payload)
     await upsert_customer_from_record(
         db,
         account=record.account,
@@ -914,7 +981,11 @@ async def create_record_endpoint(
         current_user=current_user,
         channel="web",
         record_id=record.id,
-        detail=f"reference={record.reference or '-'}",
+        detail=(
+            f"reference={record.reference or '-'}, "
+            f"payment_channel={record.payment_channel or '-'}, "
+            f"routing_reason={decision.get('reason', '-')}"
+        ),
     )
     return record
 
@@ -935,6 +1006,24 @@ async def update_record_endpoint(
     if "cp_number" in updates and not _is_valid_cp_number(updates.get("cp_number")):
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
+    merged_due_date = updates.get("due_date")
+    if merged_due_date is None or "biller" not in updates or "total" not in updates:
+        current_record = await get_record(db, record_id)
+        merged_due_date = merged_due_date if merged_due_date is not None else current_record.due_date
+        merged_biller = updates.get("biller", current_record.biller)
+        merged_total = updates.get("total", current_record.total)
+    else:
+        merged_biller = updates.get("biller", "")
+        merged_total = updates.get("total", updates.get("bill_amt", 0) or 0)
+    decision = await decide_payment_channel(
+        db,
+        biller=merged_biller,
+        total=merged_total,
+        due_date=merged_due_date,
+        online_available=True,
+    )
+    updates["payment_channel"] = decision["channel"]
+
     record = await update_record(db, record_id, updates)
     await upsert_customer_from_record(
         db,
@@ -950,7 +1039,11 @@ async def update_record_endpoint(
         current_user=current_user,
         channel="web",
         record_id=record_id,
-        detail=f"reference={record.reference or '-'}",
+        detail=(
+            f"reference={record.reference or '-'}, "
+            f"payment_channel={record.payment_channel or '-'}, "
+            f"routing_reason={decision.get('reason', '-')}"
+        ),
     )
     return record
 

@@ -27,6 +27,7 @@ class BillRecord(SQLModel, table=True):
     reference: Optional[str] = Field(default=None, max_length=120)
     payment_reference: Optional[str] = Field(default=None, max_length=120)
     payment_method: Optional[str] = Field(default=None, max_length=32)
+    payment_channel: Optional[str] = Field(default=None, max_length=32, index=True)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

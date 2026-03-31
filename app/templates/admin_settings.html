@@ -82,7 +82,7 @@
     <form method="post" action="/admin/settings/biller-rules/import-csv" class="inline-form" enctype="multipart/form-data" style="margin-bottom:0.8rem;">
         <input type="file" name="file" accept=".csv" required>
         <button type="submit" class="btn btn-secondary">Import Biller Rules CSV</button>
-        <span class="status-text">Headers: BILLER, SERVICE_CHARGE, LATE_CHARGE, ACCOUNT_DIGITS, IS_ACTIVE</span>
+        <span class="status-text">Headers: BILLER, SERVICE_CHARGE, LATE_CHARGE, ACCOUNT_DIGITS, ROUTE_ONLINE_ENABLED, ROUTE_ONLINE_MAX_AMOUNT, IS_ACTIVE</span>
     </form>
     <form method="post" action="/admin/settings/biller-rules" class="auth-form">
         <label>Biller
@@ -98,6 +98,13 @@
             <input type="number" name="account_digits" min="1" step="1" placeholder="e.g., 13">
         </label>
         <label>
+            <input type="checkbox" name="route_online_enabled" checked>
+            Online Routing Enabled
+        </label>
+        <label>Online Max Amount (Optional)
+            <input type="number" name="route_online_max_amount" min="0" step="0.01" placeholder="e.g., 5000">
+        </label>
+        <label>
             <input type="checkbox" name="is_active" checked>
             Active
         </label>
@@ -111,6 +118,8 @@
                 <th>Service Charge</th>
                 <th>Late Charge</th>
                 <th>Account Digits</th>
+                <th>Online Enabled</th>
+                <th>Online Max</th>
                 <th>Active</th>
                 <th>Actions</th>
             </tr>
@@ -122,6 +131,8 @@
                 <td>{{ "{:,.2f}".format(rule.service_charge) }}</td>
                 <td>{{ "{:,.2f}".format(rule.late_charge) }}</td>
                 <td>{{ rule.account_digits if rule.account_digits else "-" }}</td>
+                <td>{{ "YES" if rule.route_online_enabled else "NO" }}</td>
+                <td>{{ "{:,.2f}".format(rule.route_online_max_amount) if rule.route_online_max_amount is not none else "-" }}</td>
                 <td>{{ "YES" if rule.is_active else "NO" }}</td>
                 <td>
                     <form method="post" action="/admin/settings/biller-rules/{{ rule.id }}/delete" class="inline-action">
