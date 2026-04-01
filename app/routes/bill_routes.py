@@ -25,7 +25,6 @@ from app.controllers.bill_controller import (
     ROUTING_URGENT_WINDOW_DAYS,
     decide_payment_channel,
     get_biller_account_digits,
-    get_biller_routing_policies,
     create_record,
     datatable_query,
     delete_record,
@@ -451,8 +450,6 @@ async def upsert_biller_rule(
     service_charge: float = Form(0),
     late_charge: float = Form(0),
     account_digits: Optional[int] = Form(None),
-    route_online_enabled: Optional[str] = Form(None),
-    route_online_max_amount: Optional[float] = Form(None),
     is_active: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
@@ -464,9 +461,6 @@ async def upsert_biller_rule(
         return RedirectResponse(url="/admin/settings?error=Charges+must+not+be+negative", status_code=303)
     if account_digits is not None and account_digits <= 0:
         return RedirectResponse(url="/admin/settings?error=Account+digits+must+be+greater+than+zero", status_code=303)
-    if route_online_max_amount is not None and route_online_max_amount < 0:
-        return RedirectResponse(url="/admin/settings?error=Online+max+amount+must+not+be+negative", status_code=303)
-
     existing = await db.execute(select(BillerRule).where(BillerRule.biller == cleaned_biller))
     rule = existing.scalar_one_or_none()
     if rule is None:
@@ -475,20 +469,12 @@ async def upsert_biller_rule(
             service_charge=round(float(service_charge), 2),
             late_charge=round(float(late_charge), 2),
             account_digits=int(account_digits) if account_digits else None,
-            route_online_enabled=route_online_enabled is not None,
-            route_online_max_amount=(
-                round(float(route_online_max_amount), 2) if route_online_max_amount is not None else None
-            ),
             is_active=is_active is not None,
         )
     else:
         rule.service_charge = round(float(service_charge), 2)
         rule.late_charge = round(float(late_charge), 2)
         rule.account_digits = int(account_digits) if account_digits else None
-        rule.route_online_enabled = route_online_enabled is not None
-        rule.route_online_max_amount = (
-            round(float(route_online_max_amount), 2) if route_online_max_amount is not None else None
-        )
         rule.is_active = is_active is not None
         rule.updated_at = datetime.utcnow()
 
@@ -530,16 +516,6 @@ async def import_biller_rules_csv(
             return True
         return raw in {"1", "true", "yes", "y", "active"}
 
-    def _parse_optional_float(value: Optional[str]) -> Optional[float]:
-        raw = str(value or "").strip()
-        if raw == "":
-            return None
-        try:
-            parsed = round(float(raw), 2)
-        except ValueError:
-            return None
-        return parsed if parsed >= 0 else None
-
     for row in reader:
         biller = str(row.get("BILLER") or "").strip().upper()
         if not biller:
@@ -561,12 +537,6 @@ async def import_biller_rules_csv(
             account_digits = int(raw_digits)
 
         is_active = _parse_active(row.get("IS_ACTIVE"))
-        route_online_enabled = _parse_active(row.get("ROUTE_ONLINE_ENABLED"))
-        route_online_max_amount = _parse_optional_float(row.get("ROUTE_ONLINE_MAX_AMOUNT"))
-        raw_max = str(row.get("ROUTE_ONLINE_MAX_AMOUNT") or "").strip()
-        if raw_max and route_online_max_amount is None:
-            skipped += 1
-            continue
 
         existing = await db.execute(select(BillerRule).where(BillerRule.biller == biller))
         rule = existing.scalar_one_or_none()
@@ -576,8 +546,6 @@ async def import_biller_rules_csv(
                 service_charge=service_charge,
                 late_charge=late_charge,
                 account_digits=account_digits,
-                route_online_enabled=route_online_enabled,
-                route_online_max_amount=route_online_max_amount,
                 is_active=is_active,
             )
             created += 1
@@ -585,8 +553,6 @@ async def import_biller_rules_csv(
             rule.service_charge = service_charge
             rule.late_charge = late_charge
             rule.account_digits = account_digits
-            rule.route_online_enabled = route_online_enabled
-            rule.route_online_max_amount = route_online_max_amount
             rule.is_active = is_active
             rule.updated_at = datetime.utcnow()
             updated += 1
@@ -656,7 +622,6 @@ async def entry_form_page(
             "biller_charges": await get_biller_charges(db),
             "biller_late_charges": await get_biller_late_charges(db),
             "biller_account_digits": await get_biller_account_digits(db),
-            "biller_routing_policies": await get_biller_routing_policies(db),
             "routing_urgent_window_days": ROUTING_URGENT_WINDOW_DAYS,
             "current_user": current_user,
             "show_admin_records_link": show_admin_records_link,
