@@ -100,9 +100,8 @@ A masked sample is included: `sample_masked_records.csv`
 
 ### Biller rules CSV
 Use `sample_biller_rules.csv` as a starter for Admin Settings import.
-Routing policy columns supported:
-- `ROUTE_ONLINE_ENABLED` (`1/0`, `true/false`, `yes/no`; default `true`)
-- `ROUTE_ONLINE_MAX_AMOUNT` (optional numeric cap for online route)
+Biller rules headers:
+- `BILLER`, `SERVICE_CHARGE`, `LATE_CHARGE`, `ACCOUNT_DIGITS`, `IS_ACTIVE`
 
 ## Workflow
 Use these files as your working system:

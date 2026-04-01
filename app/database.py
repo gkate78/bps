@@ -60,16 +60,6 @@ async def init_db() -> None:
                 text("CREATE INDEX IF NOT EXISTS ix_bill_records_payment_channel ON bill_records(payment_channel)")
             )
 
-        # Lightweight migration: add routing policy columns for biller_rules.
-        biller_rule_columns = (await conn.execute(text("PRAGMA table_info(biller_rules)"))).fetchall()
-        biller_rule_col_names = {row[1] for row in biller_rule_columns}
-        if "route_online_enabled" not in biller_rule_col_names:
-            await conn.execute(
-                text("ALTER TABLE biller_rules ADD COLUMN route_online_enabled INTEGER NOT NULL DEFAULT 1")
-            )
-        if "route_online_max_amount" not in biller_rule_col_names:
-            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN route_online_max_amount FLOAT"))
-
         # Lightweight migration: add receipt settings columns for business_profiles.
         profile_columns = (await conn.execute(text("PRAGMA table_info(business_profiles)"))).fetchall()
         profile_col_names = {row[1] for row in profile_columns}

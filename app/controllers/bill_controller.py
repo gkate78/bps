@@ -152,23 +152,6 @@ async def has_active_biller_rule(db: AsyncSession, biller: str) -> bool:
     return result.scalar_one_or_none() is not None
 
 
-async def get_biller_routing_policies(db: AsyncSession) -> dict[str, dict]:
-    """Return biller-level routing policy map keyed by normalized biller."""
-    result = await db.execute(select(BillerRule).where(BillerRule.is_active == True))  # noqa: E712
-    rules = result.scalars().all()
-    policies: dict[str, dict] = {}
-    for item in rules:
-        key = _normalized_biller_key(item.biller)
-        if not key:
-            continue
-        max_amount = item.route_online_max_amount
-        policies[key] = {
-            "online_enabled": bool(item.route_online_enabled),
-            "online_max_amount": round(float(max_amount), 2) if max_amount is not None else None,
-        }
-    return policies
-
-
 async def decide_payment_channel(
     db: AsyncSession,
     *,
@@ -179,32 +162,23 @@ async def decide_payment_channel(
 ) -> dict:
     """
     Decide suggested payment channel (ONLINE or BRANCH_MANUAL) using:
-    - biller availability/policy
+    - active biller rule as routing prerequisite
     - urgency window (due within N days, including overdue) with online priority
-    - online amount cap
+    - non-urgent default to branch/manual
     """
     key = _normalized_biller_key(biller)
-    policies = await get_biller_routing_policies(db)
-    policy = policies.get(key)
-    if not key or policy is None:
+    if not key or not await has_active_biller_rule(db, key):
         return {"channel": "BRANCH_MANUAL", "reason": "NO_ACTIVE_BILLER_RULE", "policy": None}
     if not online_available:
-        return {"channel": "BRANCH_MANUAL", "reason": "ONLINE_UNAVAILABLE", "policy": policy}
-    if not policy.get("online_enabled", True):
-        return {"channel": "BRANCH_MANUAL", "reason": "BILLER_ONLINE_DISABLED", "policy": policy}
+        return {"channel": "BRANCH_MANUAL", "reason": "ONLINE_UNAVAILABLE", "policy": None}
 
     today = date.today()
     if due_date is not None:
         urgent_until = today + timedelta(days=ROUTING_URGENT_WINDOW_DAYS)
         if due_date <= urgent_until:
-            return {"channel": "ONLINE", "reason": "URGENT_DUE_DATE_ONLINE_PRIORITY", "policy": policy}
+            return {"channel": "ONLINE", "reason": "URGENT_DUE_DATE_ONLINE_PRIORITY", "policy": None}
 
-    total_value = round(float(total or 0), 2)
-    max_amount = policy.get("online_max_amount")
-    if max_amount is not None and total_value > float(max_amount):
-        return {"channel": "BRANCH_MANUAL", "reason": "ABOVE_ONLINE_LIMIT", "policy": policy}
-
-    return {"channel": "ONLINE", "reason": "WITHIN_ROUTING_POLICY", "policy": policy}
+    return {"channel": "BRANCH_MANUAL", "reason": "NON_URGENT_DEFAULT_BRANCH", "policy": None}
 
 
 def _compute_charge(biller: str, bill_amount: float, charge_map: dict[str, float]) -> float:

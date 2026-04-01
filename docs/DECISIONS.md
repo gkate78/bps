@@ -110,3 +110,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Urgent liabilities benefit from faster posting paths; suggesting online for near/past due cases reduces late-payment risk and aligns with operations priority.
 - Alternatives considered: urgent -> branch/manual default; leave urgent behavior neutral and use amount-cap only.
 - Follow-up: Observe operational outcomes and adjust urgency window or cap precedence if edge cases appear.
+
+- Date: 2026-03-31
+- ID: DEC-013
+- Related task: BPS-207
+- Decision: Remove `route_online_enabled` and `route_online_max_amount` from biller-rule configuration and simplify route suggestion to urgency-first: urgent => `ONLINE` (if available), non-urgent => `BRANCH_MANUAL`.
+- Why: Keep operator setup simple and avoid extra policy knobs while routing behavior is still being tuned with real usage.
+- Alternatives considered: keep full per-biller routing toggles/caps; keep caps only.
+- Follow-up: Reintroduce configurable routing controls only if operations later require finer channel balancing.
