@@ -118,3 +118,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Keep operator setup simple and avoid extra policy knobs while routing behavior is still being tuned with real usage.
 - Alternatives considered: keep full per-biller routing toggles/caps; keep caps only.
 - Follow-up: Reintroduce configurable routing controls only if operations later require finer channel balancing.
+
+- Date: 2026-03-31
+- ID: DEC-014
+- Related task: BPS-209
+- Decision: Send customer confirmation as a post-submission trigger using a provider-agnostic confirmation service (`COMMS_PROVIDER`), with local stub as default; do not block record creation if messaging fails.
+- Why: Operations need immediate customer comms signal with minimal delivery risk; local stub enables safe rollout while preserving a clean integration point for real SMS/Viber providers.
+- Alternatives considered: synchronous hard-fail send on submission; channel-specific vendor SDK integration first.
+- Follow-up: Add real provider adapters, delivery retries, and customer-facing delivery status if communication volume increases.

@@ -13,7 +13,8 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - CRUD: create, edit, delete records
 - Transaction audit log for record state changes (create, update, delete, CSV import) with admin visibility
 - CSV import endpoint for bulk loading sheet exports
-- Routing decision engine (BPS-207 slice): suggests `ONLINE` vs `BRANCH_MANUAL` per biller policy, urgency window, and amount cap
+- Routing decision engine (BPS-207 slice): suggests `ONLINE` vs `BRANCH_MANUAL` using urgency-first rules and availability fallback
+- Customer confirmation trigger after submission (BPS-209 slice): sends SMS/Viber-style confirmation via local/provider-agnostic service
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save
@@ -54,6 +55,8 @@ export PIN_MAX_FAILED_ATTEMPTS=5
 export PIN_LOCKOUT_MINUTES=15
 export PIN_WEAK_LIST=0000,1111,1234,4321
 export ROUTING_URGENT_WINDOW_DAYS=3
+export COMMS_PROVIDER=local
+export COMMS_DEFAULT_CHANNEL=sms
 ```
 
 PIN recovery flow is available from Sign In via `Forgot PIN` (`/auth/pin/reset`).
