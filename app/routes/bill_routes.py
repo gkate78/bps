@@ -43,6 +43,7 @@ from app.controllers.bill_controller import (
 )
 from app.database import get_db
 from app.models import BillerRule, BusinessProfile, RecordAuditLog, UserAccount
+from app.services import get_confirmation_service
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
@@ -78,6 +79,29 @@ def _is_valid_cp_number(value: Optional[str]) -> bool:
     if cleaned == "":
         return True
     return cleaned.isdigit() and len(cleaned) == 11
+
+
+def _posting_eta_for_channel(payment_channel: Optional[str]) -> str:
+    channel = str(payment_channel or "").strip().upper()
+    if channel == "ONLINE":
+        return "WITHIN 24 HOURS"
+    return "WITHIN 1-2 BUSINESS DAYS"
+
+
+def _build_confirmation_message(
+    *,
+    customer_name: str,
+    biller: str,
+    total: float,
+    reference: str,
+    payment_channel: Optional[str],
+    posting_eta: str,
+) -> str:
+    return (
+        f"BPAY CONFIRMATION: HI {customer_name}, YOUR PAYMENT FOR {biller} "
+        f"AMOUNTING TO PHP {total:,.2f} WAS RECEIVED. REF: {reference}. "
+        f"ROUTE: {payment_channel or 'BRANCH_MANUAL'}. POSTING ETA: {posting_eta}."
+    )
 
 
 class RecordCreate(BaseModel):
@@ -952,6 +976,54 @@ async def create_record_endpoint(
             f"routing_reason={decision.get('reason', '-')}"
         ),
     )
+    if _is_valid_cp_number(record.cp_number):
+        eta = _posting_eta_for_channel(record.payment_channel)
+        message = _build_confirmation_message(
+            customer_name=record.customer_name or "CUSTOMER",
+            biller=record.biller or "-",
+            total=float(record.total or 0),
+            reference=record.reference or "-",
+            payment_channel=record.payment_channel,
+            posting_eta=eta,
+        )
+        try:
+            dispatch = get_confirmation_service().send_confirmation(
+                phone=record.cp_number,
+                message=message,
+                preferred_channel="sms",
+            )
+            await _log_record_audit(
+                db,
+                action="notify_customer",
+                status="success",
+                current_user=current_user,
+                channel=dispatch.channel,
+                record_id=record.id,
+                detail=(
+                    f"provider={dispatch.provider}, message_id={dispatch.message_id}, "
+                    f"posting_eta={eta}, phone={record.cp_number}"
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - best effort notification
+            await _log_record_audit(
+                db,
+                action="notify_customer",
+                status="failed",
+                current_user=current_user,
+                channel="sms",
+                record_id=record.id,
+                detail=str(exc),
+            )
+    else:
+        await _log_record_audit(
+            db,
+            action="notify_customer",
+            status="skipped",
+            current_user=current_user,
+            channel="sms",
+            record_id=record.id,
+            detail="cp_number_missing_or_invalid",
+        )
     return record
 
 
