@@ -929,35 +929,90 @@ async def customer_dashboard(
     if current_user.role == "encoder":
         return RedirectResponse(url="/entry/form", status_code=303)
 
+    selected_account = str(request.query_params.get("account", "")).strip().upper()
+    selected_biller = str(request.query_params.get("biller", "")).strip().upper()
+
     customer_result = await db.execute(
         select(Customer)
         .where((Customer.user_id == current_user.id) | (Customer.phone == current_user.phone))
         .order_by(Customer.updated_at.desc(), Customer.id.desc())
-        .limit(1)
     )
-    customer_profile = customer_result.scalar_one_or_none()
-    if customer_profile and customer_profile.user_id is None:
-        customer_profile.user_id = current_user.id
-        db.add(customer_profile)
+    customer_profiles = customer_result.scalars().all()
+    for customer_profile in customer_profiles:
+        if customer_profile.user_id is None:
+            customer_profile.user_id = current_user.id
+            db.add(customer_profile)
+    if customer_profiles:
         await db.commit()
-        await db.refresh(customer_profile)
+        for customer_profile in customer_profiles:
+            await db.refresh(customer_profile)
 
-    bills = []
-    if customer_profile:
-        bills_result = await db.execute(
-            select(BillRecord)
-            .where(BillRecord.account == customer_profile.account)
-            .order_by(BillRecord.txn_datetime.desc(), BillRecord.id.desc())
-            .limit(300)
-        )
-        bills = bills_result.scalars().all()
+    accounts_from_profiles = {
+        str(item.account or "").strip().upper() for item in customer_profiles if str(item.account or "").strip()
+    }
+    accounts_result = await db.execute(
+        select(BillRecord.account)
+        .where(BillRecord.cp_number == current_user.phone)
+        .distinct()
+        .order_by(BillRecord.account.asc())
+    )
+    accounts_from_bills = {str(row[0] or "").strip().upper() for row in accounts_result.all() if row[0]}
+    account_options = sorted(accounts_from_profiles | accounts_from_bills)
+
+    if selected_account and selected_account not in account_options:
+        selected_account = ""
+
+    account_biller_rows = await db.execute(
+        select(BillRecord.account, BillRecord.biller)
+        .where(BillRecord.cp_number == current_user.phone)
+        .distinct()
+        .order_by(BillRecord.account.asc(), BillRecord.biller.asc())
+    )
+    account_biller_map: dict[str, list[str]] = {}
+    for account_value, biller_value in account_biller_rows.all():
+        account_key = str(account_value or "").strip().upper()
+        biller_key = str(biller_value or "").strip().upper()
+        if not account_key or not biller_key:
+            continue
+        bucket = account_biller_map.setdefault(account_key, [])
+        if biller_key not in bucket:
+            bucket.append(biller_key)
+
+    if selected_account:
+        biller_options = list(account_biller_map.get(selected_account, []))
+    else:
+        unique_billers = set()
+        for items in account_biller_map.values():
+            unique_billers.update(items)
+        biller_options = sorted(unique_billers)
+
+    if selected_biller and selected_biller not in biller_options:
+        selected_biller = ""
+
+    bills_stmt = (
+        select(BillRecord)
+        .where(BillRecord.cp_number == current_user.phone)
+        .order_by(BillRecord.txn_datetime.desc(), BillRecord.id.desc())
+        .limit(500)
+    )
+    if selected_account:
+        bills_stmt = bills_stmt.where(BillRecord.account == selected_account)
+    if selected_biller:
+        bills_stmt = bills_stmt.where(BillRecord.biller == selected_biller)
+    bills_result = await db.execute(bills_stmt)
+    bills = bills_result.scalars().all()
 
     return templates.TemplateResponse(
         "customer_dashboard.html",
         {
             "request": request,
             "current_user": current_user,
-            "customer_profile": customer_profile,
+            "customer_profiles": customer_profiles,
+            "account_options": account_options,
+            "biller_options": biller_options,
+            "account_biller_map": account_biller_map,
+            "selected_account": selected_account,
+            "selected_biller": selected_biller,
             "bills": bills,
         },
     )

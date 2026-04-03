@@ -835,6 +835,11 @@ async def datatable_query(
             "payment_reference": r.payment_reference or "",
             "payment_method": r.payment_method or "",
             "payment_channel": r.payment_channel or "",
+            "processed_at": (
+                r.updated_at.isoformat(timespec="seconds")
+                if (r.payment_reference is not None and str(r.payment_reference).strip() != "" and r.updated_at)
+                else ""
+            ),
         }
         for r in rows
     ]
@@ -874,6 +879,9 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
         ref_raw = _csv_cell(row, "REFERENCE", "reference")
         pay_ref = _csv_cell(row, "payment_reference", "PAYMENT_REFERENCE", "PAYMENT REFERENCE")
         pay_method = _csv_cell(row, "payment_method", "PAYMENT_METHOD", "PAYMENT METHOD")
+        # Import compatibility: if processed biller ref is not explicitly provided,
+        # fall back to REFERENCE from source CSV.
+        resolved_payment_reference = pay_ref or ref_raw
 
         payload = {
             "txn_datetime": txn_datetime,
@@ -891,7 +899,7 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
             "due_date": _parse_date(_csv_cell(row, "DUE DATE", "due_date", "DUE_DATE")),
             "notes": notes_raw or None,
             "reference": ref_raw or None,
-            "payment_reference": pay_ref or None,
+            "payment_reference": resolved_payment_reference or None,
             "payment_method": pay_method or None,
             "payment_channel": _csv_cell(row, "payment_channel", "PAYMENT_CHANNEL", "PAYMENT CHANNEL") or None,
         }

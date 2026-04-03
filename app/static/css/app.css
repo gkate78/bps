@@ -426,11 +426,39 @@ table tbody td {
 }
 
 /* Customer bills table alignment (data cells) */
-.customer-bills-table tbody td:nth-child(3) {
-    text-align: right;
+.customer-bills-table .col-biller {
+    text-align: left !important;
 }
-.customer-bills-table tbody td:nth-child(4) {
-    text-align: center;
+.customer-bills-table .col-bill-amount {
+    text-align: right !important;
+    white-space: nowrap;
+}
+.customer-bills-table .col-status {
+    text-align: center !important;
+}
+.customer-bills-table th,
+.customer-bills-table td {
+    padding: 0.45rem 0.55rem !important;
+}
+.customer-bills-table {
+    table-layout: fixed;
+    width: 100%;
+}
+.customer-bills-table th,
+.customer-bills-table td {
+    width: calc(100% / 7);
+}
+.customer-bills-table th {
+    white-space: normal;
+}
+.customer-bills-table td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.customer-bills-table td,
+.customer-bills-table th {
+    vertical-align: middle;
 }
 
 .mono {
