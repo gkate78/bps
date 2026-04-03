@@ -592,6 +592,7 @@ table tbody td {
 .report-flag-match { color: #0d7a0d; font-weight: 600; }
 .report-flag-pending { color: #b86a00; font-weight: 600; }
 .report-flag-short { color: #b91c1c; font-weight: 600; }
+.report-flag-over { color: #0a58ca; font-weight: 600; }
 
 @media (max-width: 680px) {
     .topbar {

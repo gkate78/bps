@@ -5,6 +5,7 @@
 {% block topbar_subtitle %}Set payment references and view EOD report.{% endblock %}
 {% block topbar_actions %}
 <a href="/admin/records" class="btn btn-secondary">Records</a>
+<a href="/admin/reports" class="btn btn-secondary">Reports</a>
 <a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
 <form method="post" action="/auth/logout" class="inline-action">
     <button type="submit" class="btn btn-secondary">Logout</button>
@@ -21,6 +22,10 @@
             <label for="reportDate">Report date</label>
             <input type="date" id="reportDate">
         </div>
+        <div class="field">
+            <label for="cashOnHand">Cash on hand (optional)</label>
+            <input type="number" id="cashOnHand" min="0" step="0.01" placeholder="e.g. 12000.00">
+        </div>
         <div class="field field-actions">
             <button type="button" class="btn btn-primary" id="loadReportBtn">Load report</button>
         </div>
@@ -32,6 +37,10 @@
                 <tr><th>Collected</th><td id="reportCollected"></td></tr>
                 <tr><th>Processed</th><td id="reportProcessed"></td></tr>
                 <tr><th>Pending</th><td id="reportPending"></td></tr>
+                <tr><th>Total Charges</th><td id="reportTotalCharges"></td></tr>
+                <tr><th>Cash on hand</th><td id="reportCashOnHand"></td></tr>
+                <tr><th>Cash variance</th><td id="reportCashVariance"></td></tr>
+                <tr><th>Cash status</th><td id="reportCashFlag"></td></tr>
                 <tr><th>Record count</th><td id="reportRecordCount"></td></tr>
                 <tr><th>Processed count</th><td id="reportProcessedCount"></td></tr>
                 <tr><th>Status</th><td id="reportFlag"></td></tr>
