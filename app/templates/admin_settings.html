@@ -5,6 +5,7 @@
 {% block topbar_subtitle %}Manage business receipt information and encoder accounts.{% endblock %}
 {% block topbar_actions %}
 <a href="/admin/records" class="btn btn-secondary">Back to Records</a>
+<a href="/admin/database" class="btn btn-secondary">Database</a>
 <form method="post" action="/auth/logout" class="inline-action">
     <button type="submit" class="btn btn-secondary">Logout</button>
 </form>
@@ -92,8 +93,9 @@
 </section>
 
 <section class="panel">
-    <div class="panel-head">
+    <div class="panel-head panel-head-actions">
         <h2>Biller Rules</h2>
+        <button type="button" class="btn btn-secondary" id="toggleBillerRulesBtn">Show Biller Rules Table</button>
     </div>
     <form method="post" action="/admin/settings/biller-rules/import-csv" class="inline-form" enctype="multipart/form-data" style="margin-bottom:0.8rem;">
         <input type="file" name="file" accept=".csv" required>
@@ -102,61 +104,63 @@
         <span class="status-text">Headers: BILLER, SERVICE_CHARGE, CASH, GCASH, MAYA, BAYAD, BPI CREDIT CARD, BPI, LATE_CHARGE, ACCOUNT_DIGITS, IS_ACTIVE</span>
     </form>
 
-    <table class="display users-grid" style="width:100%; margin-top:0.75rem;">
-        <thead>
-            <tr>
-                <th>Biller</th>
-                <th>Service Charge</th>
-                <th>Cash</th>
-                <th>GCash</th>
-                <th>Maya</th>
-                <th>Bayad</th>
-                <th>BPI Credit Card</th>
-                <th>BPI</th>
-                <th>Late Charge</th>
-                <th>Account Digits</th>
-                <th>Active</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for rule in biller_rules %}
-            <tr>
-                <td>{{ rule.biller }}</td>
-                <td>{{ "{:,.2f}".format(rule.service_charge) }}</td>
-                <td>{{ "{:,.2f}".format(rule.system_charge_cash) }}</td>
-                <td>{{ "{:,.2f}".format(rule.system_charge_gcash) }}</td>
-                <td>{{ "{:,.2f}".format(rule.system_charge_maya) }}</td>
-                <td>{{ "{:,.2f}".format(rule.system_charge_bayad) }}</td>
-                <td>{{ "{:,.2f}".format(rule.system_charge_bpi_cc) }}</td>
-                <td>{{ "{:,.2f}".format(rule.system_charge_bpi) }}</td>
-                <td>{{ "{:,.2f}".format(rule.late_charge) }}</td>
-                <td>{{ rule.account_digits if rule.account_digits else "-" }}</td>
-                <td>{{ "YES" if rule.is_active else "NO" }}</td>
-                <td>
-                    <button
-                        type="button"
-                        class="btn btn-secondary edit-rule-btn"
-                        data-biller="{{ rule.biller }}"
-                        data-service-charge="{{ "{:.2f}".format(rule.service_charge) }}"
-                        data-system-charge-cash="{{ "{:.2f}".format(rule.system_charge_cash) }}"
-                        data-system-charge-gcash="{{ "{:.2f}".format(rule.system_charge_gcash) }}"
-                        data-system-charge-maya="{{ "{:.2f}".format(rule.system_charge_maya) }}"
-                        data-system-charge-bayad="{{ "{:.2f}".format(rule.system_charge_bayad) }}"
-                        data-system-charge-bpi-cc="{{ "{:.2f}".format(rule.system_charge_bpi_cc) }}"
-                        data-system-charge-bpi="{{ "{:.2f}".format(rule.system_charge_bpi) }}"
-                        data-late-charge="{{ "{:.2f}".format(rule.late_charge) }}"
-                        data-account-digits="{{ rule.account_digits if rule.account_digits else '' }}"
-                        data-is-active="{{ '1' if rule.is_active else '0' }}"
-                    >Update</button>
-                    <form method="post" action="/admin/settings/biller-rules/{{ rule.id }}/delete" class="inline-action">
-                        <button type="submit" class="btn btn-danger">Delete</button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div id="billerRulesTableWrap" class="is-hidden">
+        <table class="display users-grid" style="width:100%; margin-top:0.75rem;">
+            <thead>
+                <tr>
+                    <th>Biller</th>
+                    <th>Service Charge</th>
+                    <th>Cash</th>
+                    <th>GCash</th>
+                    <th>Maya</th>
+                    <th>Bayad</th>
+                    <th>BPI Credit Card</th>
+                    <th>BPI</th>
+                    <th>Late Charge</th>
+                    <th>Account Digits</th>
+                    <th>Active</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rule in biller_rules %}
+                <tr>
+                    <td>{{ rule.biller }}</td>
+                    <td>{{ "{:,.2f}".format(rule.service_charge) }}</td>
+                    <td>{{ "{:,.2f}".format(rule.system_charge_cash) }}</td>
+                    <td>{{ "{:,.2f}".format(rule.system_charge_gcash) }}</td>
+                    <td>{{ "{:,.2f}".format(rule.system_charge_maya) }}</td>
+                    <td>{{ "{:,.2f}".format(rule.system_charge_bayad) }}</td>
+                    <td>{{ "{:,.2f}".format(rule.system_charge_bpi_cc) }}</td>
+                    <td>{{ "{:,.2f}".format(rule.system_charge_bpi) }}</td>
+                    <td>{{ "{:,.2f}".format(rule.late_charge) }}</td>
+                    <td>{{ rule.account_digits if rule.account_digits else "-" }}</td>
+                    <td>{{ "YES" if rule.is_active else "NO" }}</td>
+                    <td>
+                        <button
+                            type="button"
+                            class="btn btn-secondary edit-rule-btn"
+                            data-biller="{{ rule.biller }}"
+                            data-service-charge="{{ "{:.2f}".format(rule.service_charge) }}"
+                            data-system-charge-cash="{{ "{:.2f}".format(rule.system_charge_cash) }}"
+                            data-system-charge-gcash="{{ "{:.2f}".format(rule.system_charge_gcash) }}"
+                            data-system-charge-maya="{{ "{:.2f}".format(rule.system_charge_maya) }}"
+                            data-system-charge-bayad="{{ "{:.2f}".format(rule.system_charge_bayad) }}"
+                            data-system-charge-bpi-cc="{{ "{:.2f}".format(rule.system_charge_bpi_cc) }}"
+                            data-system-charge-bpi="{{ "{:.2f}".format(rule.system_charge_bpi) }}"
+                            data-late-charge="{{ "{:.2f}".format(rule.late_charge) }}"
+                            data-account-digits="{{ rule.account_digits if rule.account_digits else '' }}"
+                            data-is-active="{{ '1' if rule.is_active else '0' }}"
+                        >Update</button>
+                        <form method="post" action="/admin/settings/biller-rules/{{ rule.id }}/delete" class="inline-action">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </section>
 
 <dialog id="billerRuleDialog" class="app-dialog">
@@ -213,6 +217,8 @@
     "use strict";
 
     const openBtn = document.getElementById("openBillerRuleFormBtn");
+    const toggleTableBtn = document.getElementById("toggleBillerRulesBtn");
+    const tableWrap = document.getElementById("billerRulesTableWrap");
     const dialog = document.getElementById("billerRuleDialog");
     const closeDialogBtn = document.getElementById("closeBillerRuleDialogBtn");
     const title = document.getElementById("billerRuleFormTitle");
@@ -233,6 +239,19 @@
 
     if (!openBtn || !dialog || !closeDialogBtn || !form || !title || !saveBtn || !cancelBtn) {
         return;
+    }
+
+    if (toggleTableBtn && tableWrap) {
+        toggleTableBtn.addEventListener("click", function () {
+            const visible = !tableWrap.classList.contains("is-hidden");
+            if (visible) {
+                tableWrap.classList.add("is-hidden");
+                toggleTableBtn.textContent = "Show Biller Rules Table";
+            } else {
+                tableWrap.classList.remove("is-hidden");
+                toggleTableBtn.textContent = "Hide Biller Rules Table";
+            }
+        });
     }
 
     function resetFormToDefault() {

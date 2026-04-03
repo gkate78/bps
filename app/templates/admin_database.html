@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Database View{% endblock %}
+{% block topbar_title %}Database View{% endblock %}
+{% block topbar_subtitle %}Browse database tables in read-only mode.{% endblock %}
+{% block topbar_actions %}
+<a href="/admin/records" class="btn btn-secondary">Records</a>
+<a href="/admin/processing" class="btn btn-secondary">Processing</a>
+<a href="/admin/reports" class="btn btn-secondary">Reports</a>
+<a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
+<form method="post" action="/auth/logout" class="inline-action">
+    <button type="submit" class="btn btn-secondary">Logout</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<section class="panel panel-sticky db-controls-panel">
+    <div class="panel-head">
+        <h2>Table Selector</h2>
+    </div>
+    <form id="dbSelectorForm" method="get" action="/admin/database" class="controls-grid db-selector-form">
+        <div class="field db-field-table">
+            <label for="table">Table</label>
+            <select id="table" name="table">
+                {% for key, label in table_options.items() %}
+                <option value="{{ key }}" {% if key == selected_table %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field db-field-limit">
+            <label for="limit">Max rows</label>
+            <input id="limit" type="number" name="limit" min="10" max="1000" step="10" value="{{ limit }}">
+        </div>
+        <div class="field field-actions db-field-actions">
+            <button type="submit" class="btn btn-primary">Load Table</button>
+        </div>
+    </form>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>{{ table_options[selected_table] }} ({{ row_count }} rows)</h2>
+    </div>
+    <div class="table-scroll db-table-scroll">
+        <table class="display users-grid db-grid" style="width:100%">
+            <thead>
+                <tr>
+                    {% for col in columns %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% if rows %}
+                    {% for row in rows %}
+                    <tr>
+                        {% for col in columns %}
+                        <td>{{ row[col] if row[col] is not none else "—" }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="{{ columns|length if columns else 1 }}">No rows found for this table.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

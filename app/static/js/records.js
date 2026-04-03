@@ -321,8 +321,15 @@ function updateRecordsKpis() {
 table.on("draw", updateRecordsKpis);
 
 const auditTableEl = document.getElementById("auditTable");
-const auditTableInstance = auditTableEl
-    ? new DataTable("#auditTable", {
+const toggleAuditBtn = document.getElementById("toggleAuditBtn");
+const auditLogBody = document.getElementById("auditLogBody");
+let auditTableInstance = null;
+
+function initAuditTableIfNeeded() {
+    if (!auditTableEl || auditTableInstance) {
+        return;
+    }
+    auditTableInstance = new DataTable("#auditTable", {
         processing: true,
         ajax: {
             url: "/api/admin/record-audit",
@@ -341,8 +348,8 @@ const auditTableInstance = auditTableEl
             { data: "detail", render: (d) => d || "" },
         ],
         order: [[0, "desc"]],
-    })
-    : null;
+    });
+}
 
 function reloadAuditLog() {
     if (auditTableInstance) {
@@ -733,7 +740,25 @@ document.getElementById("clearFiltersBtn").addEventListener("click", () => {
 
 const refreshAuditBtn = document.getElementById("refreshAuditBtn");
 if (refreshAuditBtn) {
-    refreshAuditBtn.addEventListener("click", reloadAuditLog);
+    refreshAuditBtn.addEventListener("click", () => {
+        initAuditTableIfNeeded();
+        reloadAuditLog();
+    });
+}
+
+if (toggleAuditBtn && auditLogBody) {
+    toggleAuditBtn.addEventListener("click", () => {
+        const showing = !auditLogBody.classList.contains("is-hidden");
+        if (showing) {
+            auditLogBody.classList.add("is-hidden");
+            toggleAuditBtn.textContent = "Show Audit Log";
+            return;
+        }
+        auditLogBody.classList.remove("is-hidden");
+        toggleAuditBtn.textContent = "Hide Audit Log";
+        initAuditTableIfNeeded();
+        reloadAuditLog();
+    });
 }
 
 Object.values(filters).forEach((el) => {
