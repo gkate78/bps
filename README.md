@@ -15,6 +15,8 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - CSV import endpoint for bulk loading sheet exports
 - Routing decision engine (BPS-207 slice): suggests `ONLINE` vs `BRANCH_MANUAL` using urgency-first rules and availability fallback
 - Customer confirmation trigger after submission (BPS-209 slice): sends SMS/Viber-style confirmation via local/provider-agnostic service
+- Reconciliation report supports optional cash-on-hand input with variance/status summary
+- Reports tab for daily/monthly/yearly reconciliation summaries
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save
@@ -104,7 +106,7 @@ A masked sample is included: `sample_masked_records.csv`
 ### Biller rules CSV
 Use `sample_biller_rules.csv` as a starter for Admin Settings import.
 Biller rules headers:
-- `BILLER`, `SERVICE_CHARGE`, `LATE_CHARGE`, `ACCOUNT_DIGITS`, `IS_ACTIVE`
+- `BILLER`, `SERVICE_CHARGE`, `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPI CREDIT CARD`, `BPI`, `LATE_CHARGE`, `ACCOUNT_DIGITS`, `IS_ACTIVE`
 
 ## Workflow
 Use these files as your working system:
