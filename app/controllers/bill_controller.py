@@ -119,6 +119,43 @@ async def _get_biller_rule_maps(db: AsyncSession) -> tuple[dict[str, float], dic
     return charge_map, late_map
 
 
+def _normalized_payment_method(value: Optional[str]) -> str:
+    key = str(value or "").strip().upper().replace("-", "_")
+    aliases = {
+        "BPI CREDIT CARD": "BPI_CC",
+        "BPICC": "BPI_CC",
+    }
+    return aliases.get(key, key)
+
+
+async def _get_biller_system_charge_maps(db: AsyncSession) -> dict[str, dict[str, float]]:
+    result = await db.execute(select(BillerRule).where(BillerRule.is_active == True))  # noqa: E712
+    rules = result.scalars().all()
+    maps: dict[str, dict[str, float]] = {}
+    for item in rules:
+        key = _normalized_biller_key(item.biller)
+        if not key:
+            continue
+        maps[key] = {
+            "CASH": round(float(item.system_charge_cash or 0), 2),
+            "GCASH": round(float(item.system_charge_gcash or 0), 2),
+            "MAYA": round(float(item.system_charge_maya or 0), 2),
+            "BAYAD": round(float(item.system_charge_bayad or 0), 2),
+            "BPI_CC": round(float(item.system_charge_bpi_cc or 0), 2),
+            "BPI": round(float(item.system_charge_bpi or 0), 2),
+        }
+    return maps
+
+
+def _record_total_charges(record: BillRecord, system_maps: dict[str, dict[str, float]]) -> float:
+    base = round(float(record.charge or 0) + float(record.amt2 or 0), 2)
+    biller_key = _normalized_biller_key(record.biller)
+    method_key = _normalized_payment_method(record.payment_method)
+    system_charge = round(float(system_maps.get(biller_key, {}).get(method_key, 0)), 2)
+    adjusted = base + system_charge if method_key == "BAYAD" else base - system_charge
+    return round(adjusted, 2)
+
+
 async def get_biller_charges(db: AsyncSession) -> dict[str, float]:
     charge_map, _ = await _get_biller_rule_maps(db)
     return charge_map
@@ -509,35 +546,36 @@ async def upsert_customer_from_record(
     return customer
 
 
-async def reconciliation_summary(db: AsyncSession, for_date: date) -> dict:
-    """EOD summary: collected (sum total), processed (sum total where payment_reference set), pending, counts, flag."""
-    base = (
-        select(
-            func.coalesce(func.sum(BillRecord.total), 0).label("collected"),
-            func.count().label("record_count"),
+async def reconciliation_summary(
+    db: AsyncSession,
+    for_date: date,
+    *,
+    cash_on_hand: Optional[float] = None,
+) -> dict:
+    """EOD summary with optional cash-on-hand variance check."""
+    rows = (
+        await db.execute(
+            select(BillRecord).where(BillRecord.txn_date == for_date).order_by(BillRecord.id.asc())
         )
-        .select_from(BillRecord)
-        .where(BillRecord.txn_date == for_date)
-    )
-    row = (await db.execute(base)).one()
-    collected = round(float(row.collected), 2)
-    record_count = int(row.record_count or 0)
+    ).scalars().all()
+    system_maps = await _get_biller_system_charge_maps(db)
 
-    processed_q = (
-        select(
-            func.coalesce(func.sum(BillRecord.total), 0).label("processed"),
-            func.count().label("processed_count"),
-        )
-        .select_from(BillRecord)
-        .where(
-            BillRecord.txn_date == for_date,
-            BillRecord.payment_reference.is_not(None),
-            BillRecord.payment_reference != "",
-        )
-    )
-    proc_row = (await db.execute(processed_q)).one()
-    processed = round(float(proc_row.processed), 2)
-    processed_count = int(proc_row.processed_count or 0)
+    collected = 0.0
+    processed = 0.0
+    record_count = 0
+    processed_count = 0
+    total_charges = 0.0
+    for row in rows:
+        row_total = round(float(row.total or 0), 2)
+        collected += row_total
+        total_charges += _record_total_charges(row, system_maps)
+        record_count += 1
+        if row.payment_reference is not None and str(row.payment_reference).strip() != "":
+            processed += row_total
+            processed_count += 1
+    collected = round(collected, 2)
+    processed = round(processed, 2)
+    total_charges = round(total_charges, 2)
 
     pending = round(collected - processed, 2)
     if abs(processed - collected) < 0.01:
@@ -546,14 +584,143 @@ async def reconciliation_summary(db: AsyncSession, for_date: date) -> dict:
         flag = "short"
     else:
         flag = "pending"
-    return {
+    result = {
         "date": for_date.isoformat(),
         "collected": collected,
         "processed": processed,
         "pending": pending,
+        "total_charges": total_charges,
         "record_count": record_count,
         "processed_count": processed_count,
         "flag": flag,
+    }
+
+    if cash_on_hand is not None:
+        cash_value = round(float(cash_on_hand), 2)
+        cash_variance = round(cash_value - collected, 2)
+        if abs(cash_variance) < 0.01:
+            cash_flag = "match"
+        elif cash_variance < 0:
+            cash_flag = "short"
+        else:
+            cash_flag = "over"
+        result.update(
+            {
+                "cash_on_hand": cash_value,
+                "cash_variance": cash_variance,
+                "cash_flag": cash_flag,
+            }
+        )
+
+    return result
+
+
+async def reconciliation_report_summary(
+    db: AsyncSession,
+    *,
+    period: str,
+    reference_date: date,
+) -> dict:
+    """
+    Aggregate reconciliation metrics by period bucket:
+    - daily: each day in reference month
+    - monthly: each month in reference year
+    - yearly: each year across all data
+    """
+    normalized = (period or "daily").strip().lower()
+    if normalized not in {"daily", "monthly", "yearly"}:
+        normalized = "daily"
+
+    filters = []
+    if normalized == "daily":
+        month_start = reference_date.replace(day=1)
+        if month_start.month == 12:
+            month_end = date(month_start.year + 1, 1, 1)
+        else:
+            month_end = date(month_start.year, month_start.month + 1, 1)
+        filters.extend([BillRecord.txn_date >= month_start, BillRecord.txn_date < month_end])
+    elif normalized == "monthly":
+        year_start = date(reference_date.year, 1, 1)
+        year_end = date(reference_date.year + 1, 1, 1)
+        filters.extend([BillRecord.txn_date >= year_start, BillRecord.txn_date < year_end])
+
+    stmt = select(BillRecord).order_by(BillRecord.txn_date.asc(), BillRecord.id.asc())
+    if filters:
+        stmt = stmt.where(*filters)
+    rows = (await db.execute(stmt)).scalars().all()
+    system_maps = await _get_biller_system_charge_maps(db)
+
+    def bucket_label(txn_date: date) -> str:
+        if normalized == "daily":
+            return txn_date.isoformat()
+        if normalized == "monthly":
+            return txn_date.strftime("%Y-%m")
+        return txn_date.strftime("%Y")
+
+    bucket_map: dict[str, dict] = {}
+    for row in rows:
+        label = bucket_label(row.txn_date)
+        current = bucket_map.setdefault(
+            label,
+            {
+                "period_label": label,
+                "collected": 0.0,
+                "processed": 0.0,
+                "pending": 0.0,
+                "total_charges": 0.0,
+                "record_count": 0,
+                "processed_count": 0,
+                "flag": "pending",
+            },
+        )
+        row_total = round(float(row.total or 0), 2)
+        current["collected"] += row_total
+        current["record_count"] += 1
+        current["total_charges"] += _record_total_charges(row, system_maps)
+        if row.payment_reference is not None and str(row.payment_reference).strip() != "":
+            current["processed"] += row_total
+            current["processed_count"] += 1
+
+    for item in bucket_map.values():
+        item["collected"] = round(float(item["collected"]), 2)
+        item["processed"] = round(float(item["processed"]), 2)
+        item["total_charges"] = round(float(item["total_charges"]), 2)
+        item["pending"] = round(item["collected"] - item["processed"], 2)
+        if abs(item["processed"] - item["collected"]) < 0.01:
+            item["flag"] = "match"
+        elif item["processed"] > item["collected"]:
+            item["flag"] = "short"
+        else:
+            item["flag"] = "pending"
+
+    items = []
+    totals = {
+        "collected": 0.0,
+        "processed": 0.0,
+        "pending": 0.0,
+        "total_charges": 0.0,
+        "record_count": 0,
+        "processed_count": 0,
+    }
+    for item in sorted(bucket_map.values(), key=lambda x: x["period_label"]):
+        items.append(item)
+        totals["collected"] += float(item["collected"])
+        totals["processed"] += float(item["processed"])
+        totals["pending"] += float(item["pending"])
+        totals["total_charges"] += float(item["total_charges"])
+        totals["record_count"] += int(item["record_count"])
+        totals["processed_count"] += int(item["processed_count"])
+
+    totals["collected"] = round(float(totals["collected"]), 2)
+    totals["processed"] = round(float(totals["processed"]), 2)
+    totals["pending"] = round(float(totals["pending"]), 2)
+    totals["total_charges"] = round(float(totals["total_charges"]), 2)
+
+    return {
+        "period": normalized,
+        "reference_date": reference_date.isoformat(),
+        "items": items,
+        "totals": totals,
     }
 
 

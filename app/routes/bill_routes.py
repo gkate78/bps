@@ -37,6 +37,7 @@ from app.controllers.bill_controller import (
     get_record,
     has_active_biller_rule,
     import_csv_records,
+    reconciliation_report_summary,
     reconciliation_summary,
     update_record,
     upsert_customer_from_record,
@@ -313,14 +314,44 @@ async def admin_processing_page(
     )
 
 
+@router.get("/admin/reports", response_class=HTMLResponse, include_in_schema=False)
+async def admin_reports_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
+    if not current_user:
+        return RedirectResponse(url="/auth/signin", status_code=303)
+    if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
+        return RedirectResponse(url="/customer/dashboard", status_code=303)
+    return templates.TemplateResponse(
+        "reports.html",
+        {"request": request, "current_user": current_user},
+    )
+
+
 @router.get("/api/admin/reconciliation-summary")
 async def get_reconciliation_summary(
     summary_date: Optional[date] = Query(default=None),
+    date_alias: Optional[date] = Query(default=None, alias="date"),
+    cash_on_hand: Optional[float] = Query(default=None, ge=0),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
 ):
-    for_date = summary_date or date.today()
-    return await reconciliation_summary(db, for_date)
+    for_date = summary_date or date_alias or date.today()
+    return await reconciliation_summary(db, for_date, cash_on_hand=cash_on_hand)
+
+
+@router.get("/api/admin/reports/summary")
+async def get_reports_summary(
+    period: str = Query(default="daily"),
+    reference_date: Optional[date] = Query(default=None),
+    date_alias: Optional[date] = Query(default=None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_owner_or_admin),
+):
+    ref_date = reference_date or date_alias or date.today()
+    return await reconciliation_report_summary(db, period=period, reference_date=ref_date)
 
 
 @router.get("/admin/settings", response_class=HTMLResponse, include_in_schema=False)
@@ -472,6 +503,12 @@ async def create_encoder_user(
 async def upsert_biller_rule(
     biller: str = Form(...),
     service_charge: float = Form(0),
+    system_charge_cash: float = Form(0),
+    system_charge_gcash: float = Form(0),
+    system_charge_maya: float = Form(0),
+    system_charge_bayad: float = Form(0),
+    system_charge_bpi_cc: float = Form(0),
+    system_charge_bpi: float = Form(0),
     late_charge: float = Form(0),
     account_digits: Optional[int] = Form(None),
     is_active: Optional[str] = Form(None),
@@ -481,7 +518,16 @@ async def upsert_biller_rule(
     cleaned_biller = biller.strip().upper()
     if not cleaned_biller:
         return RedirectResponse(url="/admin/settings?error=Biller+name+is+required", status_code=303)
-    if service_charge < 0 or late_charge < 0:
+    if (
+        service_charge < 0
+        or system_charge_cash < 0
+        or system_charge_gcash < 0
+        or system_charge_maya < 0
+        or system_charge_bayad < 0
+        or system_charge_bpi_cc < 0
+        or system_charge_bpi < 0
+        or late_charge < 0
+    ):
         return RedirectResponse(url="/admin/settings?error=Charges+must+not+be+negative", status_code=303)
     if account_digits is not None and account_digits <= 0:
         return RedirectResponse(url="/admin/settings?error=Account+digits+must+be+greater+than+zero", status_code=303)
@@ -491,12 +537,24 @@ async def upsert_biller_rule(
         rule = BillerRule(
             biller=cleaned_biller,
             service_charge=round(float(service_charge), 2),
+            system_charge_cash=round(float(system_charge_cash), 2),
+            system_charge_gcash=round(float(system_charge_gcash), 2),
+            system_charge_maya=round(float(system_charge_maya), 2),
+            system_charge_bayad=round(float(system_charge_bayad), 2),
+            system_charge_bpi_cc=round(float(system_charge_bpi_cc), 2),
+            system_charge_bpi=round(float(system_charge_bpi), 2),
             late_charge=round(float(late_charge), 2),
             account_digits=int(account_digits) if account_digits else None,
             is_active=is_active is not None,
         )
     else:
         rule.service_charge = round(float(service_charge), 2)
+        rule.system_charge_cash = round(float(system_charge_cash), 2)
+        rule.system_charge_gcash = round(float(system_charge_gcash), 2)
+        rule.system_charge_maya = round(float(system_charge_maya), 2)
+        rule.system_charge_bayad = round(float(system_charge_bayad), 2)
+        rule.system_charge_bpi_cc = round(float(system_charge_bpi_cc), 2)
+        rule.system_charge_bpi = round(float(system_charge_bpi), 2)
         rule.late_charge = round(float(late_charge), 2)
         rule.account_digits = int(account_digits) if account_digits else None
         rule.is_active = is_active is not None
@@ -547,8 +605,31 @@ async def import_biller_rules_csv(
             continue
 
         service_charge = _parse_float(row.get("SERVICE_CHARGE"))
+        system_charge_cash = _parse_float(row.get("CASH"))
+        system_charge_gcash = _parse_float(row.get("GCASH"))
+        system_charge_maya = _parse_float(row.get("MAYA"))
+        system_charge_bayad = _parse_float(row.get("BAYAD"))
+        system_charge_bpi_cc = _parse_float(row.get("BPI CREDIT CARD") or row.get("BPI_CC"))
+        system_charge_bpi = _parse_float(row.get("BPI"))
         late_charge = _parse_float(row.get("LATE_CHARGE"))
-        if service_charge is None or late_charge is None or service_charge < 0 or late_charge < 0:
+        if (
+            service_charge is None
+            or system_charge_cash is None
+            or system_charge_gcash is None
+            or system_charge_maya is None
+            or system_charge_bayad is None
+            or system_charge_bpi_cc is None
+            or system_charge_bpi is None
+            or late_charge is None
+            or service_charge < 0
+            or system_charge_cash < 0
+            or system_charge_gcash < 0
+            or system_charge_maya < 0
+            or system_charge_bayad < 0
+            or system_charge_bpi_cc < 0
+            or system_charge_bpi < 0
+            or late_charge < 0
+        ):
             skipped += 1
             continue
 
@@ -568,6 +649,12 @@ async def import_biller_rules_csv(
             rule = BillerRule(
                 biller=biller,
                 service_charge=service_charge,
+                system_charge_cash=system_charge_cash,
+                system_charge_gcash=system_charge_gcash,
+                system_charge_maya=system_charge_maya,
+                system_charge_bayad=system_charge_bayad,
+                system_charge_bpi_cc=system_charge_bpi_cc,
+                system_charge_bpi=system_charge_bpi,
                 late_charge=late_charge,
                 account_digits=account_digits,
                 is_active=is_active,
@@ -575,6 +662,12 @@ async def import_biller_rules_csv(
             created += 1
         else:
             rule.service_charge = service_charge
+            rule.system_charge_cash = system_charge_cash
+            rule.system_charge_gcash = system_charge_gcash
+            rule.system_charge_maya = system_charge_maya
+            rule.system_charge_bayad = system_charge_bayad
+            rule.system_charge_bpi_cc = system_charge_bpi_cc
+            rule.system_charge_bpi = system_charge_bpi
             rule.late_charge = late_charge
             rule.account_digits = account_digits
             rule.is_active = is_active

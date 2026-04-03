@@ -60,6 +60,22 @@ async def init_db() -> None:
                 text("CREATE INDEX IF NOT EXISTS ix_bill_records_payment_channel ON bill_records(payment_channel)")
             )
 
+        # Lightweight migration: add per-method system charges for biller rules.
+        biller_columns = (await conn.execute(text("PRAGMA table_info(biller_rules)"))).fetchall()
+        biller_col_names = {row[1] for row in biller_columns}
+        if "system_charge_cash" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN system_charge_cash FLOAT NOT NULL DEFAULT 0"))
+        if "system_charge_gcash" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN system_charge_gcash FLOAT NOT NULL DEFAULT 0"))
+        if "system_charge_maya" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN system_charge_maya FLOAT NOT NULL DEFAULT 0"))
+        if "system_charge_bayad" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN system_charge_bayad FLOAT NOT NULL DEFAULT 0"))
+        if "system_charge_bpi_cc" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN system_charge_bpi_cc FLOAT NOT NULL DEFAULT 0"))
+        if "system_charge_bpi" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN system_charge_bpi FLOAT NOT NULL DEFAULT 0"))
+
         # Lightweight migration: add receipt settings columns for business_profiles.
         profile_columns = (await conn.execute(text("PRAGMA table_info(business_profiles)"))).fetchall()
         profile_col_names = {row[1] for row in profile_columns}
