@@ -227,6 +227,7 @@ def _build_receipt_settings(profile: Optional[BusinessProfile]) -> dict:
         "show_business_phone": bool(profile.receipt_show_business_phone) if profile else True,
         "show_business_email": bool(profile.receipt_show_business_email) if profile else False,
         "show_business_tin": bool(profile.receipt_show_business_tin) if profile else False,
+        "show_footer": bool(profile.receipt_show_footer) if profile else True,
         "show_reference": "reference" in visible,
         "show_txn_datetime": "txn_datetime" in visible,
         "show_account": "account" in visible,
@@ -376,6 +377,7 @@ async def admin_settings_page(
             "receipt_show_business_phone": bool(profile.receipt_show_business_phone) if profile else True,
             "receipt_show_business_email": bool(profile.receipt_show_business_email) if profile else False,
             "receipt_show_business_tin": bool(profile.receipt_show_business_tin) if profile else False,
+            "receipt_show_footer": bool(profile.receipt_show_footer) if profile else True,
             "biller_rules": biller_rules,
             "error": request.query_params.get("error", "").strip(),
             "success": request.query_params.get("success", "").strip(),
@@ -400,6 +402,7 @@ async def update_business_settings(
     receipt_show_business_phone: Optional[str] = Form(None),
     receipt_show_business_email: Optional[str] = Form(None),
     receipt_show_business_tin: Optional[str] = Form(None),
+    receipt_show_footer: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(require_owner_or_admin),
 ):
@@ -420,13 +423,14 @@ async def update_business_settings(
             business_email=_normalize_business_email(business_email),
             tin_number=_normalize_text(tin_number) or None,
             receipt_footer=_normalize_text(receipt_footer) or None,
-            receipt_show_headings=receipt_show_headings is not None,
+            receipt_show_headings=True,
             receipt_visible_fields=_serialize_visible_fields(list(RECEIPT_FIELD_KEYS)),
             receipt_show_business_name=receipt_show_business_name is not None,
             receipt_show_business_address=receipt_show_business_address is not None,
             receipt_show_business_phone=receipt_show_business_phone is not None,
             receipt_show_business_email=receipt_show_business_email is not None,
             receipt_show_business_tin=receipt_show_business_tin is not None,
+            receipt_show_footer=receipt_show_footer is not None,
         )
     else:
         profile.business_name = cleaned_name
@@ -435,13 +439,15 @@ async def update_business_settings(
         profile.business_email = _normalize_business_email(business_email)
         profile.tin_number = _normalize_text(tin_number) or None
         profile.receipt_footer = _normalize_text(receipt_footer) or None
-        profile.receipt_show_headings = receipt_show_headings is not None
+        if receipt_show_headings is not None:
+            profile.receipt_show_headings = True
         profile.receipt_visible_fields = _serialize_visible_fields(list(RECEIPT_FIELD_KEYS))
         profile.receipt_show_business_name = receipt_show_business_name is not None
         profile.receipt_show_business_address = receipt_show_business_address is not None
         profile.receipt_show_business_phone = receipt_show_business_phone is not None
         profile.receipt_show_business_email = receipt_show_business_email is not None
         profile.receipt_show_business_tin = receipt_show_business_tin is not None
+        profile.receipt_show_footer = receipt_show_footer is not None
         profile.updated_at = datetime.utcnow()
 
     db.add(profile)

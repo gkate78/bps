@@ -45,6 +45,22 @@ function formatStatusPill(value) {
     return `<span class="status-pill ${cls}">${status || "-"}</span>`;
 }
 
+function paymentStatePill(row) {
+    const isProcessed = Boolean(row && row.payment_reference);
+    const label = isProcessed ? "Processed" : "Pending";
+    const cls = isProcessed ? "status-success" : "status-warning";
+    return `<span class="status-pill ${cls}">${label}</span>`;
+}
+
+function parseDate(value) {
+    if (!value) {
+        return null;
+    }
+    const normalized = `${String(value).slice(0, 10)}T00:00:00`;
+    const dt = new Date(normalized);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
 function showMessage(message, title = "Notice") {
     const dialog = document.getElementById("appMessageDialog");
     const titleEl = document.getElementById("appMessageTitle");
@@ -158,6 +174,13 @@ const filters = {
     dueStatus: document.getElementById("dueStatusFilter"),
 };
 
+const kpis = {
+    visible: document.getElementById("kpiVisibleRecords"),
+    processed: document.getElementById("kpiProcessedRecords"),
+    pending: document.getElementById("kpiPendingRecords"),
+    urgent: document.getElementById("kpiUrgentRecords"),
+};
+
 function normalizedBillerKey(value) {
     return String(value || "").trim().toUpperCase();
 }
@@ -248,7 +271,7 @@ const table = new DataTable("#recordsTable", {
         { data: "due_date", render: (d) => d || "-" },
         {
             data: null,
-            render: (row) => (row.payment_reference ? "PAID" : "PENDING"),
+            render: (row) => paymentStatePill(row),
         },
         { data: "reference", render: (d) => d || "" },
         {
@@ -265,6 +288,37 @@ const table = new DataTable("#recordsTable", {
     ],
     order: [[1, "desc"]],
 });
+
+function updateRecordsKpis() {
+    const rows = table.rows({ search: "applied" }).data().toArray();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const urgentUntil = new Date(today);
+    urgentUntil.setDate(urgentUntil.getDate() + 3);
+    let processed = 0;
+    let pending = 0;
+    let urgent = 0;
+
+    rows.forEach((row) => {
+        const done = Boolean(row && row.payment_reference);
+        if (done) {
+            processed += 1;
+        } else {
+            pending += 1;
+        }
+        const dueDate = parseDate(row?.due_date);
+        if (!done && dueDate && dueDate <= urgentUntil) {
+            urgent += 1;
+        }
+    });
+
+    if (kpis.visible) kpis.visible.textContent = String(rows.length);
+    if (kpis.processed) kpis.processed.textContent = String(processed);
+    if (kpis.pending) kpis.pending.textContent = String(pending);
+    if (kpis.urgent) kpis.urgent.textContent = String(urgent);
+}
+
+table.on("draw", updateRecordsKpis);
 
 const auditTableEl = document.getElementById("auditTable");
 const auditTableInstance = auditTableEl

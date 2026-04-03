@@ -15,7 +15,26 @@
 {% endblock %}
 
 {% block content %}
-<section class="panel">
+<section class="kpi-strip" id="recordsKpiStrip">
+    <article class="kpi-card">
+        <p class="kpi-label">Visible Records</p>
+        <p class="kpi-value" id="kpiVisibleRecords">0</p>
+    </article>
+    <article class="kpi-card">
+        <p class="kpi-label">Processed</p>
+        <p class="kpi-value" id="kpiProcessedRecords">0</p>
+    </article>
+    <article class="kpi-card">
+        <p class="kpi-label">Pending</p>
+        <p class="kpi-value" id="kpiPendingRecords">0</p>
+    </article>
+    <article class="kpi-card">
+        <p class="kpi-label">Urgent Due</p>
+        <p class="kpi-value" id="kpiUrgentRecords">0</p>
+    </article>
+</section>
+
+<section class="panel panel-sticky">
     <div class="panel-head">
         <h2>Data Controls</h2>
     </div>

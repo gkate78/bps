@@ -2,7 +2,7 @@
 
 {% block title %}Processing & Reconciliation{% endblock %}
 {% block topbar_title %}Processing & Reconciliation{% endblock %}
-{% block topbar_subtitle %}Set payment references and view EOD report.{% endblock %}
+{% block topbar_subtitle %}View EOD reconciliation and processed transactions.{% endblock %}
 {% block topbar_actions %}
 <a href="/admin/records" class="btn btn-secondary">Records</a>
 <a href="/admin/reports" class="btn btn-secondary">Reports</a>
@@ -49,11 +49,30 @@
     </div>
 </section>
 
+<section class="kpi-strip" id="processingKpiStrip">
+    <article class="kpi-card">
+        <p class="kpi-label">Collected</p>
+        <p class="kpi-value" id="kpiCollected">0.00</p>
+    </article>
+    <article class="kpi-card">
+        <p class="kpi-label">Processed</p>
+        <p class="kpi-value" id="kpiProcessed">0.00</p>
+    </article>
+    <article class="kpi-card">
+        <p class="kpi-label">Pending</p>
+        <p class="kpi-value" id="kpiPending">0.00</p>
+    </article>
+    <article class="kpi-card">
+        <p class="kpi-label">Cash Variance</p>
+        <p class="kpi-value" id="kpiCashVariance">—</p>
+    </article>
+</section>
+
 <section class="panel">
     <div class="panel-head">
         <h2>Transactions</h2>
     </div>
-    <div class="controls-grid">
+    <div class="controls-grid panel-sticky-controls">
         <div class="field">
             <label for="billerFilter">Biller</label>
             <select id="billerFilter">
@@ -88,27 +107,10 @@
                 <th>Receipt ref</th>
                 <th>Payment ref</th>
                 <th>Date processed</th>
-                <th>Set ref</th>
             </tr>
         </thead>
     </table>
 </section>
-
-<dialog id="paymentRefDialog" class="app-dialog">
-    <div class="app-dialog-head">
-        <h3>Set payment reference</h3>
-        <button type="button" class="btn btn-ghost" id="closePaymentRefBtn">Close</button>
-    </div>
-    <form id="paymentRefForm" onsubmit="return false;">
-        <input type="hidden" id="paymentRefRecordId">
-        <label>Payment reference (from biller/channel)
-            <input type="text" id="paymentRefInput" maxlength="120" placeholder="e.g. GC-12345">
-        </label>
-        <div class="dialog-actions">
-            <button type="submit" class="btn btn-primary">Save</button>
-        </div>
-    </form>
-</dialog>
 {% endblock %}
 
 {% block scripts %}
