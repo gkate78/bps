@@ -40,6 +40,7 @@ from app.controllers.bill_controller import (
     import_csv_records,
     reconciliation_report_summary,
     reconciliation_summary,
+    records_kpi_summary,
     update_record,
     upsert_customer_from_record,
 )
@@ -396,6 +397,24 @@ async def get_reports_summary(
 ):
     ref_date = reference_date or date_alias or date.today()
     return await reconciliation_report_summary(db, period=period, reference_date=ref_date)
+
+
+@router.get("/api/admin/records/kpis")
+async def get_records_kpis(
+    biller: Optional[str] = Query(default=None),
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    due_status: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_owner_or_admin),
+):
+    return await records_kpi_summary(
+        db,
+        biller=biller,
+        from_date=from_date,
+        to_date=to_date,
+        due_status=due_status,
+    )
 
 
 @router.get("/admin/settings", response_class=HTMLResponse, include_in_schema=False)

@@ -61,6 +61,8 @@ function parseDate(value) {
     return Number.isNaN(dt.getTime()) ? null : dt;
 }
 
+let kpiAbortController = null;
+
 function showMessage(message, title = "Notice") {
     const dialog = document.getElementById("appMessageDialog");
     const titleEl = document.getElementById("appMessageTitle");
@@ -179,6 +181,7 @@ const kpis = {
     processed: document.getElementById("kpiProcessedRecords"),
     pending: document.getElementById("kpiPendingRecords"),
     urgent: document.getElementById("kpiUrgentRecords"),
+    scope: document.getElementById("kpiScopeLabel"),
 };
 
 function normalizedBillerKey(value) {
@@ -289,33 +292,34 @@ const table = new DataTable("#recordsTable", {
     order: [[1, "desc"]],
 });
 
-function updateRecordsKpis() {
-    const rows = table.rows({ search: "applied" }).data().toArray();
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const urgentUntil = new Date(today);
-    urgentUntil.setDate(urgentUntil.getDate() + 3);
-    let processed = 0;
-    let pending = 0;
-    let urgent = 0;
+async function updateRecordsKpis() {
+    if (kpiAbortController) {
+        kpiAbortController.abort();
+    }
+    kpiAbortController = new AbortController();
+    const params = new URLSearchParams();
+    if (filters.biller?.value) params.set("biller", filters.biller.value);
+    if (filters.fromDate?.value) params.set("from_date", filters.fromDate.value);
+    if (filters.toDate?.value) params.set("to_date", filters.toDate.value);
+    if (filters.dueStatus?.value) params.set("due_status", filters.dueStatus.value);
+    const url = `/api/admin/records/kpis${params.toString() ? `?${params.toString()}` : ""}`;
 
-    rows.forEach((row) => {
-        const done = Boolean(row && row.payment_reference);
-        if (done) {
-            processed += 1;
-        } else {
-            pending += 1;
+    try {
+        const response = await fetch(url, { signal: kpiAbortController.signal });
+        if (!response.ok) {
+            return;
         }
-        const dueDate = parseDate(row?.due_date);
-        if (!done && dueDate && dueDate <= urgentUntil) {
-            urgent += 1;
+        const data = await response.json();
+        if (kpis.visible) kpis.visible.textContent = String(data.visible_records ?? 0);
+        if (kpis.processed) kpis.processed.textContent = String(data.processed_records ?? 0);
+        if (kpis.pending) kpis.pending.textContent = String(data.pending_records ?? 0);
+        if (kpis.urgent) kpis.urgent.textContent = String(data.urgent_records ?? 0);
+        if (kpis.scope) kpis.scope.textContent = data.default_scope ? "Scope: Current month" : "Scope: Filtered";
+    } catch (err) {
+        if (err && err.name === "AbortError") {
+            return;
         }
-    });
-
-    if (kpis.visible) kpis.visible.textContent = String(rows.length);
-    if (kpis.processed) kpis.processed.textContent = String(processed);
-    if (kpis.pending) kpis.pending.textContent = String(pending);
-    if (kpis.urgent) kpis.urgent.textContent = String(urgent);
+    }
 }
 
 table.on("draw", updateRecordsKpis);
