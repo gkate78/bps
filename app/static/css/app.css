@@ -146,6 +146,13 @@ body {
     font-size: 1.1rem;
 }
 
+.panel-head-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.8rem;
+}
+
 .controls-grid {
     display: grid;
     gap: 0.8rem;
@@ -474,6 +481,97 @@ input[readonly] {
     text-transform: none;
 }
 
+.table-scroll {
+    overflow-x: auto;
+}
+
+.db-selector-form {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: nowrap;
+    gap: 0.55rem;
+}
+
+.db-selector-form .field {
+    min-width: 0;
+    margin: 0;
+}
+
+.db-selector-form label {
+    font-size: 0.8rem;
+}
+
+.db-selector-form select,
+.db-selector-form input {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.9rem;
+}
+
+.db-field-table {
+    flex: 1 1 280px;
+    max-width: 420px;
+}
+
+.db-field-limit {
+    flex: 0 0 120px;
+    max-width: 120px;
+}
+
+.db-selector-form .field-actions {
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    align-self: end;
+}
+
+.db-selector-form .field-actions .btn {
+    min-width: 120px;
+    padding: 0.45rem 0.75rem;
+    white-space: nowrap;
+}
+
+.db-grid td,
+.db-grid th {
+    text-transform: none;
+    white-space: nowrap;
+}
+
+.db-table-scroll {
+    max-height: calc(100vh - 320px);
+    min-height: 320px;
+    overflow: auto;
+}
+
+.db-controls-panel {
+    top: 0;
+    z-index: 12;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+    box-shadow: 0 8px 20px rgba(6, 31, 68, 0.09);
+}
+
+.db-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+
+@media (max-width: 900px) {
+    .db-selector-form {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .db-field-table,
+    .db-field-limit {
+        max-width: none;
+    }
+
+    .db-table-scroll {
+        max-height: calc(100vh - 360px);
+        min-height: 260px;
+    }
+}
+
 .audit-grid td,
 .audit-grid th {
     text-transform: none;
@@ -742,6 +840,10 @@ table tbody td {
     .entry-grid-main,
     .entry-grid-amounts {
         grid-template-columns: 1fr;
+    }
+
+    .db-selector-form .field-actions .btn {
+        width: 100%;
     }
 }
 

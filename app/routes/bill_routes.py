@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -48,6 +49,16 @@ from app.services import get_confirmation_service
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
+
+DATABASE_VIEW_TABLES: dict[str, str] = {
+    "bill_records": "Bill Records",
+    "customer_accounts": "Customer Accounts",
+    "biller_rules": "Biller Rules",
+    "record_audit_logs": "Record Audit Logs",
+    "user_accounts": "User Accounts",
+    "business_profiles": "Business Profiles",
+    "auth_event_logs": "Auth Event Logs",
+}
 
 RECEIPT_FIELD_KEYS = (
     "reference",
@@ -328,6 +339,38 @@ async def admin_reports_page(
     return templates.TemplateResponse(
         "reports.html",
         {"request": request, "current_user": current_user},
+    )
+
+
+@router.get("/admin/database", response_class=HTMLResponse, include_in_schema=False)
+async def admin_database_page(
+    request: Request,
+    table: Optional[str] = Query(default="bill_records"),
+    limit: int = Query(default=100, ge=10, le=1000),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_owner_or_admin),
+):
+    selected_table = table if table in DATABASE_VIEW_TABLES else "bill_records"
+    column_rows = (await db.execute(text(f"PRAGMA table_info({selected_table})"))).fetchall()
+    columns = [row[1] for row in column_rows]
+
+    order_sql = " ORDER BY id DESC" if "id" in columns else ""
+    query_sql = text(f"SELECT * FROM {selected_table}{order_sql} LIMIT :limit")
+    data_rows = (await db.execute(query_sql, {"limit": limit})).fetchall()
+    rows = [dict(row._mapping) for row in data_rows]
+
+    return templates.TemplateResponse(
+        "admin_database.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "table_options": DATABASE_VIEW_TABLES,
+            "selected_table": selected_table,
+            "limit": limit,
+            "columns": columns,
+            "rows": rows,
+            "row_count": len(rows),
+        },
     )
 
 

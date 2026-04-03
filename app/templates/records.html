@@ -7,6 +7,7 @@
 <a href="/entry/form" class="btn btn-primary">Add Record</a>
 <a href="/admin/processing" class="btn btn-secondary">Processing</a>
 <a href="/admin/reports" class="btn btn-secondary">Reports</a>
+<a href="/admin/database" class="btn btn-secondary">Database</a>
 <a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
 <button type="button" class="btn btn-secondary" id="openUsersBtn">Users</button>
 <form method="post" action="/auth/logout" class="inline-action">
@@ -110,26 +111,29 @@
 </section>
 
 <section class="panel">
-    <div class="panel-head">
+    <div class="panel-head panel-head-actions">
         <h2>Transaction Audit Log</h2>
+        <button type="button" class="btn btn-secondary" id="toggleAuditBtn">Show Audit Log</button>
     </div>
-    <div class="dialog-actions">
-        <button type="button" class="btn btn-secondary" id="refreshAuditBtn">Refresh Audit Log</button>
+    <div id="auditLogBody" class="is-hidden">
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" id="refreshAuditBtn">Refresh Audit Log</button>
+        </div>
+        <table id="auditTable" class="display audit-grid" style="width:100%">
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Who</th>
+                    <th>Role</th>
+                    <th>Action</th>
+                    <th>Channel</th>
+                    <th>Status</th>
+                    <th>Record ID</th>
+                    <th>Detail</th>
+                </tr>
+            </thead>
+        </table>
     </div>
-    <table id="auditTable" class="display audit-grid" style="width:100%">
-        <thead>
-            <tr>
-                <th>When</th>
-                <th>Who</th>
-                <th>Role</th>
-                <th>Action</th>
-                <th>Channel</th>
-                <th>Status</th>
-                <th>Record ID</th>
-                <th>Detail</th>
-            </tr>
-        </thead>
-    </table>
 </section>
 
 <dialog id="usersDialog" class="record-dialog users-dialog">
