@@ -17,6 +17,7 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Customer confirmation trigger after submission (BPS-209 slice): sends SMS/Viber-style confirmation via local/provider-agnostic service
 - Reconciliation report supports optional cash-on-hand input with variance/status summary
 - Reports tab for daily/monthly/yearly reconciliation summaries
+- Customer dashboard now shows all bills tied to a phone number with dynamic account/biller filters
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save
@@ -100,6 +101,9 @@ Headers supported (case-sensitive):
 - `payment_reference` (optional)
 - `payment_method` (optional)
 - `payment_channel` (optional)
+
+Import note:
+- If `payment_reference` is missing but `REFERENCE` exists, import falls back to `REFERENCE` for processed biller reference.
 
 A masked sample is included: `sample_masked_records.csv`
 

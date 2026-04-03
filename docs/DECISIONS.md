@@ -142,3 +142,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Operations needs a quick trend view beyond single-day reconciliation so admins can monitor performance over day/month/year without exporting first.
 - Alternatives considered: keep only single EOD report; generate summaries only via CSV export.
 - Follow-up: Add CSV export for report rows and biller-level breakdowns if reporting needs expand.
+
+- Date: 2026-04-03
+- ID: DEC-017
+- Related task: BPS-206 / customer portal
+- Decision: Scope customer dashboard bills by logged-in phone (`cp_number`) and support two-way dynamic account/biller filters; show bill reference to customers only when payment is already processed.
+- Why: Customers can have multiple accounts and billers under one phone; filtering by account/biller reduces confusion while avoiding exposure of pending/processing references.
+- Alternatives considered: single-account customer dashboard; always showing reference regardless of payment status.
+- Follow-up: Add client-side pagination/sorting for large bill histories and optional “view by biller only” quick chips.
