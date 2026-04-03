@@ -18,6 +18,8 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Reconciliation report supports optional cash-on-hand input with variance/status summary
 - Reports tab for daily/monthly/yearly reconciliation summaries
 - Customer dashboard now shows all bills tied to a phone number with dynamic account/biller filters
+- Admin pages include KPI cards, sticky filters, and status chips for faster scanning
+- Admin Settings includes popup biller-rule form (Add/Update) and per-field receipt visibility toggles beside business inputs (including receipt footer)
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save

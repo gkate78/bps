@@ -182,7 +182,9 @@
             <div class="sign-line"></div>
             <span>SIGNATURE</span>
         </div>
+        {% if receipt_settings.show_footer %}
         <p class="meta">{{ business_profile.receipt_footer if business_profile and business_profile.receipt_footer else "THANK YOU" }}</p>
+        {% endif %}
     </div>
     <div class="preview-actions">
         <button type="button" class="toolbar-btn primary" id="printReceiptBtn">Print</button>

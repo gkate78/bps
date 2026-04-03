@@ -110,6 +110,10 @@ async def init_db() -> None:
             await conn.execute(
                 text("ALTER TABLE business_profiles ADD COLUMN receipt_show_business_tin INTEGER NOT NULL DEFAULT 0")
             )
+        if "receipt_show_footer" not in profile_col_names:
+            await conn.execute(
+                text("ALTER TABLE business_profiles ADD COLUMN receipt_show_footer INTEGER NOT NULL DEFAULT 1")
+            )
 
         # Lightweight migration: add auth hardening columns for user_accounts.
         user_columns = (await conn.execute(text("PRAGMA table_info(user_accounts)"))).fetchall()

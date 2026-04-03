@@ -150,3 +150,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Customers can have multiple accounts and billers under one phone; filtering by account/biller reduces confusion while avoiding exposure of pending/processing references.
 - Alternatives considered: single-account customer dashboard; always showing reference regardless of payment status.
 - Follow-up: Add client-side pagination/sorting for large bill histories and optional “view by biller only” quick chips.
+
+- Date: 2026-04-03
+- ID: DEC-018
+- Related task: Admin UX polish / BPS-205 operations
+- Decision: Simplify admin workflows by removing inline payment-ref editing from the Processing transactions table, adding KPI-first dashboard presentation, and moving biller-rule create/update into a popup form; keep receipt print controls directly beside each business-profile input and include a dedicated footer visibility toggle.
+- Why: Operators should scan status quickly and change settings with less clutter; pairing receipt toggles with their exact fields reduces configuration mistakes.
+- Alternatives considered: keep inline edit controls on processing table; keep always-visible biller-rule form; keep receipt toggles in a separate checklist section.
+- Follow-up: Add lightweight tooltips/help text for each receipt toggle and include before/after UI snapshots in docs if onboarding friction appears.
