@@ -6,6 +6,10 @@
         return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    function statusPill(label, cls) {
+        return '<span class="status-pill ' + cls + '">' + label + "</span>";
+    }
+
     function showMessage(message, title) {
         const dialog = document.getElementById("appMessageDialog");
         const titleEl = document.getElementById("appMessageTitle");
@@ -38,11 +42,10 @@
     const fromDateFilter = document.getElementById("fromDateFilter");
     const toDateFilter = document.getElementById("toDateFilter");
     const clearFiltersBtn = document.getElementById("clearFiltersBtn");
-    const paymentRefDialog = document.getElementById("paymentRefDialog");
-    const paymentRefForm = document.getElementById("paymentRefForm");
-    const paymentRefRecordId = document.getElementById("paymentRefRecordId");
-    const paymentRefInput = document.getElementById("paymentRefInput");
-    const closePaymentRefBtn = document.getElementById("closePaymentRefBtn");
+    const kpiCollected = document.getElementById("kpiCollected");
+    const kpiProcessed = document.getElementById("kpiProcessed");
+    const kpiPending = document.getElementById("kpiPending");
+    const kpiCashVariance = document.getElementById("kpiCashVariance");
 
     if (reportDateEl) {
         const today = new Date();
@@ -85,6 +88,12 @@
         const flagLabels = { match: "Match", short: "Short", pending: "Pending" };
         flagEl.textContent = flagLabels[data.flag] || data.flag || "";
         flagEl.className = "report-flag report-flag-" + (data.flag || "");
+        if (kpiCollected) kpiCollected.textContent = currency(data.collected);
+        if (kpiProcessed) kpiProcessed.textContent = currency(data.processed);
+        if (kpiPending) kpiPending.textContent = currency(data.pending);
+        if (kpiCashVariance) {
+            kpiCashVariance.textContent = data.cash_variance == null ? "—" : currency(data.cash_variance);
+        }
         reportBlock.classList.remove("is-hidden");
     }
 
@@ -123,53 +132,24 @@
             { data: "biller" },
             { data: "customer_name" },
             { data: "total", render: currency },
-            { data: "payment_channel", render: (d) => (d ? String(d).replaceAll("_", " ") : "—") },
-            { data: "reference", render: (d) => d || "" },
-            { data: "payment_reference", render: (d) => (d ? String(d) : "—") },
-            { data: "processed_at", render: (d) => (d ? String(d).replace("T", " ") : "—") },
             {
-                data: null,
-                orderable: false,
-                searchable: false,
-                render: function (row) {
-                    return '<button type="button" class="btn btn-secondary set-ref-btn" data-id="' + row.id + '" data-ref="' + (row.payment_reference || "").replace(/"/g, "&quot;") + '">Set ref</button>';
+                data: "payment_channel",
+                render: (d) => {
+                    if (!d) return statusPill("Branch Manual", "status-neutral");
+                    const text = String(d).replaceAll("_", " ");
+                    return d === "ONLINE"
+                        ? statusPill(text, "status-success")
+                        : statusPill(text, "status-neutral");
                 },
             },
+            { data: "reference", render: (d) => d || "" },
+            {
+                data: "payment_reference",
+                render: (d) => (d ? String(d) : statusPill("Pending", "status-warning")),
+            },
+            { data: "processed_at", render: (d) => (d ? String(d).replace("T", " ") : "—") },
         ],
         order: [[1, "desc"]],
-    });
-
-    document.getElementById("processingTable").addEventListener("click", function (e) {
-        const btn = e.target.closest(".set-ref-btn");
-        if (!btn) return;
-        const id = btn.getAttribute("data-id");
-        const ref = btn.getAttribute("data-ref") || "";
-        paymentRefRecordId.value = id;
-        paymentRefInput.value = ref;
-        paymentRefDialog.showModal();
-    });
-
-    if (closePaymentRefBtn) {
-        closePaymentRefBtn.addEventListener("click", () => paymentRefDialog.close());
-    }
-
-    paymentRefForm.addEventListener("submit", async function (e) {
-        e.preventDefault();
-        const id = paymentRefRecordId.value;
-        const value = (paymentRefInput.value || "").trim();
-        const res = await fetch("/api/records/" + id, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ payment_reference: value || null }),
-        });
-        if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            showMessage(err.detail || "Update failed.", "Error");
-            return;
-        }
-        paymentRefDialog.close();
-        table.ajax.reload(null, false);
-        showMessage("Payment reference saved.", "Saved");
     });
 
     if (clearFiltersBtn) {
