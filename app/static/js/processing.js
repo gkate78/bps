@@ -31,6 +31,7 @@
     }
 
     const reportDateEl = document.getElementById("reportDate");
+    const cashOnHandEl = document.getElementById("cashOnHand");
     const loadReportBtn = document.getElementById("loadReportBtn");
     const reportBlock = document.getElementById("reportBlock");
     const billerFilter = document.getElementById("billerFilter");
@@ -54,7 +55,12 @@
             showMessage("Please select a report date.", "Report");
             return;
         }
-        const res = await fetch("/api/admin/reconciliation-summary?date=" + encodeURIComponent(dateVal));
+        const params = new URLSearchParams({ date: dateVal });
+        const cashRaw = (cashOnHandEl?.value || "").trim();
+        if (cashRaw !== "") {
+            params.set("cash_on_hand", cashRaw);
+        }
+        const res = await fetch("/api/admin/reconciliation-summary?" + params.toString());
         if (!res.ok) {
             showMessage("Failed to load report.", "Error");
             return;
@@ -64,6 +70,15 @@
         document.getElementById("reportCollected").textContent = currency(data.collected);
         document.getElementById("reportProcessed").textContent = currency(data.processed);
         document.getElementById("reportPending").textContent = currency(data.pending);
+        document.getElementById("reportTotalCharges").textContent = currency(data.total_charges);
+        document.getElementById("reportCashOnHand").textContent =
+            data.cash_on_hand == null ? "—" : currency(data.cash_on_hand);
+        document.getElementById("reportCashVariance").textContent =
+            data.cash_variance == null ? "—" : currency(data.cash_variance);
+        const cashFlagEl = document.getElementById("reportCashFlag");
+        const cashFlagLabels = { match: "Match", short: "Short", over: "Over" };
+        cashFlagEl.textContent = data.cash_flag ? (cashFlagLabels[data.cash_flag] || data.cash_flag) : "—";
+        cashFlagEl.className = "report-flag report-flag-" + (data.cash_flag || "");
         document.getElementById("reportRecordCount").textContent = data.record_count ?? 0;
         document.getElementById("reportProcessedCount").textContent = data.processed_count ?? 0;
         const flagEl = document.getElementById("reportFlag");

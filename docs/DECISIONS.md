@@ -126,3 +126,19 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Operations need immediate customer comms signal with minimal delivery risk; local stub enables safe rollout while preserving a clean integration point for real SMS/Viber providers.
 - Alternatives considered: synchronous hard-fail send on submission; channel-specific vendor SDK integration first.
 - Follow-up: Add real provider adapters, delivery retries, and customer-facing delivery status if communication volume increases.
+
+- Date: 2026-04-02
+- ID: DEC-015
+- Related task: BPS-205
+- Decision: Extend reconciliation summary to accept optional `cash_on_hand` and report `cash_variance`/`cash_flag`, while accepting both `summary_date` and `date` query params for compatibility with existing UI callers.
+- Why: Operators need a same-screen EOD cash check against collected totals; date-param compatibility avoids silent mismatches between frontend and API naming.
+- Alternatives considered: separate cash reconciliation endpoint/page; keeping date parameter strict and changing only frontend.
+- Follow-up: Add export for reconciliation summary including cash variance columns.
+
+- Date: 2026-04-02
+- ID: DEC-016
+- Related task: BPS-205 (follow-up)
+- Decision: Add a dedicated Reports tab (`/admin/reports`) with period-based reconciliation summary views: daily (by day within selected month), monthly (by month within selected year), and yearly (across all years).
+- Why: Operations needs a quick trend view beyond single-day reconciliation so admins can monitor performance over day/month/year without exporting first.
+- Alternatives considered: keep only single EOD report; generate summaries only via CSV export.
+- Follow-up: Add CSV export for report rows and biller-level breakdowns if reporting needs expand.

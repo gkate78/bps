@@ -28,5 +28,5 @@
 - [x] BPS-203 | Shipped on: 2026-03-09 | Notes: Per-biller biller_rules validation (active rule required, account digit format enforced in API/UI/CSV)
 - [x] BPS-207 | Shipped on: 2026-03-31 | Notes: Added biller-level routing policies, route decision API/engine, entry suggestion + persisted payment channel, processing visibility, and routing scenario matrix (`docs/ROUTING_TEST_MATRIX.md`)
 - [x] BPS-208 | Shipped on: 2026-03-09 | Notes: DB-backed biller rules with admin management; computation now reads service/late charges from active rules
-- [x] BPS-205 | Shipped on: 2026-03-10 | Notes: EOD reconciliation (collected vs processed, pending, flag); `payment_reference` column for “processed” marker; Processing dashboard to set payment refs and view report (DEC-008)
+- [x] BPS-205 | Shipped on: 2026-03-10 | Notes: EOD reconciliation (collected vs processed, pending, flag); `payment_reference` column for “processed” marker; Processing dashboard to set payment refs and view report (DEC-008). Follow-ups: cash-on-hand variance + date-param compatibility (DEC-015), dedicated daily/monthly/yearly Reports tab (DEC-016).
 - [x] BPS-206 | Shipped on: 2026-03-31 | Notes: Added per-biller known-account search/list endpoint and encoder entry-form account picker (datalist) so users can select existing accounts instead of retyping.

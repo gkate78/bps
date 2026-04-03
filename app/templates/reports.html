@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}Reports{% endblock %}
+{% block topbar_title %}Reports{% endblock %}
+{% block topbar_subtitle %}Check daily, monthly, and yearly reconciliation summaries.{% endblock %}
+{% block topbar_actions %}
+<a href="/admin/records" class="btn btn-secondary">Records</a>
+<a href="/admin/processing" class="btn btn-secondary">Processing</a>
+<a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
+<form method="post" action="/auth/logout" class="inline-action">
+    <button type="submit" class="btn btn-secondary">Logout</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="panel-head">
+        <h2>Summary Filters</h2>
+    </div>
+    <div class="controls-grid">
+        <div class="field">
+            <label for="reportPeriod">Period</label>
+            <select id="reportPeriod">
+                <option value="daily">Daily (by day in selected month)</option>
+                <option value="monthly">Monthly (by month in selected year)</option>
+                <option value="yearly">Yearly</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="reportRefDate">Reference date</label>
+            <input type="date" id="reportRefDate">
+        </div>
+        <div class="field field-actions">
+            <button type="button" class="btn btn-primary" id="loadSummaryBtn">Load Summary</button>
+        </div>
+    </div>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Totals</h2>
+    </div>
+    <table class="report-table">
+        <tbody>
+            <tr><th>Collected</th><td id="totalCollected">0.00</td></tr>
+            <tr><th>Processed</th><td id="totalProcessed">0.00</td></tr>
+            <tr><th>Pending</th><td id="totalPending">0.00</td></tr>
+            <tr><th>Total Charges</th><td id="totalCharges">0.00</td></tr>
+            <tr><th>Record count</th><td id="totalRecordCount">0</td></tr>
+            <tr><th>Processed count</th><td id="totalProcessedCount">0</td></tr>
+        </tbody>
+    </table>
+</section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Period Breakdown</h2>
+    </div>
+    <table id="reportsSummaryTable" class="display" style="width:100%">
+        <thead>
+            <tr>
+                <th>Period</th>
+                <th>Collected</th>
+                <th>Processed</th>
+                <th>Pending</th>
+                <th>Total Charges</th>
+                <th>Record Count</th>
+                <th>Processed Count</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody id="reportsSummaryBody"></tbody>
+    </table>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/reports.js"></script>
+{% endblock %}
