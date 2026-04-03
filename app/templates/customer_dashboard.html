@@ -12,14 +12,12 @@
 {% block content %}
 <section class="panel">
     <div class="panel-head">
-        <h2>Account</h2>
+        <h2>My Phone Profile</h2>
     </div>
     <p><strong>Phone:</strong> {{ current_user.phone }}</p>
     <p><strong>Role:</strong> {{ current_user.role }}</p>
-    {% if customer_profile %}
-    <p><strong>Account:</strong> {{ customer_profile.account }}</p>
-    <p><strong>Biller:</strong> {{ customer_profile.biller }}</p>
-    <p><strong>Name:</strong> {{ customer_profile.customer_name }}</p>
+    {% if customer_profiles %}
+    <p><strong>Linked accounts:</strong> {{ customer_profiles|length }}</p>
     {% else %}
     <p class="status-text">No linked customer account yet. Please contact support to link your account.</p>
     {% endif %}
@@ -27,37 +25,74 @@
 
 <section class="panel">
     <div class="panel-head">
-        <h2>My Bills</h2>
+        <h2>My Bills By Phone Number</h2>
     </div>
-    {% if customer_profile and bills %}
+    <form method="get" action="/customer/dashboard" class="controls-grid" style="margin-bottom:0.75rem;">
+        <div class="field">
+            <label for="accountFilter">Account</label>
+            <select id="accountFilter" name="account">
+                <option value="">All accounts under this phone</option>
+                {% for account in account_options %}
+                <option value="{{ account }}" {% if selected_account == account %}selected{% endif %}>{{ account }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="billerFilter">Biller</label>
+            <select id="billerFilter" name="biller">
+                <option value="">All billers</option>
+                {% for biller in biller_options %}
+                <option value="{{ biller }}" {% if selected_biller == biller %}selected{% endif %}>{{ biller }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field field-actions">
+            <a href="/customer/dashboard" class="btn btn-secondary">Clear</a>
+        </div>
+    </form>
+
+    {% if bills %}
     <div class="table-wrap">
         <table class="display customer-bills-table" style="width:100%">
             <thead>
                 <tr>
                     <th>Txn Date/Time</th>
-                    <th>Biller</th>
-                    <th>Bill Amount</th>
-                    <th>Status</th>
+                    <th>Account</th>
+                    <th>Account Name</th>
+                    <th class="col-biller">Biller</th>
+                    <th class="col-bill-amount">Bill Amount</th>
+                    <th class="col-status">Status</th>
                     <th>Reference</th>
-                    <th>Payment Ref</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in bills %}
                 <tr>
                     <td>{{ r.txn_datetime.strftime("%Y-%m-%d %I:%M:%S %p") if r.txn_datetime else "-" }}</td>
-                    <td>{{ r.biller }}</td>
-                    <td>{{ "%.2f"|format(r.bill_amt or 0) }}</td>
-                    <td>{{ "PAID" if r.payment_reference else "PENDING" }}</td>
-                    <td>{{ r.reference or "-" }}</td>
-                    <td>{{ r.payment_reference or "-" }}</td>
+                    <td>{{ r.account }}</td>
+                    <td>{{ r.customer_name or "-" }}</td>
+                    <td class="col-biller">{{ r.biller }}</td>
+                    <td class="col-bill-amount">{{ "%.2f"|format(r.bill_amt or 0) }}</td>
+                    <td class="col-status">{{ "PAID" if r.payment_reference else "PENDING" }}</td>
+                    <td>{{ r.reference if r.payment_reference else "" }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
-    {% elif customer_profile %}
-    <p class="status-text">No bills found for your account yet.</p>
+    {% else %}
+    <p class="status-text">No bills found for this phone number and selected filters yet.</p>
     {% endif %}
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+window.CUSTOMER_DASHBOARD_FILTERS = {
+    selectedAccount: {{ selected_account | tojson }},
+    selectedBiller: {{ selected_biller | tojson }},
+    accountBillerMap: {{ account_biller_map | tojson }},
+};
+</script>
+<script src="/static/js/customer_dashboard.js"></script>
 {% endblock %}

@@ -126,6 +126,7 @@
             { data: "payment_channel", render: (d) => (d ? String(d).replaceAll("_", " ") : "—") },
             { data: "reference", render: (d) => d || "" },
             { data: "payment_reference", render: (d) => (d ? String(d) : "—") },
+            { data: "processed_at", render: (d) => (d ? String(d).replace("T", " ") : "—") },
             {
                 data: null,
                 orderable: false,
