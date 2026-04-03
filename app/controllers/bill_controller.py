@@ -724,6 +724,90 @@ async def reconciliation_report_summary(
     }
 
 
+def _build_record_filters(
+    *,
+    biller: Optional[str],
+    from_date: Optional[date],
+    to_date: Optional[date],
+    due_status: Optional[str],
+    apply_default_month_when_empty: bool = False,
+) -> list:
+    filters = []
+    today = date.today()
+
+    if apply_default_month_when_empty and not any([biller, from_date, to_date, due_status]):
+        month_start = today.replace(day=1)
+        filters.append(func.date(BillRecord.txn_datetime) >= month_start)
+        filters.append(func.date(BillRecord.txn_datetime) <= today)
+
+    if biller:
+        filters.append(BillRecord.biller == biller)
+    if from_date:
+        filters.append(func.date(BillRecord.txn_datetime) >= from_date)
+    if to_date:
+        filters.append(func.date(BillRecord.txn_datetime) <= to_date)
+
+    if due_status == "overdue":
+        filters.append(BillRecord.due_date.is_not(None))
+        filters.append(BillRecord.due_date < today)
+    elif due_status == "due_today":
+        filters.append(BillRecord.due_date == today)
+    elif due_status == "upcoming":
+        filters.append(BillRecord.due_date.is_not(None))
+        filters.append(BillRecord.due_date > today)
+    elif due_status == "urgent":
+        window_end = today + timedelta(days=3)
+        filters.append(BillRecord.due_date.is_not(None))
+        filters.append(BillRecord.due_date <= window_end)
+    elif due_status == "no_due_date":
+        filters.append(BillRecord.due_date.is_(None))
+
+    return filters
+
+
+async def records_kpi_summary(
+    db: AsyncSession,
+    *,
+    biller: Optional[str],
+    from_date: Optional[date],
+    to_date: Optional[date],
+    due_status: Optional[str],
+) -> dict:
+    filters = _build_record_filters(
+        biller=biller,
+        from_date=from_date,
+        to_date=to_date,
+        due_status=due_status,
+        apply_default_month_when_empty=True,
+    )
+    stmt = select(BillRecord.id, BillRecord.payment_reference, BillRecord.due_date)
+    if filters:
+        stmt = stmt.where(*filters)
+    rows = (await db.execute(stmt)).all()
+
+    visible = len(rows)
+    processed = 0
+    pending = 0
+    urgent = 0
+    urgent_until = date.today() + timedelta(days=3)
+    for _, payment_reference, due_date in rows:
+        is_processed = payment_reference is not None and str(payment_reference).strip() != ""
+        if is_processed:
+            processed += 1
+        else:
+            pending += 1
+            if due_date is not None and due_date <= urgent_until:
+                urgent += 1
+
+    return {
+        "visible_records": visible,
+        "processed_records": processed,
+        "pending_records": pending,
+        "urgent_records": urgent,
+        "default_scope": not any([biller, from_date, to_date, due_status]),
+    }
+
+
 async def datatable_query(
     db: AsyncSession,
     *,
@@ -738,31 +822,13 @@ async def datatable_query(
     to_date: Optional[date],
     due_status: Optional[str],
 ) -> dict:
-    base_filters = []
-
-    if biller:
-        base_filters.append(BillRecord.biller == biller)
-    if from_date:
-        base_filters.append(func.date(BillRecord.txn_datetime) >= from_date)
-    if to_date:
-        base_filters.append(func.date(BillRecord.txn_datetime) <= to_date)
-
-    today = date.today()
-    if due_status == "overdue":
-        base_filters.append(BillRecord.due_date.is_not(None))
-        base_filters.append(BillRecord.due_date < today)
-    elif due_status == "due_today":
-        base_filters.append(BillRecord.due_date == today)
-    elif due_status == "upcoming":
-        base_filters.append(BillRecord.due_date.is_not(None))
-        base_filters.append(BillRecord.due_date > today)
-    elif due_status == "urgent":
-        # Urgent queue: overdue or due within the next 3 days.
-        window_end = today + timedelta(days=3)
-        base_filters.append(BillRecord.due_date.is_not(None))
-        base_filters.append(BillRecord.due_date <= window_end)
-    elif due_status == "no_due_date":
-        base_filters.append(BillRecord.due_date.is_(None))
+    base_filters = _build_record_filters(
+        biller=biller,
+        from_date=from_date,
+        to_date=to_date,
+        due_status=due_status,
+        apply_default_month_when_empty=False,
+    )
 
     total_stmt = select(func.count()).select_from(BillRecord)
     total_count = (await db.execute(total_stmt)).scalar_one()
