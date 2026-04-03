@@ -20,6 +20,8 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Customer dashboard now shows all bills tied to a phone number with dynamic account/biller filters
 - Admin pages include KPI cards, sticky filters, and status chips for faster scanning
 - Admin Settings includes popup biller-rule form (Add/Update) and per-field receipt visibility toggles beside business inputs (including receipt footer)
+- Admin Records keeps Transaction Audit Log hidden by default and loads it on demand
+- Admin Database View (`/admin/database`) provides read-only table browsing with sticky selector controls
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save

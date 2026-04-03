@@ -158,3 +158,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Operators should scan status quickly and change settings with less clutter; pairing receipt toggles with their exact fields reduces configuration mistakes.
 - Alternatives considered: keep inline edit controls on processing table; keep always-visible biller-rule form; keep receipt toggles in a separate checklist section.
 - Follow-up: Add lightweight tooltips/help text for each receipt toggle and include before/after UI snapshots in docs if onboarding friction appears.
+
+- Date: 2026-04-03
+- ID: DEC-019
+- Related task: Admin operations visibility controls
+- Decision: Keep heavy admin data views on-demand by default: hide Transaction Audit Log and Biller Rules table until explicitly toggled, and add a dedicated read-only Database View page (`/admin/database`) for table inspection with sticky selector controls.
+- Why: Reduces visual clutter and load noise on routine workflows while still giving admins quick access to diagnostics and raw data when needed.
+- Alternatives considered: always-visible audit/rules tables; direct inline DB editing inside settings pages.
+- Follow-up: Add optional column-level search/export controls in Database View if investigation workflows become frequent.
