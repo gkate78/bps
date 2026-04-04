@@ -24,7 +24,8 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Admin Database View (`/admin/database`) provides read-only table browsing with sticky selector controls
 - Payment capture now keeps `payment_reference` and `confirmation_reference` as separate fields across entry, admin edit, and CSV import
 - Customer entry payment modes are `CASH`, `GCASH`, `MAYA`, `BDO`, `BPI`; admin processing/edit supports `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPICC`, `BPI`
-- Payment channel is stored as encoded/edited (`payment_channel`) and can be explicitly set in admin edit along with mode of payment
+- Payment channel is stored as encoded/edited (`payment_channel`) and can be explicitly set in admin edit using channel values `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPICC`, `BPI`
+- `processed_by_user_id` is now recorded automatically on create/update based on the logged-in operator account
 - Data entry/payment dialogs now place `Mode of Payment` before amount input, position `confirmation_reference` immediately after mode, and hide suggested routing from the entry screen
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing

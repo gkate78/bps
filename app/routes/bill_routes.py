@@ -64,6 +64,17 @@ DATABASE_VIEW_TABLES: dict[str, str] = {
     "auth_event_logs": "Auth Event Logs",
 }
 
+DATABASE_BILL_RECORDS_PRIORITY_COLUMNS = [
+    "id",
+    "txn_datetime",
+    "updated_at",
+    "payment_method",
+    "confirmation_reference",
+    "payment_channel",
+    "payment_reference",
+    "processed_by_user_id",
+]
+
 RECEIPT_FIELD_KEYS = (
     "reference",
     "txn_datetime",
@@ -390,6 +401,16 @@ async def admin_database_page(
     selected_table = table if table in DATABASE_VIEW_TABLES else "bill_records"
     column_rows = (await db.execute(text(f"PRAGMA table_info({selected_table})"))).fetchall()
     columns = [row[1] for row in column_rows]
+    if selected_table == "bill_records":
+        priority = [name for name in DATABASE_BILL_RECORDS_PRIORITY_COLUMNS if name in columns]
+        remaining = [name for name in columns if name not in set(priority)]
+        columns = priority + remaining
+        if "updated_at" in columns and "txn_date" in columns:
+            start_idx = columns.index("updated_at")
+            end_idx = columns.index("txn_date")
+            if start_idx <= end_idx:
+                moved_block = columns[start_idx : end_idx + 1]
+                columns = columns[:start_idx] + columns[end_idx + 1 :] + moved_block
 
     order_sql = " ORDER BY id DESC" if "id" in columns else ""
     query_sql = text(f"SELECT * FROM {selected_table}{order_sql} LIMIT :limit")
@@ -1186,6 +1207,7 @@ async def create_record_endpoint(
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     initial_payload = payload.model_dump()
+    initial_payload["processed_by_user_id"] = current_user.id
     record = await create_record(db, initial_payload)
     await upsert_customer_from_record(
         db,
@@ -1276,6 +1298,7 @@ async def update_record_endpoint(
         updates["payment_method"] = _validate_payment_method(
             updates.get("payment_method"), PROCESSING_PAYMENT_METHODS
         )
+    updates["processed_by_user_id"] = current_user.id
 
     record = await update_record(db, record_id, updates)
     await upsert_customer_from_record(
