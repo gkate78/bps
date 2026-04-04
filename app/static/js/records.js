@@ -165,6 +165,7 @@ const dom = {
     dueDate: document.getElementById("dueDate"),
     notes: document.getElementById("notes"),
     reference: document.getElementById("reference"),
+    paymentChannel: document.getElementById("paymentChannel"),
     paymentReference: document.getElementById("paymentReference"),
     confirmationReference: document.getElementById("confirmationReference"),
     paymentMethod: document.getElementById("paymentMethod"),
@@ -472,6 +473,9 @@ function clearForm() {
     if (dom.paymentMethod) {
         dom.paymentMethod.value = "";
     }
+    if (dom.paymentChannel) {
+        dom.paymentChannel.value = "";
+    }
     syncConfirmationReferenceState();
     recomputeFinancials();
 }
@@ -535,6 +539,9 @@ async function openEdit(id) {
     if (dom.paymentMethod) {
         dom.paymentMethod.value = valueOrEmpty(data.payment_method || "");
     }
+    if (dom.paymentChannel) {
+        dom.paymentChannel.value = valueOrEmpty(data.payment_channel || "");
+    }
     syncConfirmationReferenceState();
     updateCurrentDateTime();
     recomputeFinancials();
@@ -576,6 +583,7 @@ function payloadFromForm() {
         due_date: dom.dueDate.value || null,
         notes: dom.notes.value.trim() || null,
         reference: dom.reference.value.trim() || null,
+        payment_channel: dom.paymentChannel ? (dom.paymentChannel.value || null) : null,
         payment_reference: dom.paymentReference ? dom.paymentReference.value.trim() || null : null,
         confirmation_reference: dom.confirmationReference ? dom.confirmationReference.value.trim() || null : null,
         payment_method: dom.paymentMethod ? (dom.paymentMethod.value || null) : null,
