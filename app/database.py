@@ -61,6 +61,11 @@ async def init_db() -> None:
             await conn.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_bill_records_payment_channel ON bill_records(payment_channel)")
             )
+        if "processed_by_user_id" not in col_names:
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN processed_by_user_id INTEGER"))
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_bill_records_processed_by_user_id ON bill_records(processed_by_user_id)")
+            )
 
         # Lightweight migration: add per-method system charges for biller rules.
         biller_columns = (await conn.execute(text("PRAGMA table_info(biller_rules)"))).fetchall()

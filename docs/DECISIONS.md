@@ -190,3 +190,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Operations tracks actual posting routes and processing methods that can differ from customer-facing input options; preserving the encoded channel and allowing richer processing methods improves audit fidelity and reconciliation accuracy.
 - Alternatives considered: derive/force channel from payment method; use a single payment-method list for all flows.
 - Follow-up: Consider adding channel/method consistency checks or warnings (non-blocking) when operators set unusual combinations.
+
+- Date: 2026-04-03
+- ID: DEC-023
+- Related task: BPS-205 / processing auditability
+- Decision: Persist `processed_by_user_id` on bill-record create/update using the authenticated operator (`current_user.id`), and keep admin edit dropdowns explicit: `payment_method` uses customer-facing modes (`CASH`, `GCASH`, `MAYA`, `BDO`, `BPI`) while `payment_channel` uses processing channels (`CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPI_CC`, `BPI`).
+- Why: Reconciliation and audit investigation require knowing exactly who last processed a record and preserving operations-specific channel labels independent from customer payment-mode input.
+- Alternatives considered: infer processor from audit log only; force channel from method or use ONLINE/BRANCH-only channel values.
+- Follow-up: Add optional backfill utility to populate `processed_by_user_id` for historical rows from audit logs if needed.
