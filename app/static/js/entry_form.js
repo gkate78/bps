@@ -30,8 +30,6 @@ const BILLER_ACCOUNT_DIGITS = window.BILLER_ACCOUNT_DIGITS || {};
 let lastSavedRecordId = null;
 let accountOptionsAbortController = null;
 let accountOptionsDebounceTimer = null;
-let routingAbortController = null;
-let routingDebounceTimer = null;
 
 const dom = {
     form: document.getElementById("entryForm"),
@@ -57,8 +55,8 @@ const dom = {
     printReceiptBtn: document.getElementById("printReceiptBtn"),
     saveStatus: document.getElementById("saveStatus"),
     paymentReference: document.getElementById("paymentReference"),
+    confirmationReference: document.getElementById("confirmationReference"),
     paymentMethod: document.getElementById("paymentMethod"),
-    paymentChannel: document.getElementById("paymentChannel"),
 };
 
 function normalizedBillerKey(value) {
@@ -115,7 +113,6 @@ function recomputeFinancials() {
     dom.charge.value = rawBillAmt ? charge.toFixed(2) : "";
     dom.total.value = rawBillAmt ? total.toFixed(2) : "";
     dom.changeAmt.value = rawBillAmt && rawCash ? change.toFixed(2) : "";
-    scheduleRoutingDecision();
 }
 
 function updateCurrentDateTime() {
@@ -134,65 +131,8 @@ function clearForm() {
     dom.saveStatus.textContent = "";
     dom.printReceiptBtn.disabled = true;
     lastSavedRecordId = null;
-    if (dom.paymentChannel) {
-        dom.paymentChannel.value = "";
-    }
     updateCurrentDateTime();
     recomputeFinancials();
-}
-
-function applyRoutingDecision(decision) {
-    if (!dom.paymentChannel) {
-        return;
-    }
-    const channel = String(decision?.channel || "").toUpperCase();
-    const reason = String(decision?.reason || "").replaceAll("_", " ");
-    dom.paymentChannel.value = channel ? `${channel}${reason ? ` (${reason})` : ""}` : "";
-}
-
-async function fetchRoutingDecision() {
-    const biller = dom.biller.value.trim();
-    if (!biller) {
-        applyRoutingDecision(null);
-        return;
-    }
-    const total = round2(dom.total.value || dom.billAmt.value || 0);
-    const params = new URLSearchParams({
-        biller,
-        total: String(total),
-        online_available: "true",
-    });
-    if (dom.dueDate.value) {
-        params.set("due_date", dom.dueDate.value);
-    }
-
-    if (routingAbortController) {
-        routingAbortController.abort();
-    }
-    routingAbortController = new AbortController();
-
-    try {
-        const response = await fetch(`/api/routing/decision?${params.toString()}`, {
-            signal: routingAbortController.signal,
-        });
-        if (!response.ok) {
-            applyRoutingDecision(null);
-            return;
-        }
-        const decision = await response.json();
-        applyRoutingDecision(decision);
-    } catch (err) {
-        if (err && err.name !== "AbortError") {
-            console.error("Failed to resolve routing decision", err);
-        }
-    }
-}
-
-function scheduleRoutingDecision() {
-    if (routingDebounceTimer) {
-        clearTimeout(routingDebounceTimer);
-    }
-    routingDebounceTimer = setTimeout(fetchRoutingDecision, 250);
 }
 
 function renderAccountOptions(items) {
@@ -277,6 +217,9 @@ async function lookupAccountDetails() {
     [dom.biller, dom.customerName, dom.cpNumber].forEach(setUppercaseInput);
     await fetchKnownAccounts({ query: dom.account.value });
     recomputeFinancials();
+    if (dom.dueDate && !dom.dueDate.value) {
+        dom.dueDate.focus();
+    }
 }
 
 function payloadFromForm() {
@@ -295,11 +238,18 @@ function payloadFromForm() {
         cash: round2(dom.cash.value),
         change_amt: round2(dom.changeAmt.value),
         due_date: dom.dueDate.value || null,
-        payment_reference: dom.paymentReference ? dom.paymentReference.value.trim() || null : null,
-        payment_method: dom.paymentMethod ? (dom.paymentMethod.value || null) : null,
-        payment_channel: dom.paymentChannel
-            ? (String(dom.paymentChannel.value || "").split(" (")[0] || null)
-            : null,
+        payment_reference:
+            dom.paymentReference && !dom.paymentReference.disabled
+                ? dom.paymentReference.value.trim() || null
+                : null,
+        confirmation_reference:
+            dom.confirmationReference && !dom.confirmationReference.disabled
+                ? dom.confirmationReference.value.trim() || null
+                : null,
+        payment_method:
+            dom.paymentMethod && !dom.paymentMethod.disabled
+                ? (dom.paymentMethod.value || null)
+                : null,
     };
 }
 
@@ -433,14 +383,26 @@ function printReceipt() {
 }
 
 function moveToNextControl(current) {
-    const controls = Array.from(
-        dom.form.querySelectorAll("input, select, textarea, button")
-    ).filter((el) => !el.disabled && el.type !== "hidden" && el.tabIndex !== -1 && !el.readOnly);
+    const controls = getNavigableControls();
 
     const idx = controls.indexOf(current);
     if (idx >= 0 && idx < controls.length - 1) {
         controls[idx + 1].focus();
     }
+}
+
+function moveToPrevControl(current) {
+    const controls = getNavigableControls();
+    const idx = controls.indexOf(current);
+    if (idx > 0) {
+        controls[idx - 1].focus();
+    }
+}
+
+function getNavigableControls() {
+    return Array.from(dom.form.querySelectorAll("input, select, textarea, button")).filter(
+        (el) => !el.disabled && el.type !== "hidden" && el.tabIndex !== -1 && !el.readOnly
+    );
 }
 
 [dom.account, dom.biller, dom.customerName, dom.cpNumber].forEach((el) => {
@@ -463,8 +425,31 @@ dom.form.addEventListener("submit", saveEntry);
 dom.form.addEventListener("keydown", (event) => {
     const target = event.target;
     if (event.key === "Enter" && target.tagName !== "TEXTAREA") {
+        if (target.tagName === "BUTTON") {
+            return;
+        }
         event.preventDefault();
         moveToNextControl(target);
+        return;
+    }
+    if (event.key === "ArrowDown") {
+        event.preventDefault();
+        moveToNextControl(target);
+        return;
+    }
+    if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveToPrevControl(target);
+        return;
+    }
+    if (event.key === "ArrowRight" && (target.tagName === "SELECT" || target.tagName === "BUTTON")) {
+        event.preventDefault();
+        moveToNextControl(target);
+        return;
+    }
+    if (event.key === "ArrowLeft" && (target.tagName === "SELECT" || target.tagName === "BUTTON")) {
+        event.preventDefault();
+        moveToPrevControl(target);
     }
 });
 dom.clearBtn.addEventListener("click", clearForm);

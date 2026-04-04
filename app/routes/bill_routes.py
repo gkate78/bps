@@ -5,9 +5,9 @@ from typing import Optional
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -38,6 +38,7 @@ from app.controllers.bill_controller import (
     get_record,
     has_active_biller_rule,
     import_csv_records,
+    batch_mark_cash_and_export,
     reconciliation_report_summary,
     reconciliation_summary,
     records_kpi_summary,
@@ -50,6 +51,7 @@ from app.services import get_confirmation_service
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
+ALLOWED_PAYMENT_METHODS = {"CASH", "GCASH", "MAYA", "BDO", "BPI"}
 
 DATABASE_VIEW_TABLES: dict[str, str] = {
     "bill_records": "Bill Records",
@@ -133,9 +135,22 @@ class RecordCreate(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     reference: Optional[str] = None
+    confirmation_reference: Optional[str] = None
     payment_reference: Optional[str] = None
     payment_method: Optional[str] = None
     payment_channel: Optional[str] = None
+
+    @field_validator("payment_method")
+    @classmethod
+    def validate_payment_method(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = str(value).strip().upper()
+        if normalized == "":
+            return None
+        if normalized not in ALLOWED_PAYMENT_METHODS:
+            raise ValueError("Unsupported payment method.")
+        return normalized
 
 
 class RecordUpdate(BaseModel):
@@ -154,9 +169,22 @@ class RecordUpdate(BaseModel):
     due_date: Optional[date] = None
     notes: Optional[str] = None
     reference: Optional[str] = None
+    confirmation_reference: Optional[str] = None
     payment_reference: Optional[str] = None
     payment_method: Optional[str] = None
     payment_channel: Optional[str] = None
+
+    @field_validator("payment_method")
+    @classmethod
+    def validate_payment_method(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        normalized = str(value).strip().upper()
+        if normalized == "":
+            return None
+        if normalized not in ALLOWED_PAYMENT_METHODS:
+            raise ValueError("Unsupported payment method.")
+        return normalized
 
 
 class RecordResponse(RecordCreate):
@@ -310,8 +338,20 @@ async def admin_records_page(
     )
 
 
-@router.get("/admin/processing", response_class=HTMLResponse, include_in_schema=False)
-async def admin_processing_page(
+@router.get("/admin/processing", include_in_schema=False)
+async def admin_processing_redirect(
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
+    if not current_user:
+        return RedirectResponse(url="/auth/signin", status_code=303)
+    if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
+        return RedirectResponse(url="/customer/dashboard", status_code=303)
+    return RedirectResponse(url="/admin/reconciliation", status_code=303)
+
+
+@router.get("/admin/reconciliation", response_class=HTMLResponse, include_in_schema=False)
+async def admin_reconciliation_page(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: Optional[UserAccount] = Depends(get_current_user_optional),
@@ -320,10 +360,9 @@ async def admin_processing_page(
         return RedirectResponse(url="/auth/signin", status_code=303)
     if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
         return RedirectResponse(url="/customer/dashboard", status_code=303)
-    billers = await get_distinct_billers(db)
     return templates.TemplateResponse(
         "processing.html",
-        {"request": request, "billers": billers, "current_user": current_user},
+        {"request": request, "current_user": current_user},
     )
 
 
@@ -1059,6 +1098,46 @@ async def lookup_by_account(
     }
 
 
+@router.post("/api/records/batch/mark-cash-export")
+async def batch_mark_cash_export_endpoint(
+    biller: Optional[str] = Query(default=None),
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    due_status: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_owner_or_admin),
+):
+    result = await batch_mark_cash_and_export(
+        db,
+        biller=biller,
+        from_date=from_date,
+        to_date=to_date,
+        due_status=due_status,
+    )
+    await _log_record_audit(
+        db,
+        action="batch_mark_cash_export",
+        status="success",
+        current_user=current_user,
+        channel="web",
+        detail=(
+            f"rows={result['row_count']}, updated={result['updated_count']}, "
+            f"biller={biller or '-'}, from={from_date or '-'}, to={to_date or '-'}, due_status={due_status or '-'}"
+        ),
+    )
+    today_tag = date.today().strftime("%Y%m%d")
+    filename = f"batch_cash_export_{today_tag}.csv"
+    return Response(
+        content=result["csv_bytes"],
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Updated-Count": str(result["updated_count"]),
+            "X-Row-Count": str(result["row_count"]),
+        },
+    )
+
+
 @router.get("/api/records/{record_id}", response_model=RecordResponse)
 async def get_record_endpoint(
     record_id: int,
@@ -1094,6 +1173,9 @@ async def create_record_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(require_data_entry_access),
 ):
+    if current_user.role == "encoder":
+        payload.payment_channel = None
+
     if payload.txn_datetime is None:
         payload.txn_datetime = datetime.now()
     if payload.txn_date is None:

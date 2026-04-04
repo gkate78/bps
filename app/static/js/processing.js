@@ -6,10 +6,6 @@
         return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
-    function statusPill(label, cls) {
-        return '<span class="status-pill ' + cls + '">' + label + "</span>";
-    }
-
     function showMessage(message, title) {
         const dialog = document.getElementById("appMessageDialog");
         const titleEl = document.getElementById("appMessageTitle");
@@ -38,10 +34,6 @@
     const cashOnHandEl = document.getElementById("cashOnHand");
     const loadReportBtn = document.getElementById("loadReportBtn");
     const reportBlock = document.getElementById("reportBlock");
-    const billerFilter = document.getElementById("billerFilter");
-    const fromDateFilter = document.getElementById("fromDateFilter");
-    const toDateFilter = document.getElementById("toDateFilter");
-    const clearFiltersBtn = document.getElementById("clearFiltersBtn");
     const kpiCollected = document.getElementById("kpiCollected");
     const kpiProcessed = document.getElementById("kpiProcessed");
     const kpiPending = document.getElementById("kpiPending");
@@ -100,70 +92,4 @@
     if (loadReportBtn) {
         loadReportBtn.addEventListener("click", loadReport);
     }
-
-    const table = new DataTable("#processingTable", {
-        processing: true,
-        serverSide: true,
-        pageLength: 25,
-        ajax: {
-            url: "/api/records/datatable",
-            data: function (d) {
-                if (billerFilter?.value) {
-                    d.biller = billerFilter.value;
-                } else {
-                    delete d.biller;
-                }
-                if (fromDateFilter?.value) {
-                    d.from_date = fromDateFilter.value;
-                } else {
-                    delete d.from_date;
-                }
-                if (toDateFilter?.value) {
-                    d.to_date = toDateFilter.value;
-                } else {
-                    delete d.to_date;
-                }
-            },
-        },
-        columns: [
-            { data: "id" },
-            { data: "txn_date" },
-            { data: "account" },
-            { data: "biller" },
-            { data: "customer_name" },
-            { data: "total", render: currency },
-            {
-                data: "payment_channel",
-                render: (d) => {
-                    if (!d) return statusPill("Branch Manual", "status-neutral");
-                    const text = String(d).replaceAll("_", " ");
-                    return d === "ONLINE"
-                        ? statusPill(text, "status-success")
-                        : statusPill(text, "status-neutral");
-                },
-            },
-            { data: "reference", render: (d) => d || "" },
-            {
-                data: "payment_reference",
-                render: (d) => (d ? String(d) : statusPill("Pending", "status-warning")),
-            },
-            { data: "processed_at", render: (d) => (d ? String(d).replace("T", " ") : "—") },
-        ],
-        order: [[1, "desc"]],
-    });
-
-    if (clearFiltersBtn) {
-        clearFiltersBtn.addEventListener("click", function () {
-            if (billerFilter) billerFilter.value = "";
-            if (fromDateFilter) fromDateFilter.value = "";
-            if (toDateFilter) toDateFilter.value = "";
-            table.search("").draw();
-        });
-    }
-
-    [billerFilter, fromDateFilter, toDateFilter].filter(Boolean).forEach(function (el) {
-        el.addEventListener("change", function () {
-            table.ajax.reload();
-        });
-    });
 })();
