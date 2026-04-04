@@ -103,6 +103,15 @@ def _posting_eta_for_channel(payment_channel: Optional[str]) -> str:
     return "WITHIN 1-2 BUSINESS DAYS"
 
 
+def _resolve_payment_channel_from_method(payment_method: Optional[str]) -> tuple[str, str]:
+    method = str(payment_method or "").strip().upper()
+    if method == "CASH":
+        return "BRANCH_MANUAL", "PAYMENT_METHOD_CASH"
+    if method in {"GCASH", "MAYA", "BDO", "BPI"}:
+        return "ONLINE", "PAYMENT_METHOD_NON_CASH"
+    return "BRANCH_MANUAL", "PAYMENT_METHOD_UNSET_DEFAULT_BRANCH"
+
+
 def _build_confirmation_message(
     *,
     customer_name: str,
@@ -1173,9 +1182,6 @@ async def create_record_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(require_data_entry_access),
 ):
-    if current_user.role == "encoder":
-        payload.payment_channel = None
-
     if payload.txn_datetime is None:
         payload.txn_datetime = datetime.now()
     if payload.txn_date is None:
@@ -1190,14 +1196,8 @@ async def create_record_endpoint(
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     initial_payload = payload.model_dump()
-    decision = await decide_payment_channel(
-        db,
-        biller=initial_payload.get("biller", ""),
-        total=initial_payload.get("total", initial_payload.get("bill_amt", 0) or 0),
-        due_date=initial_payload.get("due_date"),
-        online_available=True,
-    )
-    initial_payload["payment_channel"] = decision["channel"]
+    resolved_channel, channel_reason = _resolve_payment_channel_from_method(initial_payload.get("payment_method"))
+    initial_payload["payment_channel"] = resolved_channel
     record = await create_record(db, initial_payload)
     await upsert_customer_from_record(
         db,
@@ -1216,7 +1216,7 @@ async def create_record_endpoint(
         detail=(
             f"reference={record.reference or '-'}, "
             f"payment_channel={record.payment_channel or '-'}, "
-            f"routing_reason={decision.get('reason', '-')}"
+            f"routing_reason={channel_reason}"
         ),
     )
     if _is_valid_cp_number(record.cp_number):
@@ -1286,23 +1286,12 @@ async def update_record_endpoint(
     if "cp_number" in updates and not _is_valid_cp_number(updates.get("cp_number")):
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
-    merged_due_date = updates.get("due_date")
-    if merged_due_date is None or "biller" not in updates or "total" not in updates:
+    merged_payment_method = updates.get("payment_method")
+    if merged_payment_method is None:
         current_record = await get_record(db, record_id)
-        merged_due_date = merged_due_date if merged_due_date is not None else current_record.due_date
-        merged_biller = updates.get("biller", current_record.biller)
-        merged_total = updates.get("total", current_record.total)
-    else:
-        merged_biller = updates.get("biller", "")
-        merged_total = updates.get("total", updates.get("bill_amt", 0) or 0)
-    decision = await decide_payment_channel(
-        db,
-        biller=merged_biller,
-        total=merged_total,
-        due_date=merged_due_date,
-        online_available=True,
-    )
-    updates["payment_channel"] = decision["channel"]
+        merged_payment_method = current_record.payment_method
+    resolved_channel, channel_reason = _resolve_payment_channel_from_method(merged_payment_method)
+    updates["payment_channel"] = resolved_channel
 
     record = await update_record(db, record_id, updates)
     await upsert_customer_from_record(
@@ -1322,7 +1311,7 @@ async def update_record_endpoint(
         detail=(
             f"reference={record.reference or '-'}, "
             f"payment_channel={record.payment_channel or '-'}, "
-            f"routing_reason={decision.get('reason', '-')}"
+            f"routing_reason={channel_reason}"
         ),
     )
     return record

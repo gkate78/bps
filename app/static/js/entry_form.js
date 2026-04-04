@@ -126,11 +126,23 @@ function setUppercaseInput(el) {
     el.value = String(el.value || "").toUpperCase();
 }
 
+function syncConfirmationReferenceState() {
+    if (!dom.confirmationReference || !dom.paymentMethod) {
+        return;
+    }
+    const isCash = String(dom.paymentMethod.value || "").trim().toUpperCase() === "CASH";
+    dom.confirmationReference.disabled = isCash;
+    if (isCash) {
+        dom.confirmationReference.value = "";
+    }
+}
+
 function clearForm() {
     dom.form.reset();
     dom.saveStatus.textContent = "";
     dom.printReceiptBtn.disabled = true;
     lastSavedRecordId = null;
+    syncConfirmationReferenceState();
     updateCurrentDateTime();
     recomputeFinancials();
 }
@@ -224,6 +236,7 @@ async function lookupAccountDetails() {
 
 function payloadFromForm() {
     [dom.account, dom.biller, dom.customerName, dom.cpNumber].forEach(setUppercaseInput);
+    syncConfirmationReferenceState();
     recomputeFinancials();
     return {
         txn_datetime: toLocalISOString(),
@@ -412,6 +425,10 @@ function getNavigableControls() {
 dom.account.addEventListener("input", scheduleKnownAccountsLookup);
 dom.biller.addEventListener("input", scheduleKnownAccountsLookup);
 dom.biller.addEventListener("change", () => fetchKnownAccounts({ query: dom.account.value }));
+if (dom.paymentMethod) {
+    dom.paymentMethod.addEventListener("input", syncConfirmationReferenceState);
+    dom.paymentMethod.addEventListener("change", syncConfirmationReferenceState);
+}
 
 [dom.biller, dom.billAmt, dom.cash, dom.dueDate].forEach((el) => {
     el.addEventListener("input", recomputeFinancials);

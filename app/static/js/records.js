@@ -234,6 +234,17 @@ function setCurrentTxnDate() {
     dom.txnDate.value = `${y}-${m}-${d}`;
 }
 
+function syncConfirmationReferenceState() {
+    if (!dom.confirmationReference || !dom.paymentMethod) {
+        return;
+    }
+    const isCash = String(dom.paymentMethod.value || "").trim().toUpperCase() === "CASH";
+    dom.confirmationReference.disabled = isCash;
+    if (isCash) {
+        dom.confirmationReference.value = "";
+    }
+}
+
 const table = new DataTable("#recordsTable", {
     processing: true,
     serverSide: true,
@@ -461,6 +472,7 @@ function clearForm() {
     if (dom.paymentMethod) {
         dom.paymentMethod.value = "";
     }
+    syncConfirmationReferenceState();
     recomputeFinancials();
 }
 
@@ -523,6 +535,7 @@ async function openEdit(id) {
     if (dom.paymentMethod) {
         dom.paymentMethod.value = valueOrEmpty(data.payment_method || "");
     }
+    syncConfirmationReferenceState();
     updateCurrentDateTime();
     recomputeFinancials();
 
@@ -545,6 +558,7 @@ async function removeRecord(id) {
 }
 
 function payloadFromForm() {
+    syncConfirmationReferenceState();
     recomputeFinancials();
     return {
         txn_datetime: toLocalISOString(),
@@ -792,6 +806,10 @@ Object.values(filters).forEach((el) => {
     el.addEventListener("input", recomputeFinancials);
     el.addEventListener("change", recomputeFinancials);
 });
+if (dom.paymentMethod) {
+    dom.paymentMethod.addEventListener("input", syncConfirmationReferenceState);
+    dom.paymentMethod.addEventListener("change", syncConfirmationReferenceState);
+}
 
 dom.account.addEventListener("blur", lookupAccountDetails);
 
