@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Processing & Reconciliation{% endblock %}
-{% block topbar_title %}Processing & Reconciliation{% endblock %}
-{% block topbar_subtitle %}View EOD reconciliation and processed transactions.{% endblock %}
+{% block title %}Reconciliation{% endblock %}
+{% block topbar_title %}Reconciliation{% endblock %}
+{% block topbar_subtitle %}Review EOD collected vs processed totals and cash variance.{% endblock %}
 {% block topbar_actions %}
 <a href="/admin/records" class="btn btn-secondary">Records</a>
 <a href="/admin/reports" class="btn btn-secondary">Reports</a>
+<a href="/admin/database" class="btn btn-secondary">Database</a>
 <a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
 <form method="post" action="/auth/logout" class="inline-action">
     <button type="submit" class="btn btn-secondary">Logout</button>
@@ -66,50 +67,6 @@
         <p class="kpi-label">Cash Variance</p>
         <p class="kpi-value" id="kpiCashVariance">—</p>
     </article>
-</section>
-
-<section class="panel">
-    <div class="panel-head">
-        <h2>Transactions</h2>
-    </div>
-    <div class="controls-grid panel-sticky-controls">
-        <div class="field">
-            <label for="billerFilter">Biller</label>
-            <select id="billerFilter">
-                <option value="">All billers</option>
-                {% for biller in billers %}
-                <option value="{{ biller }}">{{ biller }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <div class="field">
-            <label for="fromDateFilter">Txn Date From</label>
-            <input type="date" id="fromDateFilter">
-        </div>
-        <div class="field">
-            <label for="toDateFilter">Txn Date To</label>
-            <input type="date" id="toDateFilter">
-        </div>
-        <div class="field field-actions">
-            <button type="button" class="btn btn-secondary" id="clearFiltersBtn">Clear filters</button>
-        </div>
-    </div>
-    <table id="processingTable" class="display" style="width:100%">
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>Txn Date</th>
-                <th>Account</th>
-                <th>Biller</th>
-                <th>Name</th>
-                <th>Total</th>
-                <th>Route</th>
-                <th>Receipt ref</th>
-                <th>Payment ref</th>
-                <th>Date processed</th>
-            </tr>
-        </thead>
-    </table>
 </section>
 {% endblock %}
 

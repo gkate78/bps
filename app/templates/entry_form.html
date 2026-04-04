@@ -13,6 +13,7 @@
 {% endblock %}
 
 {% block content %}
+{% set is_encoder = current_user and current_user.role == "encoder" %}
 <section class="panel">
     <div class="panel-head">
         <h2>Data Entry Form</h2>
@@ -45,22 +46,21 @@
             <label>Bill Amount<input type="number" step="0.01" id="billAmt" min="0"></label>
             <label>Service Charge<input type="number" step="0.01" id="charge" readonly></label>
             <label>Late Charge<input type="number" step="0.01" id="amt2" readonly></label>
-            <label>Cash<input type="number" step="0.01" id="cash" min="0"></label>
-            <label class="amount-emphasis">Total<input type="number" step="0.01" id="total" readonly></label>
-            <label class="amount-emphasis">Change<input type="number" step="0.01" id="changeAmt" readonly></label>
-            <label>Payment Reference<input type="text" id="paymentReference" maxlength="120" placeholder="Real ref from biller/channel"></label>
             <label>Mode of Payment
                 <select id="paymentMethod">
                     <option value="">Select mode</option>
                     <option value="CASH">Cash</option>
                     <option value="GCASH">GCash</option>
                     <option value="MAYA">Maya</option>
-                    <option value="BAYAD">Bayad</option>
-                    <option value="BPI_CC">BPI Credit Card</option>
+                    <option value="BDO">BDO</option>
                     <option value="BPI">BPI</option>
                 </select>
             </label>
-            <label>Suggested Route<input type="text" id="paymentChannel" readonly placeholder="AUTO"></label>
+            <label>Confirmation Reference<input type="text" id="confirmationReference" maxlength="120" placeholder="Confirmation ref from customer payment"></label>
+            <label>Amount<input type="number" step="0.01" id="cash" min="0"></label>
+            <label class="amount-emphasis">Total<input type="number" step="0.01" id="total" readonly></label>
+            <label class="amount-emphasis">Change<input type="number" step="0.01" id="changeAmt" readonly></label>
+            <label>Payment Reference<input type="text" id="paymentReference" maxlength="120" placeholder="Payment ref from biller/channel"></label>
         </div>
 
         <div class="dialog-actions entry-actions">

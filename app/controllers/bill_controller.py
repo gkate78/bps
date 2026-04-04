@@ -90,7 +90,16 @@ def _normalized_amount(payload: dict) -> float:
 
 
 def _normalize_text_fields(payload: dict) -> dict:
-    for key in ("account", "biller", "customer_name", "cp_number", "reference", "notes", "payment_channel"):
+    for key in (
+        "account",
+        "biller",
+        "customer_name",
+        "cp_number",
+        "reference",
+        "confirmation_reference",
+        "notes",
+        "payment_channel",
+    ):
         value = payload.get(key)
         if value is None:
             continue
@@ -351,6 +360,7 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         due_date=payload.get("due_date"),
         notes=payload.get("notes"),
         reference=reference,
+        confirmation_reference=payload.get("confirmation_reference"),
         payment_reference=payload.get("payment_reference"),
         payment_method=payload.get("payment_method"),
         payment_channel=payload.get("payment_channel"),
@@ -422,6 +432,7 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
             "due_date": updates.get("due_date", record.due_date),
             "notes": updates.get("notes", record.notes),
             "reference": updates.get("reference", record.reference),
+            "confirmation_reference": updates.get("confirmation_reference", record.confirmation_reference),
             "payment_reference": updates.get("payment_reference", record.payment_reference),
             "payment_method": updates.get("payment_method", record.payment_method),
             "payment_channel": updates.get("payment_channel", record.payment_channel),
@@ -808,6 +819,69 @@ async def records_kpi_summary(
     }
 
 
+async def batch_mark_cash_and_export(
+    db: AsyncSession,
+    *,
+    biller: Optional[str],
+    from_date: Optional[date],
+    to_date: Optional[date],
+    due_status: Optional[str],
+) -> dict:
+    filters = _build_record_filters(
+        biller=biller,
+        from_date=from_date,
+        to_date=to_date,
+        due_status=due_status,
+        apply_default_month_when_empty=False,
+    )
+    if not filters:
+        raise HTTPException(
+            status_code=400,
+            detail="Please apply at least one filter before batch cash processing.",
+        )
+
+    stmt = select(BillRecord).where(*filters).order_by(BillRecord.txn_date.asc(), BillRecord.id.asc())
+    rows = (await db.execute(stmt)).scalars().all()
+
+    updated = 0
+    now = datetime.utcnow()
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(["ACCOUNT", "NAME", "BILL AMT"])
+    for row in rows:
+        row_changed = False
+        if str(row.payment_method or "").strip().upper() != "CASH":
+            row.payment_method = "CASH"
+            row_changed = True
+        if str(row.payment_channel or "").strip().upper() != "BRANCH_MANUAL":
+            row.payment_channel = "BRANCH_MANUAL"
+            row_changed = True
+        if row.payment_reference is None or str(row.payment_reference).strip() == "":
+            row.payment_reference = row.reference or None
+            row_changed = True
+        if row_changed:
+            row.updated_at = now
+            db.add(row)
+            updated += 1
+
+        writer.writerow(
+            [
+                row.account or "",
+                row.customer_name or "",
+                f"{float(row.bill_amt or 0):.2f}",
+            ]
+        )
+
+    if updated > 0:
+        await db.commit()
+
+    return {
+        "csv_bytes": out.getvalue().encode("utf-8"),
+        "row_count": len(rows),
+        "updated_count": updated,
+    }
+
+
 async def datatable_query(
     db: AsyncSession,
     *,
@@ -865,6 +939,7 @@ async def datatable_query(
         "change_amt": BillRecord.change_amt,
         "due_date": BillRecord.due_date,
         "reference": BillRecord.reference,
+        "confirmation_reference": BillRecord.confirmation_reference,
         "payment_reference": BillRecord.payment_reference,
         "payment_method": BillRecord.payment_method,
         "payment_channel": BillRecord.payment_channel,
@@ -898,6 +973,7 @@ async def datatable_query(
             "due_date": r.due_date.isoformat() if r.due_date else "",
             "notes": r.notes or "",
             "reference": r.reference or "",
+            "confirmation_reference": r.confirmation_reference or "",
             "payment_reference": r.payment_reference or "",
             "payment_method": r.payment_method or "",
             "payment_channel": r.payment_channel or "",
@@ -944,6 +1020,7 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
         notes_raw = _csv_cell(row, "NOTES", "notes")
         ref_raw = _csv_cell(row, "REFERENCE", "reference")
         pay_ref = _csv_cell(row, "payment_reference", "PAYMENT_REFERENCE", "PAYMENT REFERENCE")
+        conf_ref = _csv_cell(row, "confirmation_reference", "CONFIRMATION_REFERENCE", "CONFIRMATION REFERENCE")
         pay_method = _csv_cell(row, "payment_method", "PAYMENT_METHOD", "PAYMENT METHOD")
         # Import compatibility: if processed biller ref is not explicitly provided,
         # fall back to REFERENCE from source CSV.
@@ -965,6 +1042,7 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
             "due_date": _parse_date(_csv_cell(row, "DUE DATE", "due_date", "DUE_DATE")),
             "notes": notes_raw or None,
             "reference": ref_raw or None,
+            "confirmation_reference": conf_ref or None,
             "payment_reference": resolved_payment_reference or None,
             "payment_method": pay_method or None,
             "payment_channel": _csv_cell(row, "payment_channel", "PAYMENT_CHANNEL", "PAYMENT CHANNEL") or None,
