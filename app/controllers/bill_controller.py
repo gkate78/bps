@@ -97,6 +97,7 @@ def _normalize_text_fields(payload: dict) -> dict:
         "cp_number",
         "reference",
         "confirmation_reference",
+        "payment_method",
         "notes",
         "payment_channel",
     ):
@@ -104,6 +105,13 @@ def _normalize_text_fields(payload: dict) -> dict:
         if value is None:
             continue
         payload[key] = str(value).strip().upper()
+    return payload
+
+
+def _sanitize_payment_fields(payload: dict) -> dict:
+    method = str(payload.get("payment_method") or "").strip().upper()
+    if method == "CASH":
+        payload["confirmation_reference"] = None
     return payload
 
 
@@ -324,6 +332,7 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
     payload["txn_date"] = txn_date
 
     payload = _normalize_text_fields(payload)
+    payload = _sanitize_payment_fields(payload)
     charge_map, late_map = await _get_biller_rule_maps(db)
     payload = _apply_computations(payload, charge_map, late_map)
 
@@ -445,6 +454,7 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
         charge_map,
         late_map,
     )
+    updates = _sanitize_payment_fields(updates)
 
     for key, value in updates.items():
         setattr(record, key, value)
