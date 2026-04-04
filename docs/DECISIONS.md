@@ -182,3 +182,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Operators finalize payment details faster when the primary decision (mode) appears first and confirmation details follow immediately; hiding route suggestion removes noise from the encode flow while keeping backend routing capabilities available if needed.
 - Alternatives considered: keep suggested-route field visible; keep previous amount-first ordering.
 - Follow-up: If operators still need routing context, add a compact optional tooltip/help indicator instead of a full input row.
+
+- Date: 2026-04-03
+- ID: DEC-022
+- Related task: BPS-205 / processing controls
+- Decision: Keep `payment_channel` as an explicit persisted field entered/edited by operations (no automatic overwrite in create/update), and separate payment-method scopes by workflow: customer entry allows `CASH`, `GCASH`, `MAYA`, `BDO`, `BPI`, while admin processing/edit allows `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPI_CC`, `BPI`.
+- Why: Operations tracks actual posting routes and processing methods that can differ from customer-facing input options; preserving the encoded channel and allowing richer processing methods improves audit fidelity and reconciliation accuracy.
+- Alternatives considered: derive/force channel from payment method; use a single payment-method list for all flows.
+- Follow-up: Consider adding channel/method consistency checks or warnings (non-blocking) when operators set unusual combinations.

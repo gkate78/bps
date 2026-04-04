@@ -7,7 +7,7 @@ from urllib.parse import quote_plus
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -51,7 +51,8 @@ from app.services import get_confirmation_service
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
-ALLOWED_PAYMENT_METHODS = {"CASH", "GCASH", "MAYA", "BDO", "BPI"}
+CUSTOMER_PAYMENT_METHODS = {"CASH", "GCASH", "MAYA", "BDO", "BPI"}
+PROCESSING_PAYMENT_METHODS = {"CASH", "GCASH", "MAYA", "BAYAD", "BPI_CC", "BPI"}
 
 DATABASE_VIEW_TABLES: dict[str, str] = {
     "bill_records": "Bill Records",
@@ -103,13 +104,24 @@ def _posting_eta_for_channel(payment_channel: Optional[str]) -> str:
     return "WITHIN 1-2 BUSINESS DAYS"
 
 
-def _resolve_payment_channel_from_method(payment_method: Optional[str]) -> tuple[str, str]:
-    method = str(payment_method or "").strip().upper()
-    if method == "CASH":
-        return "BRANCH_MANUAL", "PAYMENT_METHOD_CASH"
-    if method in {"GCASH", "MAYA", "BDO", "BPI"}:
-        return "ONLINE", "PAYMENT_METHOD_NON_CASH"
-    return "BRANCH_MANUAL", "PAYMENT_METHOD_UNSET_DEFAULT_BRANCH"
+def _normalize_payment_method_input(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = str(value).strip().upper().replace("-", "_")
+    if normalized == "":
+        return None
+    if normalized in {"BPICC", "BPI CREDIT CARD"}:
+        return "BPI_CC"
+    return normalized
+
+
+def _validate_payment_method(value: Optional[str], allowed: set[str]) -> Optional[str]:
+    normalized = _normalize_payment_method_input(value)
+    if normalized is None:
+        return None
+    if normalized not in allowed:
+        raise HTTPException(status_code=400, detail="Unsupported payment method.")
+    return normalized
 
 
 def _build_confirmation_message(
@@ -149,18 +161,6 @@ class RecordCreate(BaseModel):
     payment_method: Optional[str] = None
     payment_channel: Optional[str] = None
 
-    @field_validator("payment_method")
-    @classmethod
-    def validate_payment_method(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        normalized = str(value).strip().upper()
-        if normalized == "":
-            return None
-        if normalized not in ALLOWED_PAYMENT_METHODS:
-            raise ValueError("Unsupported payment method.")
-        return normalized
-
 
 class RecordUpdate(BaseModel):
     txn_datetime: Optional[datetime] = None
@@ -182,18 +182,6 @@ class RecordUpdate(BaseModel):
     payment_reference: Optional[str] = None
     payment_method: Optional[str] = None
     payment_channel: Optional[str] = None
-
-    @field_validator("payment_method")
-    @classmethod
-    def validate_payment_method(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        normalized = str(value).strip().upper()
-        if normalized == "":
-            return None
-        if normalized not in ALLOWED_PAYMENT_METHODS:
-            raise ValueError("Unsupported payment method.")
-        return normalized
 
 
 class RecordResponse(RecordCreate):
@@ -1182,6 +1170,8 @@ async def create_record_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(require_data_entry_access),
 ):
+    payload.payment_method = _validate_payment_method(payload.payment_method, CUSTOMER_PAYMENT_METHODS)
+
     if payload.txn_datetime is None:
         payload.txn_datetime = datetime.now()
     if payload.txn_date is None:
@@ -1196,8 +1186,6 @@ async def create_record_endpoint(
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     initial_payload = payload.model_dump()
-    resolved_channel, channel_reason = _resolve_payment_channel_from_method(initial_payload.get("payment_method"))
-    initial_payload["payment_channel"] = resolved_channel
     record = await create_record(db, initial_payload)
     await upsert_customer_from_record(
         db,
@@ -1215,8 +1203,7 @@ async def create_record_endpoint(
         record_id=record.id,
         detail=(
             f"reference={record.reference or '-'}, "
-            f"payment_channel={record.payment_channel or '-'}, "
-            f"routing_reason={channel_reason}"
+            f"payment_channel={record.payment_channel or '-'}"
         ),
     )
     if _is_valid_cp_number(record.cp_number):
@@ -1285,13 +1272,10 @@ async def update_record_endpoint(
         raise HTTPException(status_code=400, detail="Due date is required")
     if "cp_number" in updates and not _is_valid_cp_number(updates.get("cp_number")):
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
-
-    merged_payment_method = updates.get("payment_method")
-    if merged_payment_method is None:
-        current_record = await get_record(db, record_id)
-        merged_payment_method = current_record.payment_method
-    resolved_channel, channel_reason = _resolve_payment_channel_from_method(merged_payment_method)
-    updates["payment_channel"] = resolved_channel
+    if "payment_method" in updates:
+        updates["payment_method"] = _validate_payment_method(
+            updates.get("payment_method"), PROCESSING_PAYMENT_METHODS
+        )
 
     record = await update_record(db, record_id, updates)
     await upsert_customer_from_record(
@@ -1310,8 +1294,7 @@ async def update_record_endpoint(
         record_id=record_id,
         detail=(
             f"reference={record.reference or '-'}, "
-            f"payment_channel={record.payment_channel or '-'}, "
-            f"routing_reason={channel_reason}"
+            f"payment_channel={record.payment_channel or '-'}"
         ),
     )
     return record
