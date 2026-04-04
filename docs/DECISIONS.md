@@ -166,3 +166,19 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Reduces visual clutter and load noise on routine workflows while still giving admins quick access to diagnostics and raw data when needed.
 - Alternatives considered: always-visible audit/rules tables; direct inline DB editing inside settings pages.
 - Follow-up: Add optional column-level search/export controls in Database View if investigation workflows become frequent.
+
+- Date: 2026-04-03
+- ID: DEC-020
+- Related task: BPS-205 / payment capture consistency
+- Decision: Keep `payment_reference` and `confirmation_reference` as separate persisted fields, and restrict `payment_method` to `CASH`, `GCASH`, `MAYA`, `BDO`, `BPI` in both encoder and admin record flows (validated in UI and API).
+- Why: `payment_reference` (processor/biller trace) and `confirmation_reference` (customer-provided confirmation) represent different business meanings; separating them preserves audit clarity and avoids overwriting critical references. Standardized payment-method options remove drift between forms and reports.
+- Alternatives considered: reuse one shared reference field; allow open-ended/free-text payment methods.
+- Follow-up: Add reporting/export columns that display both references side-by-side in reconciliation and audit views when needed.
+
+- Date: 2026-04-03
+- ID: DEC-021
+- Related task: BPS-205 / data-entry UX
+- Decision: Simplify entry and admin edit payment sections by removing the visible Suggested Route field and prioritizing input order as `Mode of Payment` -> `Confirmation Reference` -> amount (`cash` value field, labeled "Amount").
+- Why: Operators finalize payment details faster when the primary decision (mode) appears first and confirmation details follow immediately; hiding route suggestion removes noise from the encode flow while keeping backend routing capabilities available if needed.
+- Alternatives considered: keep suggested-route field visible; keep previous amount-first ordering.
+- Follow-up: If operators still need routing context, add a compact optional tooltip/help indicator instead of a full input row.

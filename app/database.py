@@ -54,6 +54,8 @@ async def init_db() -> None:
             )
         if "payment_reference" not in col_names:
             await conn.execute(text("ALTER TABLE bill_records ADD COLUMN payment_reference VARCHAR(120)"))
+        if "confirmation_reference" not in col_names:
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN confirmation_reference VARCHAR(120)"))
         if "payment_channel" not in col_names:
             await conn.execute(text("ALTER TABLE bill_records ADD COLUMN payment_channel VARCHAR(32)"))
             await conn.execute(

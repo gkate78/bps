@@ -166,6 +166,7 @@ const dom = {
     notes: document.getElementById("notes"),
     reference: document.getElementById("reference"),
     paymentReference: document.getElementById("paymentReference"),
+    confirmationReference: document.getElementById("confirmationReference"),
     paymentMethod: document.getElementById("paymentMethod"),
 };
 
@@ -175,6 +176,7 @@ const filters = {
     toDate: document.getElementById("toDateFilter"),
     dueStatus: document.getElementById("dueStatusFilter"),
 };
+const batchCashExportBtn = document.getElementById("batchCashExportBtn");
 
 const kpis = {
     visible: document.getElementById("kpiVisibleRecords"),
@@ -324,43 +326,6 @@ async function updateRecordsKpis() {
 
 table.on("draw", updateRecordsKpis);
 
-const auditTableEl = document.getElementById("auditTable");
-const toggleAuditBtn = document.getElementById("toggleAuditBtn");
-const auditLogBody = document.getElementById("auditLogBody");
-let auditTableInstance = null;
-
-function initAuditTableIfNeeded() {
-    if (!auditTableEl || auditTableInstance) {
-        return;
-    }
-    auditTableInstance = new DataTable("#auditTable", {
-        processing: true,
-        ajax: {
-            url: "/api/admin/record-audit",
-            dataSrc: "logs",
-        },
-        pageLength: 10,
-        autoWidth: false,
-        columns: [
-            { data: "created_at", render: formatDateTime },
-            { data: "actor_name", render: (d) => d || "-" },
-            { data: "actor_role", render: (d) => d || "-" },
-            { data: "action", render: (d) => String(d || "").toUpperCase() },
-            { data: "channel", render: (d) => String(d || "").toUpperCase() },
-            { data: "status", render: formatStatusPill },
-            { data: "record_id", render: (d) => (d == null ? "-" : d) },
-            { data: "detail", render: (d) => d || "" },
-        ],
-        order: [[0, "desc"]],
-    });
-}
-
-function reloadAuditLog() {
-    if (auditTableInstance) {
-        auditTableInstance.ajax.reload(null, false);
-    }
-}
-
 const usersDialog = document.getElementById("usersDialog");
 const openUsersBtn = document.getElementById("openUsersBtn");
 const closeUsersBtn = document.getElementById("closeUsersBtn");
@@ -490,6 +455,9 @@ function clearForm() {
      if (dom.paymentReference) {
         dom.paymentReference.value = "";
     }
+    if (dom.confirmationReference) {
+        dom.confirmationReference.value = "";
+    }
     if (dom.paymentMethod) {
         dom.paymentMethod.value = "";
     }
@@ -549,6 +517,9 @@ async function openEdit(id) {
     if (dom.paymentReference) {
         dom.paymentReference.value = valueOrEmpty(data.payment_reference);
     }
+    if (dom.confirmationReference) {
+        dom.confirmationReference.value = valueOrEmpty(data.confirmation_reference);
+    }
     if (dom.paymentMethod) {
         dom.paymentMethod.value = valueOrEmpty(data.payment_method || "");
     }
@@ -567,12 +538,10 @@ async function removeRecord(id) {
     const response = await fetch(`/api/records/${id}`, { method: "DELETE" });
     if (!response.ok) {
         await showMessage("Delete failed. Please try again.", "Delete Failed");
-        reloadAuditLog();
         return;
     }
 
     table.ajax.reload(null, false);
-    reloadAuditLog();
 }
 
 function payloadFromForm() {
@@ -594,6 +563,7 @@ function payloadFromForm() {
         notes: dom.notes.value.trim() || null,
         reference: dom.reference.value.trim() || null,
         payment_reference: dom.paymentReference ? dom.paymentReference.value.trim() || null : null,
+        confirmation_reference: dom.confirmationReference ? dom.confirmationReference.value.trim() || null : null,
         payment_method: dom.paymentMethod ? (dom.paymentMethod.value || null) : null,
     };
 }
@@ -679,13 +649,11 @@ async function saveRecord(event) {
         } else {
             await showMessage(err.detail || "Save failed.", "Save Failed");
         }
-        reloadAuditLog();
         return;
     }
 
     dom.dialog.close();
     table.ajax.reload(null, false);
-    reloadAuditLog();
 }
 
 async function importCsv(event) {
@@ -712,15 +680,86 @@ async function importCsv(event) {
 
     if (!response.ok) {
         statusEl.textContent = "Import failed";
-        reloadAuditLog();
         return;
     }
 
     const result = await response.json();
     statusEl.textContent = `Imported ${result.created}, duplicates ${result.duplicates || 0}, skipped ${result.skipped}`;
     table.ajax.reload();
-    reloadAuditLog();
     fileInput.value = "";
+}
+
+function buildFilterParams() {
+    const params = new URLSearchParams();
+    if (filters.biller?.value) params.set("biller", filters.biller.value);
+    if (filters.fromDate?.value) params.set("from_date", filters.fromDate.value);
+    if (filters.toDate?.value) params.set("to_date", filters.toDate.value);
+    if (filters.dueStatus?.value) params.set("due_status", filters.dueStatus.value);
+    return params;
+}
+
+function extractFilename(contentDisposition) {
+    const raw = String(contentDisposition || "");
+    const match = raw.match(/filename=\"?([^\";]+)\"?/i);
+    return match ? match[1] : "batch_cash_export.csv";
+}
+
+async function batchMarkCashAndDownload() {
+    const params = buildFilterParams();
+    const hasAnyFilter = Array.from(params.keys()).length > 0;
+    if (!hasAnyFilter) {
+        await showMessage("Please apply at least one filter before batch cash processing.", "Batch Processing");
+        return;
+    }
+    const confirmed = await showConfirm(
+        "Mark all currently filtered rows as paid in CASH and download CSV copy?",
+        "Batch Cash Processing"
+    );
+    if (!confirmed) {
+        return;
+    }
+
+    const originalLabel = batchCashExportBtn ? batchCashExportBtn.textContent : "";
+    if (batchCashExportBtn) {
+        batchCashExportBtn.disabled = true;
+        batchCashExportBtn.textContent = "Processing...";
+    }
+    try {
+        const response = await fetch(`/api/records/batch/mark-cash-export?${params.toString()}`, {
+            method: "POST",
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            await showMessage(err.detail || "Batch processing failed.", "Batch Processing");
+            return;
+        }
+
+        const blob = await response.blob();
+        const filename = extractFilename(response.headers.get("Content-Disposition"));
+        const updatedCount = Number(response.headers.get("X-Updated-Count") || 0);
+        const rowCount = Number(response.headers.get("X-Row-Count") || 0);
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+
+        await showMessage(
+            `Batch complete. Updated ${updatedCount} of ${rowCount} filtered rows and downloaded CSV.`,
+            "Batch Processing"
+        );
+        table.ajax.reload(null, false);
+        updateRecordsKpis();
+    } finally {
+        if (batchCashExportBtn) {
+            batchCashExportBtn.disabled = false;
+            batchCashExportBtn.textContent = originalLabel || "Mark Cash + Download";
+        }
+    }
 }
 
 const openCreateBtn = document.getElementById("openCreateBtn");
@@ -741,28 +780,8 @@ document.getElementById("clearFiltersBtn").addEventListener("click", () => {
     filters.dueStatus.value = "";
     table.search("").draw();
 });
-
-const refreshAuditBtn = document.getElementById("refreshAuditBtn");
-if (refreshAuditBtn) {
-    refreshAuditBtn.addEventListener("click", () => {
-        initAuditTableIfNeeded();
-        reloadAuditLog();
-    });
-}
-
-if (toggleAuditBtn && auditLogBody) {
-    toggleAuditBtn.addEventListener("click", () => {
-        const showing = !auditLogBody.classList.contains("is-hidden");
-        if (showing) {
-            auditLogBody.classList.add("is-hidden");
-            toggleAuditBtn.textContent = "Show Audit Log";
-            return;
-        }
-        auditLogBody.classList.remove("is-hidden");
-        toggleAuditBtn.textContent = "Hide Audit Log";
-        initAuditTableIfNeeded();
-        reloadAuditLog();
-    });
+if (batchCashExportBtn) {
+    batchCashExportBtn.addEventListener("click", batchMarkCashAndDownload);
 }
 
 Object.values(filters).forEach((el) => {

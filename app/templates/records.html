@@ -5,7 +5,7 @@
 {% block topbar_subtitle %}Manage imported billing rows with fast table tools.{% endblock %}
 {% block topbar_actions %}
 <a href="/entry/form" class="btn btn-primary">Add Record</a>
-<a href="/admin/processing" class="btn btn-secondary">Processing</a>
+<a href="/admin/reconciliation" class="btn btn-secondary">Reconciliation</a>
 <a href="/admin/reports" class="btn btn-secondary">Reports</a>
 <a href="/admin/database" class="btn btn-secondary">Database</a>
 <a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
@@ -76,6 +76,7 @@
 
         <div class="field field-actions">
             <button type="button" class="btn btn-secondary" id="clearFiltersBtn">Clear Filters</button>
+            <button type="button" class="btn btn-primary" id="batchCashExportBtn">Mark Cash + Download</button>
         </div>
     </div>
 </section>
@@ -112,29 +113,11 @@
 </section>
 
 <section class="panel">
-    <div class="panel-head panel-head-actions">
+    <div class="panel-head">
         <h2>Transaction Audit Log</h2>
-        <button type="button" class="btn btn-secondary" id="toggleAuditBtn">Show Audit Log</button>
     </div>
-    <div id="auditLogBody" class="is-hidden">
-        <div class="dialog-actions">
-            <button type="button" class="btn btn-secondary" id="refreshAuditBtn">Refresh Audit Log</button>
-        </div>
-        <table id="auditTable" class="display audit-grid" style="width:100%">
-            <thead>
-                <tr>
-                    <th>When</th>
-                    <th>Who</th>
-                    <th>Role</th>
-                    <th>Action</th>
-                    <th>Channel</th>
-                    <th>Status</th>
-                    <th>Record ID</th>
-                    <th>Detail</th>
-                </tr>
-            </thead>
-        </table>
-    </div>
+    <p class="status-text">Audit logs are available in Database View for on-demand inspection.</p>
+    <a href="/admin/database?table=record_audit_logs&limit=200" class="btn btn-secondary">Open Audit Logs</a>
 </section>
 
 <dialog id="usersDialog" class="record-dialog users-dialog">
@@ -208,10 +191,6 @@
                 <span class="meta-label">Current Date/Time</span>
                 <strong id="currentDateTime">-</strong>
             </div>
-            <div class="meta-item">
-                <span class="meta-label">Computed Charge Rule</span>
-                <strong>Biller-based + tier logic</strong>
-            </div>
         </div>
 
         <div class="form-grid form-grid-pro">
@@ -224,22 +203,22 @@
             <label>Bill Amount<input type="number" step="0.01" id="billAmt" value="0" min="0"></label>
             <label>Late Charge<input type="number" step="0.01" id="amt2" value="0" min="0"></label>
             <label>Service Charge<input type="number" step="0.01" id="charge" value="0" readonly></label>
-            <label class="amount-emphasis">Total<input type="number" step="0.01" id="total" value="0" readonly></label>
-            <label>Cash<input type="number" step="0.01" id="cash" value="0" min="0"></label>
-            <label class="amount-emphasis">Change<input type="number" step="0.01" id="changeAmt" value="0" readonly></label>
-            <label>Reference<input type="text" id="reference" placeholder="Auto-generate if blank"></label>
-            <label>Payment Reference<input type="text" id="paymentReference" maxlength="120" placeholder="Real ref from biller/channel"></label>
             <label>Mode of Payment
                 <select id="paymentMethod">
                     <option value="">Select mode</option>
                     <option value="CASH">Cash</option>
                     <option value="GCASH">GCash</option>
                     <option value="MAYA">Maya</option>
-                    <option value="BAYAD">Bayad</option>
-                    <option value="BPI_CC">BPI Credit Card</option>
+                    <option value="BDO">BDO</option>
                     <option value="BPI">BPI</option>
                 </select>
             </label>
+            <label>Confirmation Reference<input type="text" id="confirmationReference" maxlength="120" placeholder="Confirmation ref from customer payment"></label>
+            <label>Amount<input type="number" step="0.01" id="cash" value="0" min="0"></label>
+            <label class="amount-emphasis">Total<input type="number" step="0.01" id="total" value="0" readonly></label>
+            <label class="amount-emphasis">Change<input type="number" step="0.01" id="changeAmt" value="0" readonly></label>
+            <label>Reference<input type="text" id="reference" placeholder="Auto-generate if blank"></label>
+            <label>Payment Reference<input type="text" id="paymentReference" maxlength="120" placeholder="Real ref from biller/channel"></label>
             <label class="full">Notes<textarea id="notes" rows="2"></textarea></label>
         </div>
 

@@ -17,6 +17,7 @@
 ## LATER
 - [x] BPS-208 | Theme: Biller standardization | Outcome: Biller directory for charges + required fields | Done when: biller config is editable and used by validation/computation
 - [ ] BPS-209 | Theme: Customer comms | Outcome: SMS/Viber confirmation with reference + posting ETA | Done when: message trigger is sent after submission (post-MVP)
+- [ ] BPS-210 | Theme: Reconciliation reliability | Outcome: Daily reconciliation snapshot finalization and history | Done when: user can finalize a day, persist immutable totals/variance, and review historical snapshots
 
 ## Done
 - [x] BPS-101 | Shipped on: 2026-03-05 | Notes: Phone + PIN signup/signin with role routing

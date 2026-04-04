@@ -22,6 +22,9 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Admin Settings includes popup biller-rule form (Add/Update) and per-field receipt visibility toggles beside business inputs (including receipt footer)
 - Admin Records keeps Transaction Audit Log hidden by default and loads it on demand
 - Admin Database View (`/admin/database`) provides read-only table browsing with sticky selector controls
+- Payment capture now keeps `payment_reference` and `confirmation_reference` as separate fields across entry, admin edit, and CSV import
+- Customer payment mode list is standardized to `CASH`, `GCASH`, `MAYA`, `BDO`, `BPI` for both encoder and admin flows
+- Data entry/payment dialogs now place `Mode of Payment` before amount input, position `confirmation_reference` immediately after mode, and hide suggested routing from the entry screen
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save
@@ -102,6 +105,7 @@ Headers supported (case-sensitive):
 - `DUE DATE`
 - `NOTES`
 - `REFERENCE`
+- `confirmation_reference` (optional)
 - `payment_reference` (optional)
 - `payment_method` (optional)
 - `payment_channel` (optional)
