@@ -373,6 +373,7 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         payment_reference=payload.get("payment_reference"),
         payment_method=payload.get("payment_method"),
         payment_channel=payload.get("payment_channel"),
+        processed_by_user_id=payload.get("processed_by_user_id"),
     )
 
     db.add(record)
@@ -445,6 +446,7 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
             "payment_reference": updates.get("payment_reference", record.payment_reference),
             "payment_method": updates.get("payment_method", record.payment_method),
             "payment_channel": updates.get("payment_channel", record.payment_channel),
+            "processed_by_user_id": updates.get("processed_by_user_id", record.processed_by_user_id),
         }
     )
     updates = _apply_computations(
@@ -953,6 +955,7 @@ async def datatable_query(
         "payment_reference": BillRecord.payment_reference,
         "payment_method": BillRecord.payment_method,
         "payment_channel": BillRecord.payment_channel,
+        "processed_by_user_id": BillRecord.processed_by_user_id,
         "id": BillRecord.id,
     }
     sort_col = order_map.get(order_column, BillRecord.txn_datetime)
@@ -987,6 +990,7 @@ async def datatable_query(
             "payment_reference": r.payment_reference or "",
             "payment_method": r.payment_method or "",
             "payment_channel": r.payment_channel or "",
+            "processed_by_user_id": r.processed_by_user_id,
             "processed_at": (
                 r.updated_at.isoformat(timespec="seconds")
                 if (r.payment_reference is not None and str(r.payment_reference).strip() != "" and r.updated_at)
