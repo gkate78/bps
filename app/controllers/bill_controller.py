@@ -84,9 +84,11 @@ def _parse_float(value: str | None) -> float:
 
 
 def _normalized_amount(payload: dict) -> float:
-    total = float(payload.get("total", 0) or 0)
     bill_amt = float(payload.get("bill_amt", 0) or 0)
-    return round(total if total > 0 else bill_amt, 2)
+    total = float(payload.get("total", 0) or 0)
+    # Duplicate detection for data entry should primarily use bill amount.
+    # Computed totals can vary when charges/rules change over time.
+    return round(bill_amt if bill_amt > 0 else total, 2)
 
 
 def _normalize_text_fields(payload: dict) -> dict:
