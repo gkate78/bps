@@ -198,3 +198,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Reconciliation and audit investigation require knowing exactly who last processed a record and preserving operations-specific channel labels independent from customer payment-mode input.
 - Alternatives considered: infer processor from audit log only; force channel from method or use ONLINE/BRANCH-only channel values.
 - Follow-up: Add optional backfill utility to populate `processed_by_user_id` for historical rows from audit logs if needed.
+
+- Date: 2026-04-03
+- ID: DEC-024
+- Related task: BPS-205 / reconciliation operations
+- Decision: Add daily per-user reconciliation summary grouped by `processed_by_user_id` and show it in the Reconciliation page; include user labels (`UNASSIGNED` for null processor) with per-user collected/processed/pending amounts and counts.
+- Why: Operators need accountability and workload visibility by processor without leaving the reconciliation workflow.
+- Alternatives considered: keep only overall EOD totals; require manual export/reporting for per-user analysis.
+- Follow-up: Add date-range and monthly per-user views, and optional historical backfill from audit logs for rows created before processor tracking was introduced.

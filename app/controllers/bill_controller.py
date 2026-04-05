@@ -638,6 +638,77 @@ async def reconciliation_summary(
     return result
 
 
+async def reconciliation_by_user_summary(
+    db: AsyncSession,
+    for_date: date,
+) -> dict:
+    """Daily reconciliation grouped by processed_by_user_id."""
+    rows = (
+        await db.execute(
+            select(BillRecord).where(BillRecord.txn_date == for_date).order_by(BillRecord.id.asc())
+        )
+    ).scalars().all()
+
+    groups: dict[Optional[int], dict] = {}
+    for row in rows:
+        key = row.processed_by_user_id
+        current = groups.setdefault(
+            key,
+            {
+                "processed_by_user_id": key,
+                "collected": 0.0,
+                "processed": 0.0,
+                "pending": 0.0,
+                "record_count": 0,
+                "processed_count": 0,
+                "flag": "pending",
+            },
+        )
+        row_total = round(float(row.total or 0), 2)
+        current["collected"] += row_total
+        current["record_count"] += 1
+        if row.payment_reference is not None and str(row.payment_reference).strip() != "":
+            current["processed"] += row_total
+            current["processed_count"] += 1
+
+    items = []
+    totals = {
+        "collected": 0.0,
+        "processed": 0.0,
+        "pending": 0.0,
+        "record_count": 0,
+        "processed_count": 0,
+    }
+    for item in groups.values():
+        item["collected"] = round(float(item["collected"]), 2)
+        item["processed"] = round(float(item["processed"]), 2)
+        item["pending"] = round(item["collected"] - item["processed"], 2)
+        if abs(item["processed"] - item["collected"]) < 0.01:
+            item["flag"] = "match"
+        elif item["processed"] > item["collected"]:
+            item["flag"] = "short"
+        else:
+            item["flag"] = "pending"
+
+        items.append(item)
+        totals["collected"] += float(item["collected"])
+        totals["processed"] += float(item["processed"])
+        totals["pending"] += float(item["pending"])
+        totals["record_count"] += int(item["record_count"])
+        totals["processed_count"] += int(item["processed_count"])
+
+    totals["collected"] = round(float(totals["collected"]), 2)
+    totals["processed"] = round(float(totals["processed"]), 2)
+    totals["pending"] = round(float(totals["pending"]), 2)
+
+    items.sort(key=lambda x: (x["processed_by_user_id"] is None, x["processed_by_user_id"] or 0))
+    return {
+        "date": for_date.isoformat(),
+        "items": items,
+        "totals": totals,
+    }
+
+
 async def reconciliation_report_summary(
     db: AsyncSession,
     *,
