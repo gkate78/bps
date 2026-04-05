@@ -26,6 +26,7 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Customer entry payment modes are `CASH`, `GCASH`, `MAYA`, `BDO`, `BPI`; admin processing/edit supports `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPICC`, `BPI`
 - Payment channel is stored as encoded/edited (`payment_channel`) and can be explicitly set in admin edit using channel values `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPICC`, `BPI`
 - `processed_by_user_id` is now recorded automatically on create/update based on the logged-in operator account
+- CSV import now initializes processing fields per record: `payment_method=CASH`, `payment_channel=CASH`, `confirmation_reference`/`payment_reference` fallback to `reference` when blank, and `processed_by_user_id` is set to the importing user
 - Reconciliation page includes a daily per-user reconciliation table grouped by `processed_by_user_id` with collected/processed/pending totals
 - Admin edit labels now clarify payment semantics: `Customer Payment Mode` vs `Settlement Channel`
 - Data entry/payment dialogs now place `Mode of Payment` before amount input, position `confirmation_reference` immediately after mode, and hide suggested routing from the entry screen

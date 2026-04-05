@@ -238,3 +238,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Database inspection should be faster and less cluttered for routine admin use; deprecated legacy fields should not distract operators.
 - Alternatives considered: keep manual load button only; keep showing all raw columns including deprecated fields.
 - Follow-up: Consider server-side search/filter in Database View if row limits are increased substantially.
+
+- Date: 2026-04-05
+- ID: DEC-029
+- Related task: CSV import processing defaults
+- Decision: During bill-record CSV import, initialize processing fields to operational defaults per row: `payment_method=CASH`, `payment_channel=CASH`, and fallback both `confirmation_reference` and `payment_reference` to `reference` when blank; persist `processed_by_user_id` as the authenticated importing user.
+- Why: Initial imports should represent branch-cash intake consistently and preserve a usable trace reference without requiring manual post-import cleanup.
+- Alternatives considered: leave imported processing fields as-is from source CSV; set only payment method/channel and keep references empty.
+- Follow-up: If mixed-channel historical imports become common, add an optional import mode/override flag instead of hard defaults.
