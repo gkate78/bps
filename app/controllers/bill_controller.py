@@ -1085,7 +1085,9 @@ async def datatable_query(
     }
 
 
-async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
+async def import_csv_records(
+    db: AsyncSession, file_bytes: bytes, *, processed_by_user_id: Optional[int] = None
+) -> dict:
     text = file_bytes.decode("utf-8-sig", errors="ignore")
     reader = csv.DictReader(io.StringIO(text))
     charge_map, late_map = await _get_biller_rule_maps(db)
@@ -1164,6 +1166,16 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
 
         if not payload.get("reference"):
             payload["reference"] = await _generate_reference(db, payload["txn_date"])
+
+        # Import defaults for initial processing state.
+        payload["payment_method"] = "CASH"
+        payload["payment_channel"] = "CASH"
+        if not payload.get("payment_reference"):
+            payload["payment_reference"] = payload["reference"]
+        if not payload.get("confirmation_reference"):
+            payload["confirmation_reference"] = payload["reference"]
+        payload["processed_by_user_id"] = processed_by_user_id
+        payload = _normalize_text_fields(payload)
 
         db.add(BillRecord(**payload))
         created += 1

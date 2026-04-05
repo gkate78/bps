@@ -1444,7 +1444,11 @@ async def import_csv_endpoint(
             raise HTTPException(status_code=400, detail="Please upload a CSV file")
 
         file_bytes = await file.read()
-        result = await import_csv_records(db, file_bytes)
+        result = await import_csv_records(
+            db,
+            file_bytes,
+            processed_by_user_id=current_user.id,
+        )
         await _log_record_audit(
             db,
             action="import_csv",
