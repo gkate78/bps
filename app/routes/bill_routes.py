@@ -40,6 +40,7 @@ from app.controllers.bill_controller import (
     import_csv_records,
     batch_mark_cash_and_export,
     reconciliation_report_summary,
+    reconciliation_by_user_summary,
     reconciliation_summary,
     records_kpi_summary,
     update_record,
@@ -442,6 +443,36 @@ async def get_reconciliation_summary(
 ):
     for_date = summary_date or date_alias or date.today()
     return await reconciliation_summary(db, for_date, cash_on_hand=cash_on_hand)
+
+
+@router.get("/api/admin/reconciliation-by-user")
+async def get_reconciliation_by_user(
+    summary_date: Optional[date] = Query(default=None),
+    date_alias: Optional[date] = Query(default=None, alias="date"),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_owner_or_admin),
+):
+    for_date = summary_date or date_alias or date.today()
+    result = await reconciliation_by_user_summary(db, for_date)
+
+    ids = [item["processed_by_user_id"] for item in result["items"] if item["processed_by_user_id"] is not None]
+    name_by_id: dict[int, str] = {}
+    if ids:
+        user_rows = (
+            await db.execute(select(UserAccount).where(UserAccount.id.in_(ids)))
+        ).scalars().all()
+        for user in user_rows:
+            full = f"{(user.first_name or '').strip()} {(user.last_name or '').strip()}".strip()
+            name_by_id[user.id] = full or f"USER {user.id}"
+
+    for item in result["items"]:
+        user_id = item["processed_by_user_id"]
+        if user_id is None:
+            item["user_label"] = "UNASSIGNED"
+        else:
+            item["user_label"] = name_by_id.get(user_id, f"USER {user_id}")
+
+    return result
 
 
 @router.get("/api/admin/reports/summary")
