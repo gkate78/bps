@@ -1,4 +1,4 @@
-# BPAY
+# BPS
 
 Admin dashboard for managing billing records from a Google Sheet export.
 
