@@ -35,12 +35,12 @@
         <table class="report-table">
             <tbody>
                 <tr><th>Date</th><td id="reportDateDisp"></td></tr>
-                <tr><th>Collected</th><td id="reportCollected"></td></tr>
-                <tr><th>Processed</th><td id="reportProcessed"></td></tr>
-                <tr><th>Pending</th><td id="reportPending"></td></tr>
-                <tr><th>Total Charges</th><td id="reportTotalCharges"></td></tr>
-                <tr><th>Cash on hand</th><td id="reportCashOnHand"></td></tr>
-                <tr><th>Cash variance</th><td id="reportCashVariance"></td></tr>
+                <tr><th>Collected</th><td id="reportCollected" class="amount-cell"></td></tr>
+                <tr><th>Processed</th><td id="reportProcessed" class="amount-cell"></td></tr>
+                <tr><th>Pending</th><td id="reportPending" class="amount-cell"></td></tr>
+                <tr><th>Total Charges</th><td id="reportTotalCharges" class="amount-cell"></td></tr>
+                <tr><th>Cash on hand</th><td id="reportCashOnHand" class="amount-cell"></td></tr>
+                <tr><th>Cash variance</th><td id="reportCashVariance" class="amount-cell"></td></tr>
                 <tr><th>Cash status</th><td id="reportCashFlag"></td></tr>
                 <tr><th>Record count</th><td id="reportRecordCount"></td></tr>
                 <tr><th>Processed count</th><td id="reportProcessedCount"></td></tr>
@@ -74,15 +74,15 @@
         <h2>Per-User Reconciliation</h2>
     </div>
     <div class="table-scroll">
-        <table class="display users-grid" style="width:100%">
+        <table id="perUserReconciliationTable" class="display users-grid" style="width:100%">
             <thead>
                 <tr>
                     <th>User</th>
                     <th>Record Count</th>
                     <th>Processed Count</th>
-                    <th>Collected</th>
-                    <th>Processed</th>
-                    <th>Pending</th>
+                    <th class="amount-cell">Collected</th>
+                    <th class="amount-cell">Processed</th>
+                    <th class="amount-cell">Pending</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -94,9 +94,9 @@
                     <th>Total</th>
                     <th id="perUserTotalRecords">0</th>
                     <th id="perUserTotalProcessedCount">0</th>
-                    <th id="perUserTotalCollected">0.00</th>
-                    <th id="perUserTotalProcessed">0.00</th>
-                    <th id="perUserTotalPending">0.00</th>
+                    <th id="perUserTotalCollected" class="amount-cell">0.00</th>
+                    <th id="perUserTotalProcessed" class="amount-cell">0.00</th>
+                    <th id="perUserTotalPending" class="amount-cell">0.00</th>
                     <th>—</th>
                 </tr>
             </tfoot>

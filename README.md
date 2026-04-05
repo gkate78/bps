@@ -21,7 +21,7 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Admin pages include KPI cards, sticky filters, and status chips for faster scanning
 - Admin Settings includes popup biller-rule form (Add/Update) and per-field receipt visibility toggles beside business inputs (including receipt footer)
 - Admin Records keeps Transaction Audit Log hidden by default and loads it on demand
-- Admin Database View (`/admin/database`) provides read-only table browsing with sticky selector controls
+- Admin Database View (`/admin/database`) provides read-only table browsing with sticky selector controls, auto-load on selector changes, and in-page row search
 - Payment capture now keeps `payment_reference` and `confirmation_reference` as separate fields across entry, admin edit, and CSV import
 - Customer entry payment modes are `CASH`, `GCASH`, `MAYA`, `BDO`, `BPI`; admin processing/edit supports `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPICC`, `BPI`
 - Payment channel is stored as encoded/edited (`payment_channel`) and can be explicitly set in admin edit using channel values `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPICC`, `BPI`
@@ -38,6 +38,7 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - CP number validation: exactly 11 digits when provided
 - Text normalization: form text values are standardized to uppercase before persistence
 - Amount display formatting: comma separators with 2 decimal places on key views
+- Bill-record late-charge compatibility: legacy DB column `amt2` remains for safe writes, while UI/API display uses `late_charge` naming
 
 ## Run
 ```bash
@@ -103,7 +104,7 @@ Headers supported (case-sensitive):
 - `NAME`
 - `NUMBER` or `CP NUM`
 - `AMT` or `BILL AMT`
-- `AMT2` or `LATE CHARGE`
+- `LATE_CHARGE`, `LATE CHARGE`, or legacy `AMT2`
 - `CHARGE` or `SERVICE CHARGE`
 - `TOTAL`
 - `CASH`
