@@ -17,6 +17,22 @@ def print_rows(cur: sqlite3.Cursor, query: str, limit: int) -> None:
         print("(no rows)")
 
 
+def bill_records_preview_query(cur: sqlite3.Cursor) -> str:
+    cur.execute("PRAGMA table_info(bill_records)")
+    cols = {row[1] for row in cur.fetchall()}
+    if "late_charge" in cols:
+        late_expr = "late_charge"
+    elif "amt2" in cols:
+        late_expr = "amt2 AS late_charge"
+    else:
+        late_expr = "0 AS late_charge"
+    return (
+        "SELECT id, txn_date, account, biller, bill_amt, "
+        f"{late_expr}, total, due_date, reference "
+        "FROM bill_records ORDER BY id DESC"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Quick SQLite viewer for bills_admin.db")
     parser.add_argument("--db", default="bills_admin.db", help="Path to sqlite database file")
@@ -55,7 +71,7 @@ def main() -> None:
         print("\nBill Records:")
         print_rows(
             cur,
-            "SELECT id, txn_date, account, biller, bill_amt, amt2, total, due_date, reference FROM bill_records ORDER BY id DESC",
+            bill_records_preview_query(cur),
             args.limit,
         )
     elif args.table == "auth_event_logs":
@@ -81,7 +97,7 @@ def main() -> None:
         if "bill_records" in tables:
             print_rows(
                 cur,
-                "SELECT id, txn_date, account, biller, bill_amt, amt2, total, due_date, reference FROM bill_records ORDER BY id DESC",
+                bill_records_preview_query(cur),
                 args.limit,
             )
         else:

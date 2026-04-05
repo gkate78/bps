@@ -131,9 +131,9 @@
                             <td>${escapeHtml(label)}</td>
                             <td>${item.record_count ?? 0}</td>
                             <td>${item.processed_count ?? 0}</td>
-                            <td>${currency(item.collected)}</td>
-                            <td>${currency(item.processed)}</td>
-                            <td>${currency(item.pending)}</td>
+                            <td class="amount-cell">${currency(item.collected)}</td>
+                            <td class="amount-cell">${currency(item.processed)}</td>
+                            <td class="amount-cell">${currency(item.pending)}</td>
                             <td><span class="report-flag report-flag-${flag}">${flagLabel}</span></td>
                         </tr>
                     `;

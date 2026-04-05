@@ -109,14 +109,14 @@
             <thead>
                 <tr>
                     <th>Biller</th>
-                    <th>Service Charge</th>
-                    <th>Cash</th>
-                    <th>GCash</th>
-                    <th>Maya</th>
-                    <th>Bayad</th>
-                    <th>BPI Credit Card</th>
-                    <th>BPI</th>
-                    <th>Late Charge</th>
+                    <th class="amount-cell">Service Charge</th>
+                    <th class="amount-cell">Cash</th>
+                    <th class="amount-cell">GCash</th>
+                    <th class="amount-cell">Maya</th>
+                    <th class="amount-cell">Bayad</th>
+                    <th class="amount-cell">BPI Credit Card</th>
+                    <th class="amount-cell">BPI</th>
+                    <th class="amount-cell">Late Charge</th>
                     <th>Account Digits</th>
                     <th>Active</th>
                     <th>Actions</th>
@@ -126,14 +126,14 @@
                 {% for rule in biller_rules %}
                 <tr>
                     <td>{{ rule.biller }}</td>
-                    <td>{{ "{:,.2f}".format(rule.service_charge) }}</td>
-                    <td>{{ "{:,.2f}".format(rule.system_charge_cash) }}</td>
-                    <td>{{ "{:,.2f}".format(rule.system_charge_gcash) }}</td>
-                    <td>{{ "{:,.2f}".format(rule.system_charge_maya) }}</td>
-                    <td>{{ "{:,.2f}".format(rule.system_charge_bayad) }}</td>
-                    <td>{{ "{:,.2f}".format(rule.system_charge_bpi_cc) }}</td>
-                    <td>{{ "{:,.2f}".format(rule.system_charge_bpi) }}</td>
-                    <td>{{ "{:,.2f}".format(rule.late_charge) }}</td>
+                    <td class="amount-cell">{{ "{:,.2f}".format(rule.service_charge) }}</td>
+                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_cash) }}</td>
+                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_gcash) }}</td>
+                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_maya) }}</td>
+                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bayad) }}</td>
+                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi_cc) }}</td>
+                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi) }}</td>
+                    <td class="amount-cell">{{ "{:,.2f}".format(rule.late_charge) }}</td>
                     <td>{{ rule.account_digits if rule.account_digits else "-" }}</td>
                     <td>{{ "YES" if rule.is_active else "NO" }}</td>
                     <td>

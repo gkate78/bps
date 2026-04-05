@@ -83,7 +83,7 @@ RECEIPT_FIELD_KEYS = (
     "biller",
     "customer_name",
     "bill_amt",
-    "amt2",
+    "late_charge",
     "charge",
     "total",
     "cash",
@@ -160,7 +160,8 @@ class RecordCreate(BaseModel):
     customer_name: str = Field(min_length=1, max_length=160)
     cp_number: str = Field(default="", max_length=11)
     bill_amt: float = 0
-    amt2: float = 0
+    late_charge: float = 0
+    amt2: Optional[float] = None
     charge: float = 0
     total: float = 0
     cash: float = 0
@@ -182,6 +183,7 @@ class RecordUpdate(BaseModel):
     customer_name: Optional[str] = Field(default=None, min_length=1, max_length=160)
     cp_number: Optional[str] = Field(default=None, max_length=11)
     bill_amt: Optional[float] = None
+    late_charge: Optional[float] = None
     amt2: Optional[float] = None
     charge: Optional[float] = None
     total: Optional[float] = None
@@ -255,6 +257,9 @@ def _visible_receipt_fields(raw: Optional[str]) -> set[str]:
     if not raw:
         return set(RECEIPT_FIELD_KEYS)
     selected = {part.strip() for part in raw.split(",") if part.strip()}
+    if "amt2" in selected:
+        selected.remove("amt2")
+        selected.add("late_charge")
     return {key for key in RECEIPT_FIELD_KEYS if key in selected}
 
 
@@ -283,7 +288,7 @@ def _build_receipt_settings(profile: Optional[BusinessProfile]) -> dict:
         "show_biller": "biller" in visible,
         "show_customer_name": "customer_name" in visible,
         "show_bill_amt": "bill_amt" in visible,
-        "show_amt2": "amt2" in visible,
+        "show_late_charge": "late_charge" in visible or "amt2" in visible,
         "show_charge": "charge" in visible,
         "show_total": "total" in visible,
         "show_cash": "cash" in visible,
@@ -402,6 +407,8 @@ async def admin_database_page(
     selected_table = table if table in DATABASE_VIEW_TABLES else "bill_records"
     column_rows = (await db.execute(text(f"PRAGMA table_info({selected_table})"))).fetchall()
     columns = [row[1] for row in column_rows]
+    display_columns = list(columns)
+    amount_columns: list[str] = []
     if selected_table == "bill_records":
         priority = [name for name in DATABASE_BILL_RECORDS_PRIORITY_COLUMNS if name in columns]
         remaining = [name for name in columns if name not in set(priority)]
@@ -412,11 +419,43 @@ async def admin_database_page(
             if start_idx <= end_idx:
                 moved_block = columns[start_idx : end_idx + 1]
                 columns = columns[:start_idx] + columns[end_idx + 1 :] + moved_block
+        # Display-friendly compatibility:
+        # show a single "late_charge" column header in place of legacy "amt2".
+        if "amt2" in columns:
+            display_columns = []
+            for name in columns:
+                if name == "amt2":
+                    display_columns.append("late_charge")
+                elif name == "late_charge":
+                    # Avoid duplicate visual columns when both physical columns exist.
+                    continue
+                else:
+                    display_columns.append(name)
+        else:
+            display_columns = list(columns)
+        if "charge" in display_columns and "late_charge" in display_columns:
+            charge_idx = display_columns.index("charge")
+            late_idx = display_columns.index("late_charge")
+            if charge_idx > late_idx:
+                display_columns[charge_idx], display_columns[late_idx] = (
+                    display_columns[late_idx],
+                    display_columns[charge_idx],
+                )
+        amount_columns = ["bill_amt", "late_charge", "charge", "total", "cash", "change_amt"]
+    elif selected_table == "biller_rules":
+        # Hide deprecated legacy routing field from database view to avoid confusion.
+        display_columns = [name for name in columns if name != "route_online_max_amount"]
+    else:
+        display_columns = list(columns)
 
     order_sql = " ORDER BY id DESC" if "id" in columns else ""
     query_sql = text(f"SELECT * FROM {selected_table}{order_sql} LIMIT :limit")
     data_rows = (await db.execute(query_sql, {"limit": limit})).fetchall()
     rows = [dict(row._mapping) for row in data_rows]
+    if selected_table == "bill_records":
+        for row in rows:
+            if "amt2" in row:
+                row["late_charge"] = row.get("amt2")
 
     return templates.TemplateResponse(
         "admin_database.html",
@@ -426,7 +465,8 @@ async def admin_database_page(
             "table_options": DATABASE_VIEW_TABLES,
             "selected_table": selected_table,
             "limit": limit,
-            "columns": columns,
+            "columns": display_columns,
+            "amount_columns": amount_columns,
             "rows": rows,
             "row_count": len(rows),
         },
@@ -1238,6 +1278,9 @@ async def create_record_endpoint(
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
     initial_payload = payload.model_dump()
+    if initial_payload.get("late_charge") in (None, 0) and initial_payload.get("amt2") is not None:
+        initial_payload["late_charge"] = initial_payload.get("amt2")
+    initial_payload.pop("amt2", None)
     initial_payload["processed_by_user_id"] = current_user.id
     record = await create_record(db, initial_payload)
     await upsert_customer_from_record(
@@ -1329,6 +1372,9 @@ async def update_record_endpoint(
         updates["payment_method"] = _validate_payment_method(
             updates.get("payment_method"), PROCESSING_PAYMENT_METHODS
         )
+    if "amt2" in updates and "late_charge" not in updates:
+        updates["late_charge"] = updates.get("amt2")
+    updates.pop("amt2", None)
     updates["processed_by_user_id"] = current_user.id
 
     record = await update_record(db, record_id, updates)

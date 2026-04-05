@@ -52,10 +52,10 @@
                 return `
                     <tr>
                         <td>${esc(item.period_label)}</td>
-                        <td>${formatMoney(item.collected)}</td>
-                        <td>${formatMoney(item.processed)}</td>
-                        <td>${formatMoney(item.pending)}</td>
-                        <td>${formatMoney(item.total_charges)}</td>
+                        <td class="amount-cell">${formatMoney(item.collected)}</td>
+                        <td class="amount-cell">${formatMoney(item.processed)}</td>
+                        <td class="amount-cell">${formatMoney(item.pending)}</td>
+                        <td class="amount-cell">${formatMoney(item.total_charges)}</td>
                         <td>${esc(item.record_count)}</td>
                         <td>${esc(item.processed_count)}</td>
                         <td class="report-flag report-flag-${esc(flag)}">${esc(flagLabels[flag] || flag)}</td>

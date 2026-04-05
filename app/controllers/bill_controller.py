@@ -167,7 +167,7 @@ async def _get_biller_system_charge_maps(db: AsyncSession) -> dict[str, dict[str
 
 
 def _record_total_charges(record: BillRecord, system_maps: dict[str, dict[str, float]]) -> float:
-    base = round(float(record.charge or 0) + float(record.amt2 or 0), 2)
+    base = round(float(record.charge or 0) + float(record.late_charge or 0), 2)
     biller_key = _normalized_biller_key(record.biller)
     method_key = _normalized_payment_method(record.payment_method)
     system_charge = round(float(system_maps.get(biller_key, {}).get(method_key, 0)), 2)
@@ -280,6 +280,7 @@ def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: d
 
     payload["bill_amt"] = bill_amt
     payload["amt2"] = late_charge
+    payload["late_charge"] = late_charge
     payload["charge"] = charge
     payload["total"] = total
     payload["cash"] = cash
@@ -363,7 +364,8 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         customer_name=payload["customer_name"],
         cp_number=payload.get("cp_number", ""),
         bill_amt=payload.get("bill_amt", 0),
-        amt2=payload.get("amt2", 0),
+        amt2=payload.get("amt2", payload.get("late_charge", 0)),
+        late_charge=payload.get("late_charge", payload.get("amt2", 0)),
         charge=payload.get("charge", 0),
         total=payload.get("total", 0),
         cash=payload.get("cash", 0),
@@ -436,7 +438,7 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
             "customer_name": updates.get("customer_name", record.customer_name),
             "cp_number": updates.get("cp_number", record.cp_number),
             "bill_amt": updates.get("bill_amt", record.bill_amt),
-            "amt2": updates.get("amt2", record.amt2),
+            "late_charge": updates.get("late_charge", updates.get("amt2", record.late_charge)),
             "charge": updates.get("charge", record.charge),
             "total": updates.get("total", record.total),
             "cash": updates.get("cash", record.cash),
@@ -1051,7 +1053,9 @@ async def datatable_query(
             "customer_name": r.customer_name,
             "cp_number": r.cp_number,
             "bill_amt": r.bill_amt,
-            "amt2": r.amt2,
+            "late_charge": r.late_charge,
+            # Backward-compat payload for older clients expecting amt2.
+            "amt2": r.late_charge,
             "charge": r.charge,
             "total": r.total,
             "cash": r.cash,
@@ -1121,7 +1125,7 @@ async def import_csv_records(db: AsyncSession, file_bytes: bytes) -> dict:
             "customer_name": _csv_cell(row, "NAME", "customer_name", "CUSTOMER_NAME"),
             "cp_number": _csv_cell(row, "NUMBER", "CP NUM", "cp_number", "CP_NUMBER"),
             "bill_amt": _parse_float(_csv_cell(row, "AMT", "BILL AMT", "bill_amt", "BILL_AMT")),
-            "amt2": _parse_float(_csv_cell(row, "AMT2", "LATE CHARGE", "amt2")),
+            "late_charge": _parse_float(_csv_cell(row, "LATE_CHARGE", "LATE CHARGE", "AMT2", "amt2")),
             "charge": _parse_float(_csv_cell(row, "CHARGE", "SERVICE CHARGE", "charge")),
             "total": _parse_float(_csv_cell(row, "TOTAL", "total")),
             "cash": _parse_float(_csv_cell(row, "CASH", "cash")),

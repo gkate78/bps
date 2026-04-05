@@ -17,7 +17,7 @@ class BusinessProfile(SQLModel, table=True):
     receipt_footer: Optional[str] = Field(default=None, max_length=255)
     receipt_show_headings: bool = Field(default=True, nullable=False)
     receipt_visible_fields: str = Field(
-        default="reference,txn_datetime,account,biller,customer_name,bill_amt,amt2,charge,total,cash,change_amt",
+        default="reference,txn_datetime,account,biller,customer_name,bill_amt,late_charge,charge,total,cash,change_amt",
         max_length=255,
         nullable=False,
     )
