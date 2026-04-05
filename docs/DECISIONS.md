@@ -206,3 +206,19 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Operators need accountability and workload visibility by processor without leaving the reconciliation workflow.
 - Alternatives considered: keep only overall EOD totals; require manual export/reporting for per-user analysis.
 - Follow-up: Add date-range and monthly per-user views, and optional historical backfill from audit logs for rows created before processor tracking was introduced.
+
+- Date: 2026-04-03
+- ID: DEC-025
+- Related task: BPS-203 / BPS-205 data-entry quality
+- Decision: Tighten duplicate detection normalization to prioritize `bill_amt` over computed `total` during create/update/import duplicate checks (`txn_date + account + biller + amount`).
+- Why: Computed totals can legitimately change when charge rules or due/late conditions change; using `bill_amt` as primary amount key avoids false negatives where duplicate entries bypass checks due to derived charge deltas.
+- Alternatives considered: continue using `total` as primary amount key; enforce duplicates on account/date only.
+- Follow-up: If needed, expose a duplicate-override workflow for authorized admins with explicit audit reasons.
+
+- Date: 2026-04-03
+- ID: DEC-026
+- Related task: Admin onboarding UX
+- Decision: Redesign admin registration form into structured sections (`Account Setup`, `Business Profile`) with grouped two-column layout, consistent panel styling, and clearer instructional hierarchy.
+- Why: First-time setup quality affects operational confidence; better visual structure reduces data-entry mistakes and improves perceived professionalism.
+- Alternatives considered: keep single long linear form; split setup into multiple pages.
+- Follow-up: Consider adding progressive disclosure/help hints and inline field validation states for faster onboarding.

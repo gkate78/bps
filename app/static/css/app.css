@@ -351,6 +351,31 @@ input[readonly] {
     font-weight: 600;
 }
 
+.auth-form-pro {
+    gap: 1rem;
+}
+
+.auth-section {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.auth-section-title {
+    margin: 0;
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 0.98rem;
+    letter-spacing: 0.2px;
+}
+
+.auth-grid-two {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.auth-actions {
+    justify-content: flex-start;
+    margin-top: 0.2rem;
+}
+
 .business-settings-form {
     gap: 0.95rem;
 }
@@ -839,6 +864,10 @@ table tbody td {
 
     .entry-grid-main,
     .entry-grid-amounts {
+        grid-template-columns: 1fr;
+    }
+
+    .auth-grid-two {
         grid-template-columns: 1fr;
     }
 

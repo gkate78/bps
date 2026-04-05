@@ -29,6 +29,8 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Reconciliation page includes a daily per-user reconciliation table grouped by `processed_by_user_id` with collected/processed/pending totals
 - Admin edit labels now clarify payment semantics: `Customer Payment Mode` vs `Settlement Channel`
 - Data entry/payment dialogs now place `Mode of Payment` before amount input, position `confirmation_reference` immediately after mode, and hide suggested routing from the entry screen
+- Duplicate detection in data entry now prioritizes `bill_amt` (with fallback to `total`) to prevent charge-rule drift from bypassing same-day duplicate checks
+- Admin registration form is refreshed with a cleaner professional two-section layout (`Account Setup` and `Business Profile`)
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save
