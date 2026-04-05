@@ -222,3 +222,19 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: First-time setup quality affects operational confidence; better visual structure reduces data-entry mistakes and improves perceived professionalism.
 - Alternatives considered: keep single long linear form; split setup into multiple pages.
 - Follow-up: Consider adding progressive disclosure/help hints and inline field validation states for faster onboarding.
+
+- Date: 2026-04-05
+- ID: DEC-027
+- Related task: Billing schema naming cleanup
+- Decision: Adopt `late_charge` as the canonical app/UI/API name while keeping legacy DB column `amt2` for backward-compatible writes and safe migration. Database View shows a single `late_charge` header/value and avoids duplicate `amt2` display.
+- Why: Existing databases still enforce/contain `amt2`; removing it immediately risks runtime save failures. Canonical naming is still needed to reduce operator confusion.
+- Alternatives considered: hard-drop `amt2` immediately; keep using `amt2` across all layers.
+- Follow-up: Perform a controlled SQLite table-rebuild migration later to physically remove `amt2` once all environments are validated.
+
+- Date: 2026-04-05
+- ID: DEC-028
+- Related task: Admin Database View UX
+- Decision: Remove manual "Load Table" dependency by auto-loading on table/max-rows selector changes, add in-page row search, and hide deprecated `biller_rules.route_online_max_amount` from Database View output.
+- Why: Database inspection should be faster and less cluttered for routine admin use; deprecated legacy fields should not distract operators.
+- Alternatives considered: keep manual load button only; keep showing all raw columns including deprecated fields.
+- Follow-up: Consider server-side search/filter in Database View if row limits are increased substantially.

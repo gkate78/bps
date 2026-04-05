@@ -16,7 +16,9 @@ class BillRecord(SQLModel, table=True):
     cp_number: str = Field(max_length=32)
 
     bill_amt: float = Field(default=0)
+    # Legacy storage column kept for backward DB compatibility.
     amt2: float = Field(default=0)
+    late_charge: float = Field(default=0)
     charge: float = Field(default=0)
     total: float = Field(default=0)
     cash: float = Field(default=0)

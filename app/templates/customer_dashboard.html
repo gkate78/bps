@@ -72,7 +72,7 @@
                     <td>{{ r.account }}</td>
                     <td>{{ r.customer_name or "-" }}</td>
                     <td class="col-biller">{{ r.biller }}</td>
-                    <td class="col-bill-amount">{{ "%.2f"|format(r.bill_amt or 0) }}</td>
+                    <td class="col-bill-amount">{{ "{:,.2f}".format(r.bill_amt or 0) }}</td>
                     <td class="col-status">{{ "PAID" if r.payment_reference else "PENDING" }}</td>
                     <td>{{ r.reference if r.payment_reference else "" }}</td>
                 </tr>

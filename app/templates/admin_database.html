@@ -13,6 +13,39 @@
 </form>
 {% endblock %}
 
+{% block scripts %}
+<script>
+(function () {
+    const form = document.getElementById("dbSelectorForm");
+    const tableSelect = document.getElementById("table");
+    const limitInput = document.getElementById("limit");
+    const searchInput = document.getElementById("dbSearch");
+    const tableBody = document.querySelector(".db-grid tbody");
+    if (!form || !tableSelect) {
+        return;
+    }
+    tableSelect.addEventListener("change", function () {
+        form.requestSubmit();
+    });
+    if (limitInput) {
+        limitInput.addEventListener("change", function () {
+            form.requestSubmit();
+        });
+    }
+    if (searchInput && tableBody) {
+        searchInput.addEventListener("input", function () {
+            const query = String(searchInput.value || "").trim().toLowerCase();
+            const rows = tableBody.querySelectorAll("tr");
+            rows.forEach(function (row) {
+                const text = row.textContent ? row.textContent.toLowerCase() : "";
+                row.style.display = text.includes(query) ? "" : "none";
+            });
+        });
+    }
+})();
+</script>
+{% endblock %}
+
 {% block content %}
 <section class="panel panel-sticky db-controls-panel">
     <div class="panel-head">
@@ -32,7 +65,8 @@
             <input id="limit" type="number" name="limit" min="10" max="1000" step="10" value="{{ limit }}">
         </div>
         <div class="field field-actions db-field-actions">
-            <button type="submit" class="btn btn-primary">Load Table</button>
+            <label for="dbSearch">Search rows</label>
+            <input id="dbSearch" type="search" placeholder="Type to filter visible rows">
         </div>
     </form>
 </section>
@@ -55,7 +89,14 @@
                     {% for row in rows %}
                     <tr>
                         {% for col in columns %}
-                        <td>{{ row[col] if row[col] is not none else "—" }}</td>
+                        {% set cell = row[col] if row[col] is not none else "—" %}
+                        <td class="{% if amount_columns and col in amount_columns %}db-amount-cell{% endif %}">
+                            {% if amount_columns and col in amount_columns and row[col] is not none %}
+                                {{ "%.2f"|format(row[col]|float) }}
+                            {% else %}
+                                {{ cell }}
+                            {% endif %}
+                        </td>
                         {% endfor %}
                     </tr>
                     {% endfor %}

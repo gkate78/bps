@@ -66,6 +66,13 @@ async def init_db() -> None:
             await conn.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_bill_records_processed_by_user_id ON bill_records(processed_by_user_id)")
             )
+        if "late_charge" not in col_names:
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN late_charge FLOAT NOT NULL DEFAULT 0"))
+            if "amt2" in col_names:
+                await conn.execute(text("UPDATE bill_records SET late_charge = COALESCE(amt2, 0)"))
+        elif "amt2" in col_names:
+            await conn.execute(text("UPDATE bill_records SET late_charge = COALESCE(late_charge, amt2, 0)"))
+            await conn.execute(text("UPDATE bill_records SET amt2 = COALESCE(amt2, late_charge, 0)"))
 
         # Lightweight migration: add per-method system charges for biller rules.
         biller_columns = (await conn.execute(text("PRAGMA table_info(biller_rules)"))).fetchall()
@@ -94,7 +101,7 @@ async def init_db() -> None:
             await conn.execute(
                 text(
                     "ALTER TABLE business_profiles ADD COLUMN receipt_visible_fields VARCHAR(255) NOT NULL "
-                    "DEFAULT 'reference,txn_datetime,account,biller,customer_name,bill_amt,amt2,charge,total,cash,change_amt'"
+                    "DEFAULT 'reference,txn_datetime,account,biller,customer_name,bill_amt,late_charge,charge,total,cash,change_amt'"
                 )
             )
         if "receipt_show_business_name" not in profile_col_names:

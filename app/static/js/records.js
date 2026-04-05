@@ -525,7 +525,7 @@ async function openEdit(id) {
     dom.customerName.value = valueOrEmpty(data.customer_name);
     dom.cpNumber.value = valueOrEmpty(data.cp_number);
     dom.billAmt.value = valueOrEmpty(data.bill_amt);
-    dom.amt2.value = valueOrEmpty(data.amt2);
+    dom.amt2.value = valueOrEmpty(data.late_charge ?? data.amt2);
     dom.cash.value = valueOrEmpty(data.cash);
     dom.dueDate.value = valueOrEmpty(data.due_date);
     dom.notes.value = valueOrEmpty(data.notes);
@@ -575,7 +575,7 @@ function payloadFromForm() {
         customer_name: dom.customerName.value.trim(),
         cp_number: dom.cpNumber.value.trim(),
         bill_amt: round2(dom.billAmt.value),
-        amt2: round2(dom.amt2.value),
+        late_charge: round2(dom.amt2.value),
         charge: round2(dom.charge.value),
         total: round2(dom.total.value),
         cash: round2(dom.cash.value),

@@ -560,6 +560,16 @@ input[readonly] {
     white-space: nowrap;
 }
 
+.db-amount-cell {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.amount-cell {
+    text-align: right !important;
+    font-variant-numeric: tabular-nums;
+}
+
 .db-table-scroll {
     max-height: calc(100vh - 320px);
     min-height: 320px;

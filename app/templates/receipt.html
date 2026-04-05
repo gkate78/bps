@@ -148,10 +148,10 @@
             <span>{{ "{:,.2f}".format(record.bill_amt) }}</span>
         </div>
         {% endif %}
-        {% if receipt_settings.show_amt2 %}
+        {% if receipt_settings.show_late_charge %}
         <div class="line">
             <span>{% if receipt_settings.show_headings %}LATE CHARGE{% endif %}</span>
-            <span>{{ "{:,.2f}".format(record.amt2) }}</span>
+            <span>{{ "{:,.2f}".format(record.late_charge) }}</span>
         </div>
         {% endif %}
         {% if receipt_settings.show_charge %}
