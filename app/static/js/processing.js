@@ -6,6 +6,15 @@
         return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
 
+    function escapeHtml(value) {
+        return String(value || "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll("\"", "&quot;")
+            .replaceAll("'", "&#39;");
+    }
+
     function showMessage(message, title) {
         const dialog = document.getElementById("appMessageDialog");
         const titleEl = document.getElementById("appMessageTitle");
@@ -38,6 +47,12 @@
     const kpiProcessed = document.getElementById("kpiProcessed");
     const kpiPending = document.getElementById("kpiPending");
     const kpiCashVariance = document.getElementById("kpiCashVariance");
+    const perUserBody = document.getElementById("perUserReconciliationBody");
+    const perUserTotalRecords = document.getElementById("perUserTotalRecords");
+    const perUserTotalProcessedCount = document.getElementById("perUserTotalProcessedCount");
+    const perUserTotalCollected = document.getElementById("perUserTotalCollected");
+    const perUserTotalProcessed = document.getElementById("perUserTotalProcessed");
+    const perUserTotalPending = document.getElementById("perUserTotalPending");
 
     if (reportDateEl) {
         const today = new Date();
@@ -87,6 +102,50 @@
             kpiCashVariance.textContent = data.cash_variance == null ? "—" : currency(data.cash_variance);
         }
         reportBlock.classList.remove("is-hidden");
+
+        await loadPerUserReport(dateVal);
+    }
+
+    async function loadPerUserReport(dateVal) {
+        if (!perUserBody) {
+            return;
+        }
+        const params = new URLSearchParams({ date: dateVal });
+        const res = await fetch("/api/admin/reconciliation-by-user?" + params.toString());
+        if (!res.ok) {
+            perUserBody.innerHTML = "<tr><td colspan=\"7\">Failed to load per-user reconciliation.</td></tr>";
+            return;
+        }
+        const data = await res.json();
+        const items = Array.isArray(data.items) ? data.items : [];
+        if (items.length === 0) {
+            perUserBody.innerHTML = "<tr><td colspan=\"7\">No records for selected date.</td></tr>";
+        } else {
+            perUserBody.innerHTML = items
+                .map((item) => {
+                    const label = item.user_label || "UNASSIGNED";
+                    const flag = String(item.flag || "");
+                    const flagLabel = flag === "match" ? "Match" : (flag === "short" ? "Short" : "Pending");
+                    return `
+                        <tr>
+                            <td>${escapeHtml(label)}</td>
+                            <td>${item.record_count ?? 0}</td>
+                            <td>${item.processed_count ?? 0}</td>
+                            <td>${currency(item.collected)}</td>
+                            <td>${currency(item.processed)}</td>
+                            <td>${currency(item.pending)}</td>
+                            <td><span class="report-flag report-flag-${flag}">${flagLabel}</span></td>
+                        </tr>
+                    `;
+                })
+                .join("");
+        }
+        const totals = data.totals || {};
+        if (perUserTotalRecords) perUserTotalRecords.textContent = String(totals.record_count ?? 0);
+        if (perUserTotalProcessedCount) perUserTotalProcessedCount.textContent = String(totals.processed_count ?? 0);
+        if (perUserTotalCollected) perUserTotalCollected.textContent = currency(totals.collected);
+        if (perUserTotalProcessed) perUserTotalProcessed.textContent = currency(totals.processed);
+        if (perUserTotalPending) perUserTotalPending.textContent = currency(totals.pending);
     }
 
     if (loadReportBtn) {
