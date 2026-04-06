@@ -706,7 +706,8 @@ async function importCsv(event) {
     }
 
     const result = await response.json();
-    statusEl.textContent = `Imported ${result.created}, duplicates ${result.duplicates || 0}, skipped ${result.skipped}`;
+    const batchNote = result.import_batch_id ? `, batch ${result.import_batch_id}` : "";
+    statusEl.textContent = `Imported ${result.created}, duplicates ${result.duplicates || 0}, skipped ${result.skipped}, raw logged ${result.raw_logged || 0}${batchNote}`;
     table.ajax.reload();
     fileInput.value = "";
 }

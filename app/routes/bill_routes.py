@@ -57,6 +57,7 @@ PROCESSING_PAYMENT_METHODS = {"CASH", "GCASH", "MAYA", "BAYAD", "BPI_CC", "BPI"}
 
 DATABASE_VIEW_TABLES: dict[str, str] = {
     "bill_records": "Bill Records",
+    "bill_record_import_raw": "Bill Record Import Raw",
     "customer_accounts": "Customer Accounts",
     "biller_rules": "Biller Rules",
     "record_audit_logs": "Record Audit Logs",
@@ -1448,6 +1449,7 @@ async def import_csv_endpoint(
             db,
             file_bytes,
             processed_by_user_id=current_user.id,
+            source_filename=file.filename,
         )
         await _log_record_audit(
             db,
@@ -1458,7 +1460,9 @@ async def import_csv_endpoint(
             detail=(
                 f"created={result.get('created', 0)}, "
                 f"duplicates={result.get('duplicates', 0)}, "
-                f"skipped={result.get('skipped', 0)}"
+                f"skipped={result.get('skipped', 0)}, "
+                f"raw_logged={result.get('raw_logged', 0)}, "
+                f"batch={result.get('import_batch_id', '')}"
             ),
         )
         return result
