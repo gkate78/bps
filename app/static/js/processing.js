@@ -133,8 +133,8 @@
                             <td>${item.processed_count ?? 0}</td>
                             <td class="amount-cell">${currency(item.collected)}</td>
                             <td class="amount-cell">${currency(item.processed)}</td>
-                            <td class="amount-cell">${currency(item.pending)}</td>
-                            <td><span class="report-flag report-flag-${flag}">${flagLabel}</span></td>
+                            <td class="amount-cell per-user-col-pending">${currency(item.pending)}</td>
+                            <td class="per-user-col-status"><span class="report-flag report-flag-${flag}">${flagLabel}</span></td>
                         </tr>
                     `;
                 })
@@ -151,4 +151,21 @@
     if (loadReportBtn) {
         loadReportBtn.addEventListener("click", loadReport);
     }
+    if (reportDateEl) {
+        reportDateEl.addEventListener("change", loadReport);
+        reportDateEl.addEventListener("input", loadReport);
+    }
+    if (cashOnHandEl) {
+        cashOnHandEl.addEventListener("change", loadReport);
+        cashOnHandEl.addEventListener("input", loadReport);
+        cashOnHandEl.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                loadReport();
+            }
+        });
+    }
+
+    // Auto-show initial reconciliation for today's date.
+    loadReport();
 })();

@@ -1,10 +1,12 @@
 import csv
 import io
+import json
 import math
 import os
 import secrets
 from datetime import date, datetime, timedelta
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import and_, asc, desc, func, or_
@@ -12,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.models.biller_rule import BillerRule
+from app.models.bill_record_import_raw import BillRecordImportRaw
 from app.models.bill_record import BillRecord
 from app.models.customer import Customer
 
@@ -1086,17 +1089,40 @@ async def datatable_query(
 
 
 async def import_csv_records(
-    db: AsyncSession, file_bytes: bytes, *, processed_by_user_id: Optional[int] = None
+    db: AsyncSession,
+    file_bytes: bytes,
+    *,
+    processed_by_user_id: Optional[int] = None,
+    source_filename: Optional[str] = None,
 ) -> dict:
     text = file_bytes.decode("utf-8-sig", errors="ignore")
     reader = csv.DictReader(io.StringIO(text))
     charge_map, late_map = await _get_biller_rule_maps(db)
+    import_batch_id = f"IMP-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8].upper()}"
+    raw_logged = 0
 
     created = 0
     skipped = 0
     duplicates = 0
 
-    for row in reader:
+    for row_number, row in enumerate(reader, start=2):
+        raw_row = {str(k or ""): str(v or "") for k, v in row.items()}
+
+        def _log_raw(status: str, note: Optional[str] = None) -> None:
+            nonlocal raw_logged
+            db.add(
+                BillRecordImportRaw(
+                    import_batch_id=import_batch_id,
+                    row_number=row_number,
+                    source_filename=(source_filename or "").strip() or None,
+                    imported_by_user_id=processed_by_user_id,
+                    ingest_status=status,
+                    ingest_note=(note or "").strip() or None,
+                    raw_row_json=json.dumps(raw_row, ensure_ascii=True, sort_keys=True),
+                )
+            )
+            raw_logged += 1
+
         date_raw = _csv_cell(row, "DATE", "txn_date", "TXN_DATE")
         txn_date = _parse_date(date_raw)
         if txn_date is None:
@@ -1104,6 +1130,7 @@ async def import_csv_records(
             if dt_probe is not None:
                 txn_date = dt_probe.date()
         if txn_date is None:
+            _log_raw("SKIPPED", "INVALID_OR_MISSING_DATE")
             skipped += 1
             continue
 
@@ -1143,10 +1170,12 @@ async def import_csv_records(
         payload = _normalize_text_fields(payload)
 
         if not payload["account"] or not payload["customer_name"]:
+            _log_raw("SKIPPED", "MISSING_ACCOUNT_OR_CUSTOMER_NAME")
             skipped += 1
             continue
 
         if _normalized_biller_key(payload.get("biller", "")) not in charge_map:
+            _log_raw("SKIPPED", "BILLER_NOT_IN_ACTIVE_RULES")
             skipped += 1
             continue
 
@@ -1161,6 +1190,7 @@ async def import_csv_records(
             amount=amount,
         )
         if is_duplicate:
+            _log_raw("DUPLICATE", "MATCHING_DATE_ACCOUNT_BILLER_AMOUNT")
             duplicates += 1
             continue
 
@@ -1178,6 +1208,7 @@ async def import_csv_records(
         payload = _normalize_text_fields(payload)
 
         db.add(BillRecord(**payload))
+        _log_raw("CREATED", payload.get("reference"))
         created += 1
         # Keep customer_accounts in sync so lookup can prefill for this account
         await upsert_customer_from_record(
@@ -1189,4 +1220,10 @@ async def import_csv_records(
         )
 
     await db.commit()
-    return {"created": created, "skipped": skipped, "duplicates": duplicates}
+    return {
+        "created": created,
+        "skipped": skipped,
+        "duplicates": duplicates,
+        "import_batch_id": import_batch_id,
+        "raw_logged": raw_logged,
+    }

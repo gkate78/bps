@@ -88,6 +88,9 @@
     if (periodEl) {
         periodEl.addEventListener("change", loadSummary);
     }
+    if (refDateEl) {
+        refDateEl.addEventListener("change", loadSummary);
+    }
 
     loadSummary();
 })();

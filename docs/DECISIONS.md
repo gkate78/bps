@@ -246,3 +246,27 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Initial imports should represent branch-cash intake consistently and preserve a usable trace reference without requiring manual post-import cleanup.
 - Alternatives considered: leave imported processing fields as-is from source CSV; set only payment method/channel and keep references empty.
 - Follow-up: If mixed-channel historical imports become common, add an optional import mode/override flag instead of hard defaults.
+
+- Date: 2026-04-05
+- ID: DEC-030
+- Related task: Data-engineering hygiene / import traceability
+- Decision: Add immutable raw-ingest logging for bill-record CSV imports via `bill_record_import_raw`, recording `import_batch_id`, source filename, row number, imported user, ingest status (`CREATED`/`DUPLICATE`/`SKIPPED`), note, and original row JSON; keep `bill_records` as curated operational state.
+- Why: Preserve raw source-of-truth rows for auditability and reproducibility while still allowing operational defaults/computations in serving tables.
+- Alternatives considered: only keep transformed `bill_records`; save raw CSV files externally without row-level statuses.
+- Follow-up: Add batch-level inspection/filter UI and optional replay tooling from raw-ingest batches.
+
+- Date: 2026-04-05
+- ID: DEC-031
+- Related task: Customer account linkage consistency
+- Decision: Auto-link `customer_accounts.user_id` to authenticated users on successful signup/signin by phone match (plus dashboard fallback) instead of leaving linkage as mostly manual/implicit.
+- Why: Reduce orphaned customer profiles and keep customer dashboard ownership scoping consistent across sessions.
+- Alternatives considered: dashboard-only opportunistic linking; explicit manual admin linkage only.
+- Follow-up: Add guarded bulk backfill utility for historical rows and optional confidence checks for shared phone numbers.
+
+- Date: 2026-04-05
+- ID: DEC-032
+- Related task: Reconciliation & reports UX polish
+- Decision: Make reconciliation/report filters auto-refresh on selection changes and standardize per-user reconciliation table spacing/alignment (including Pending vs Status separation and total-row consistency).
+- Why: Reduce extra clicks, prevent “does not auto show” confusion, and improve readability of per-user totals during EOD checks.
+- Alternatives considered: keep manual load only; rely on default table CSS without per-column spacing/alignment tuning.
+- Follow-up: Consider sticky table footer for totals on long per-user lists.
