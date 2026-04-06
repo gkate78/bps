@@ -204,6 +204,29 @@ async def _log_auth_event(
     await db.commit()
 
 
+async def _link_customer_accounts_to_user(db: AsyncSession, user: UserAccount) -> int:
+    """Attach unlinked customer_accounts rows (same phone) to the signed-in user."""
+    if not user or not user.phone:
+        return 0
+    rows = (
+        await db.execute(
+            select(Customer)
+            .where(Customer.phone == user.phone)
+            .where(Customer.user_id.is_(None))
+            .order_by(Customer.id.asc())
+        )
+    ).scalars().all()
+    if not rows:
+        return 0
+    now = datetime.utcnow()
+    for row in rows:
+        row.user_id = user.id
+        row.updated_at = now
+        db.add(row)
+    await db.commit()
+    return len(rows)
+
+
 @router.get("/auth/signup", response_class=HTMLResponse, include_in_schema=False)
 async def signup_page(
     request: Request,
@@ -378,6 +401,7 @@ async def signup_verify_submit(
         user_id=user.id,
         detail="account_activated",
     )
+    await _link_customer_accounts_to_user(db, user)
 
     request.session.pop("pending_signup", None)
     request.session["user_id"] = user.id
@@ -885,6 +909,7 @@ async def signin_submit(
         user_id=user.id,
         detail=f"role={resolved_role}",
     )
+    await _link_customer_accounts_to_user(db, user)
 
     request.session["user_id"] = user.id
     return RedirectResponse(url="/dashboard", status_code=303)
@@ -932,20 +957,14 @@ async def customer_dashboard(
     selected_account = str(request.query_params.get("account", "")).strip().upper()
     selected_biller = str(request.query_params.get("biller", "")).strip().upper()
 
+    await _link_customer_accounts_to_user(db, current_user)
+
     customer_result = await db.execute(
         select(Customer)
         .where((Customer.user_id == current_user.id) | (Customer.phone == current_user.phone))
         .order_by(Customer.updated_at.desc(), Customer.id.desc())
     )
     customer_profiles = customer_result.scalars().all()
-    for customer_profile in customer_profiles:
-        if customer_profile.user_id is None:
-            customer_profile.user_id = current_user.id
-            db.add(customer_profile)
-    if customer_profiles:
-        await db.commit()
-        for customer_profile in customer_profiles:
-            await db.refresh(customer_profile)
 
     accounts_from_profiles = {
         str(item.account or "").strip().upper() for item in customer_profiles if str(item.account or "").strip()

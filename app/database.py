@@ -18,7 +18,15 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db() -> None:
-    from app.models import BillerRule, BillRecord, BusinessProfile, Customer, RecordAuditLog, UserAccount  # noqa: F401
+    from app.models import (  # noqa: F401
+        BillerRule,
+        BillRecord,
+        BillRecordImportRaw,
+        BusinessProfile,
+        Customer,
+        RecordAuditLog,
+        UserAccount,
+    )
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)

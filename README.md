@@ -27,11 +27,14 @@ Admin dashboard for managing billing records from a Google Sheet export.
 - Payment channel is stored as encoded/edited (`payment_channel`) and can be explicitly set in admin edit using channel values `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPICC`, `BPI`
 - `processed_by_user_id` is now recorded automatically on create/update based on the logged-in operator account
 - CSV import now initializes processing fields per record: `payment_method=CASH`, `payment_channel=CASH`, `confirmation_reference`/`payment_reference` fallback to `reference` when blank, and `processed_by_user_id` is set to the importing user
+- CSV import now keeps immutable raw-ingest rows in `bill_record_import_raw` (with `import_batch_id`, source filename, row status, and original row JSON) so operational defaults in `bill_records` do not overwrite raw source truth
 - Reconciliation page includes a daily per-user reconciliation table grouped by `processed_by_user_id` with collected/processed/pending totals
+- Reconciliation and reports filters now auto-refresh on date/selection changes; per-user reconciliation column spacing/alignment is tuned for clearer totals readability
 - Admin edit labels now clarify payment semantics: `Customer Payment Mode` vs `Settlement Channel`
 - Data entry/payment dialogs now place `Mode of Payment` before amount input, position `confirmation_reference` immediately after mode, and hide suggested routing from the entry screen
 - Duplicate detection in data entry now prioritizes `bill_amt` (with fallback to `total`) to prevent charge-rule drift from bypassing same-day duplicate checks
 - Admin registration form is refreshed with a cleaner professional two-section layout (`Account Setup` and `Business Profile`)
+- Customer dashboard linking now auto-attaches `customer_accounts.user_id` to authenticated users by phone match on signup/signin (with dashboard fallback)
 - Duplicate detection by `txn_date + account + biller + amount` (create, update, import)
 - Auto-generated unique reference code when missing
 - Validation guards for due date and amount before save
@@ -120,6 +123,7 @@ Headers supported (case-sensitive):
 
 Import note:
 - If `payment_reference` is missing but `REFERENCE` exists, import falls back to `REFERENCE` for processed biller reference.
+- Every CSV row is persisted as an immutable raw-ingest entry in `bill_record_import_raw` and tagged with an `import_batch_id` for traceability.
 
 A masked sample is included: `sample_masked_records.csv`
 

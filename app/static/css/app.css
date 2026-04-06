@@ -506,6 +506,19 @@ input[readonly] {
     text-transform: none;
 }
 
+.users-grid tfoot th {
+    text-align: left;
+}
+
+.users-grid .per-user-col-pending {
+    min-width: 110px;
+}
+
+.users-grid .per-user-col-status {
+    min-width: 110px;
+    padding-left: 0.7rem !important;
+}
+
 .table-scroll {
     overflow-x: auto;
 }
@@ -857,6 +870,13 @@ table tbody td {
 }
 .report-table td {
     padding: 0.35rem 0.75rem 0.35rem 0;
+}
+.report-row-spacer {
+    padding-bottom: 0.72rem !important;
+}
+.users-grid tfoot th.amount-cell {
+    text-align: right !important;
+    font-variant-numeric: tabular-nums;
 }
 .report-flag-match { color: #0d7a0d; font-weight: 600; }
 .report-flag-pending { color: #b86a00; font-weight: 600; }
