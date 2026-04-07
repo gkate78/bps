@@ -104,7 +104,7 @@ Import behavior:
 - Every row is also persisted to immutable `bill_record_import_raw` with `import_batch_id` for traceability
 
 Sample files:
-- `sample_masked_records.csv`
+- `import_bill_records_starter.csv`
 - `sample_biller_rules.csv`
 
 `sample_biller_rules.csv` headers:
