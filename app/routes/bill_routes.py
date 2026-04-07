@@ -19,6 +19,7 @@ from app.auth import (
     normalize_phone,
     require_data_entry_access,
     require_owner_or_admin,
+    validate_business_email,
     validate_phone,
     validate_pin_policy,
 )
@@ -603,6 +604,8 @@ async def update_business_settings(
         return RedirectResponse(url="/admin/settings?error=Business+name+is+required", status_code=303)
     if not cleaned_address:
         return RedirectResponse(url="/admin/settings?error=Business+address+is+required", status_code=303)
+    if not validate_business_email(business_email):
+        return RedirectResponse(url="/admin/settings?error=Invalid+business+email+address", status_code=303)
 
     profile = await _get_profile_for_admin(db, current_user.id)
     if profile is None:

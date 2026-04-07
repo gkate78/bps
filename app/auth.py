@@ -1,6 +1,7 @@
 import hashlib
 import hmac
 import os
+import re
 import secrets
 from typing import Optional
 
@@ -22,6 +23,14 @@ def validate_phone(phone: str) -> bool:
 
 def validate_pin(pin: str) -> bool:
     return pin.isdigit() and len(pin) == 4
+
+
+def validate_business_email(email: Optional[str]) -> bool:
+    cleaned = str(email or "").strip()
+    if cleaned == "":
+        return True
+    pattern = r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$"
+    return re.fullmatch(pattern, cleaned) is not None
 
 
 def _weak_pin_set() -> set[str]:
