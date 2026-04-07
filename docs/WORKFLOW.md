@@ -60,6 +60,7 @@ Unless explicitly overridden by a task requirement:
 2. CP number must enforce exactly 11 digits when provided.
 3. Text form values are normalized to uppercase before persistence.
 4. Amount displays should use comma separators with 2 decimal places on summaries/receipts/tables.
+5. CSV imports should preserve immutable source rows (`bill_record_import_raw`) while `bill_records` remains the curated operational table.
 
 ## 7) Weekly Cadence
 1. Monday: pick top `NOW` items from backlog
