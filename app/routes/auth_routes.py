@@ -14,6 +14,7 @@ from app.auth import (
     is_business_owner,
     normalize_phone,
     resolve_role_from_phone,
+    validate_business_email,
     validate_phone,
     validate_pin_policy,
     verify_pin,
@@ -739,6 +740,20 @@ async def admin_signup_submit(
         return _render_admin_signup(
             request,
             "Business address is required",
+            cleaned_first,
+            cleaned_last,
+            phone,
+            business_name,
+            business_address,
+            business_phone,
+            business_email,
+            tin_number,
+            receipt_footer,
+        )
+    if not validate_business_email(business_email):
+        return _render_admin_signup(
+            request,
+            "Please enter a valid business email address",
             cleaned_first,
             cleaned_last,
             phone,
