@@ -3,7 +3,7 @@ import inspect
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -44,6 +44,23 @@ app.include_router(bills_router)
 async def favicon() -> RedirectResponse:
     # Browsers request /favicon.ico by default; redirect to our SVG.
     return RedirectResponse(url="/static/favicon.svg", status_code=307)
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def webmanifest() -> FileResponse:
+    return FileResponse(
+        "app/static/manifest.webmanifest",
+        media_type="application/manifest+json",
+    )
+
+
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker() -> FileResponse:
+    # Must be served from app root so scope can cover all routes.
+    response = FileResponse("app/static/sw.js", media_type="application/javascript")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.get("/", include_in_schema=False)
