@@ -583,6 +583,19 @@ input[readonly] {
     font-variant-numeric: tabular-nums;
 }
 
+.align-left {
+    text-align: left !important;
+}
+
+.align-center {
+    text-align: center !important;
+}
+
+.align-right {
+    text-align: right !important;
+    font-variant-numeric: tabular-nums;
+}
+
 .db-table-scroll {
     max-height: calc(100vh - 320px);
     min-height: 320px;
@@ -645,26 +658,6 @@ table tbody td {
 
 .display tbody tr:hover {
     background: #edf4ff;
-}
-
-/* Admin records table alignment (data cells) */
-#recordsTable tbody td:nth-child(1),
-#recordsTable tbody td:nth-child(7),
-#recordsTable tbody td:nth-child(8),
-#recordsTable tbody td:nth-child(10) {
-    text-align: center;
-}
-#recordsTable tbody td:nth-child(6) {
-    text-align: right;
-}
-
-/* Audit log and users table alignment (data cells) */
-#auditTable tbody td:nth-child(6),
-#auditTable tbody td:nth-child(7),
-#usersTable tbody td:nth-child(1),
-#usersTable tbody td:nth-child(4),
-#usersTable tbody td:nth-child(5) {
-    text-align: center;
 }
 
 /* Customer bills table alignment (data cells) */
