@@ -279,15 +279,16 @@ const table = new DataTable("#recordsTable", {
         },
     },
     columns: [
-        { data: "id" },
+        { data: "id", className: "align-center" },
         { data: "txn_datetime", render: formatDateTime },
         { data: "account" },
         { data: "biller" },
         { data: "customer_name" },
-        { data: "bill_amt", render: currency },
-        { data: "due_date", render: (d) => d || "-" },
+        { data: "bill_amt", render: currency, className: "align-right" },
+        { data: "due_date", render: (d) => d || "-", className: "align-center" },
         {
             data: null,
+            className: "align-center",
             render: (row) => paymentStatePill(row),
         },
         { data: "reference", render: (d) => d || "" },
@@ -295,6 +296,7 @@ const table = new DataTable("#recordsTable", {
             data: null,
             orderable: false,
             searchable: false,
+            className: "align-center",
             render: (row) => `
                 <div class="action-row">
                     <button type="button" class="btn btn-secondary" onclick="openEdit(${row.id})">Edit</button>
@@ -372,12 +374,13 @@ function initUsersTableIfNeeded() {
         pageLength: 10,
         autoWidth: false,
         columns: [
-            { data: "id" },
+            { data: "id", className: "align-center" },
             { data: "first_name" },
             { data: "last_name" },
-            { data: "phone", render: (d) => `<span class="mono">${d || ""}</span>` },
+            { data: "phone", render: (d) => `<span class="mono">${d || ""}</span>`, className: "align-center" },
             {
                 data: "role",
+                className: "align-center",
                 render: (d) => {
                     const role = String(d || "").toLowerCase();
                     const roleClass = role === "encoder" ? "role-encoder" : "role-customer";

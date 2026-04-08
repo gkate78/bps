@@ -80,7 +80,7 @@
             <thead>
                 <tr>
                     {% for col in columns %}
-                    <th>{{ col }}</th>
+                    <th class="{% if amount_columns and col in amount_columns %}amount-cell{% endif %}">{{ col }}</th>
                     {% endfor %}
                 </tr>
             </thead>
