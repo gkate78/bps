@@ -56,21 +56,23 @@
     <div class="panel-head">
         <h2>Period Breakdown</h2>
     </div>
-    <table id="reportsSummaryTable" class="display" style="width:100%">
-        <thead>
-            <tr>
-                <th>Period</th>
-                <th class="amount-cell">Collected</th>
-                <th class="amount-cell">Processed</th>
-                <th class="amount-cell">Pending</th>
-                <th class="amount-cell">Total Charges</th>
-                <th>Record Count</th>
-                <th>Processed Count</th>
-                <th>Status</th>
-            </tr>
-        </thead>
-        <tbody id="reportsSummaryBody"></tbody>
-    </table>
+    <div class="table-scroll reports-table-wrap">
+        <table id="reportsSummaryTable" class="display" style="width:100%">
+            <thead>
+                <tr>
+                    <th>Period</th>
+                    <th class="amount-cell">Collected</th>
+                    <th class="amount-cell">Processed</th>
+                    <th class="amount-cell">Pending</th>
+                    <th class="amount-cell">Total Charges</th>
+                    <th>Record Count</th>
+                    <th>Processed Count</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="reportsSummaryBody"></tbody>
+        </table>
+    </div>
 </section>
 {% endblock %}
 

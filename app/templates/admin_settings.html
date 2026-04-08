@@ -105,61 +105,63 @@
     </form>
 
     <div id="billerRulesTableWrap" class="is-hidden">
-        <table class="display users-grid" style="width:100%; margin-top:0.75rem;">
-            <thead>
-                <tr>
-                    <th>Biller</th>
-                    <th class="amount-cell">Service Charge</th>
-                    <th class="amount-cell">Cash</th>
-                    <th class="amount-cell">GCash</th>
-                    <th class="amount-cell">Maya</th>
-                    <th class="amount-cell">Bayad</th>
-                    <th class="amount-cell">BPI Credit Card</th>
-                    <th class="amount-cell">BPI</th>
-                    <th class="amount-cell">Late Charge</th>
-                    <th>Account Digits</th>
-                    <th>Active</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for rule in biller_rules %}
-                <tr>
-                    <td>{{ rule.biller }}</td>
-                    <td class="amount-cell">{{ "{:,.2f}".format(rule.service_charge) }}</td>
-                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_cash) }}</td>
-                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_gcash) }}</td>
-                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_maya) }}</td>
-                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bayad) }}</td>
-                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi_cc) }}</td>
-                    <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi) }}</td>
-                    <td class="amount-cell">{{ "{:,.2f}".format(rule.late_charge) }}</td>
-                    <td>{{ rule.account_digits if rule.account_digits else "-" }}</td>
-                    <td>{{ "YES" if rule.is_active else "NO" }}</td>
-                    <td>
-                        <button
-                            type="button"
-                            class="btn btn-secondary edit-rule-btn"
-                            data-biller="{{ rule.biller }}"
-                            data-service-charge="{{ "{:.2f}".format(rule.service_charge) }}"
-                            data-system-charge-cash="{{ "{:.2f}".format(rule.system_charge_cash) }}"
-                            data-system-charge-gcash="{{ "{:.2f}".format(rule.system_charge_gcash) }}"
-                            data-system-charge-maya="{{ "{:.2f}".format(rule.system_charge_maya) }}"
-                            data-system-charge-bayad="{{ "{:.2f}".format(rule.system_charge_bayad) }}"
-                            data-system-charge-bpi-cc="{{ "{:.2f}".format(rule.system_charge_bpi_cc) }}"
-                            data-system-charge-bpi="{{ "{:.2f}".format(rule.system_charge_bpi) }}"
-                            data-late-charge="{{ "{:.2f}".format(rule.late_charge) }}"
-                            data-account-digits="{{ rule.account_digits if rule.account_digits else '' }}"
-                            data-is-active="{{ '1' if rule.is_active else '0' }}"
-                        >Update</button>
-                        <form method="post" action="/admin/settings/biller-rules/{{ rule.id }}/delete" class="inline-action">
-                            <button type="submit" class="btn btn-danger">Delete</button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="table-scroll biller-rules-table-wrap">
+            <table id="billerRulesTable" class="display users-grid" style="width:100%; margin-top:0.75rem;">
+                <thead>
+                    <tr>
+                        <th>Biller</th>
+                        <th class="amount-cell">Service Charge</th>
+                        <th class="amount-cell">Cash</th>
+                        <th class="amount-cell">GCash</th>
+                        <th class="amount-cell">Maya</th>
+                        <th class="amount-cell">Bayad</th>
+                        <th class="amount-cell">BPI Credit Card</th>
+                        <th class="amount-cell">BPI</th>
+                        <th class="amount-cell">Late Charge</th>
+                        <th>Account Digits</th>
+                        <th>Active</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rule in biller_rules %}
+                    <tr>
+                        <td>{{ rule.biller }}</td>
+                        <td class="amount-cell">{{ "{:,.2f}".format(rule.service_charge) }}</td>
+                        <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_cash) }}</td>
+                        <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_gcash) }}</td>
+                        <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_maya) }}</td>
+                        <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bayad) }}</td>
+                        <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi_cc) }}</td>
+                        <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi) }}</td>
+                        <td class="amount-cell">{{ "{:,.2f}".format(rule.late_charge) }}</td>
+                        <td>{{ rule.account_digits if rule.account_digits else "-" }}</td>
+                        <td>{{ "YES" if rule.is_active else "NO" }}</td>
+                        <td>
+                            <button
+                                type="button"
+                                class="btn btn-secondary edit-rule-btn"
+                                data-biller="{{ rule.biller }}"
+                                data-service-charge="{{ "{:.2f}".format(rule.service_charge) }}"
+                                data-system-charge-cash="{{ "{:.2f}".format(rule.system_charge_cash) }}"
+                                data-system-charge-gcash="{{ "{:.2f}".format(rule.system_charge_gcash) }}"
+                                data-system-charge-maya="{{ "{:.2f}".format(rule.system_charge_maya) }}"
+                                data-system-charge-bayad="{{ "{:.2f}".format(rule.system_charge_bayad) }}"
+                                data-system-charge-bpi-cc="{{ "{:.2f}".format(rule.system_charge_bpi_cc) }}"
+                                data-system-charge-bpi="{{ "{:.2f}".format(rule.system_charge_bpi) }}"
+                                data-late-charge="{{ "{:.2f}".format(rule.late_charge) }}"
+                                data-account-digits="{{ rule.account_digits if rule.account_digits else '' }}"
+                                data-is-active="{{ '1' if rule.is_active else '0' }}"
+                            >Update</button>
+                            <form method="post" action="/admin/settings/biller-rules/{{ rule.id }}/delete" class="inline-action">
+                                <button type="submit" class="btn btn-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 

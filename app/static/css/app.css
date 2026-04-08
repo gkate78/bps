@@ -484,6 +484,46 @@ input[readonly] {
 
 .users-dialog {
     width: min(980px, 96vw);
+    max-height: 92vh;
+    overflow: auto;
+}
+
+.users-table-wrap {
+    width: 100%;
+}
+
+#usersTable {
+    min-width: 760px;
+}
+
+.records-table-wrap {
+    width: 100%;
+}
+
+#recordsTable {
+    min-width: 980px;
+}
+
+.reports-table-wrap {
+    width: 100%;
+}
+
+#reportsSummaryTable {
+    min-width: 760px;
+}
+
+.biller-rules-table-wrap {
+    width: 100%;
+}
+
+#billerRulesTable {
+    min-width: 1120px;
+}
+
+.table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .users-grid thead th {
@@ -896,6 +936,47 @@ table tbody td {
 
     .db-selector-form .field-actions .btn {
         width: 100%;
+    }
+
+    .users-dialog {
+        width: 98vw;
+        max-height: 95vh;
+        padding: 0.65rem;
+    }
+
+    #usersTable {
+        min-width: 720px;
+    }
+
+    #usersTable th,
+    #usersTable td {
+        font-size: 0.82rem;
+        padding: 0.32rem 0.42rem;
+    }
+
+    #recordsTable,
+    #reportsSummaryTable,
+    #perUserReconciliationTable,
+    #billerRulesTable,
+    .customer-bills-table,
+    .db-grid {
+        min-width: 720px;
+    }
+
+    #recordsTable th,
+    #recordsTable td,
+    #reportsSummaryTable th,
+    #reportsSummaryTable td,
+    #perUserReconciliationTable th,
+    #perUserReconciliationTable td,
+    #billerRulesTable th,
+    #billerRulesTable td,
+    .customer-bills-table th,
+    .customer-bills-table td,
+    .db-grid th,
+    .db-grid td {
+        font-size: 0.82rem;
+        padding: 0.32rem 0.42rem;
     }
 }
 
