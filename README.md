@@ -34,6 +34,19 @@ uvicorn main:app --reload
 
 Open locally: `http://127.0.0.1:8000/auth/signin`
 
+### Everyday local use (Linux/WSL)
+Keep real data separate from development so code changes and test imports never touch it:
+
+```bash
+./scripts/run_local.sh          # start on http://127.0.0.1:8000, backing up first
+./scripts/run_local.sh backup   # back up only
+```
+
+- Data lives in `~/bps-data/` (override with `BPS_DATA_DIR`): `bills_admin.db`, `.env` (generated with a random `SESSION_SECRET`), and `backups/` (last 30 kept, set `BPS_BACKUP_KEEP` to change).
+- For development, run `uvicorn main:app --reload --port 8001`; it uses the throwaway `bills_admin.db` in the project folder.
+- To restore, stop the app and copy a file from `~/bps-data/backups/` over `~/bps-data/bills_admin.db`.
+- New model columns are not added to existing databases automatically: add an `ALTER TABLE` step in `init_db()` in `app/database.py` for each one.
+
 ### Windows (PowerShell) quickstart
 ```powershell
 ./scripts/dev.ps1 setup
