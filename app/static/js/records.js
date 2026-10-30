@@ -688,10 +688,14 @@ async function importCsv(event) {
 
     const fileInput = document.getElementById("csvFile");
     const statusEl = document.getElementById("importStatus");
+    const skippedEl = document.getElementById("importSkipped");
 
     if (!fileInput.files[0]) {
         return;
     }
+
+    skippedEl.replaceChildren();
+    skippedEl.hidden = true;
 
     const formData = new FormData();
     formData.append("file", fileInput.files[0]);
@@ -704,15 +708,43 @@ async function importCsv(event) {
     });
 
     if (!response.ok) {
-        statusEl.textContent = "Import failed";
+        const error = await response.json().catch(() => ({}));
+        statusEl.textContent = error.detail ? `Import failed: ${error.detail}` : "Import failed";
         return;
     }
 
     const result = await response.json();
     const batchNote = result.import_batch_id ? `, batch ${result.import_batch_id}` : "";
     statusEl.textContent = `Imported ${result.created}, duplicates ${result.duplicates || 0}, skipped ${result.skipped}, raw logged ${result.raw_logged || 0}${batchNote}`;
+    renderImportSkipped(skippedEl, result);
     table.ajax.reload();
     fileInput.value = "";
+}
+
+const IMPORT_SKIP_REASONS = {
+    INVALID_OR_MISSING_DATE: "invalid or missing date",
+    MISSING_ACCOUNT_OR_CUSTOMER_NAME: "missing account or customer name",
+    BILLER_NOT_IN_ACTIVE_RULES: "biller not in active biller rules",
+    MATCHING_DATE_ACCOUNT_BILLER_AMOUNT: "duplicate of an existing record",
+};
+
+function renderImportSkipped(listEl, result) {
+    const rows = result.skipped_rows || [];
+    rows.forEach((item) => {
+        const li = document.createElement("li");
+        const reason = IMPORT_SKIP_REASONS[item.reason] || item.reason || item.status;
+        const biller = item.biller ? ` (${item.biller})` : "";
+        li.textContent = `Row ${item.row}${biller}: ${reason}`;
+        listEl.appendChild(li);
+    });
+    const shown = rows.length;
+    const total = (result.skipped || 0) + (result.duplicates || 0);
+    if (total > shown) {
+        const li = document.createElement("li");
+        li.textContent = `...and ${total - shown} more (see batch ${result.import_batch_id} in the Database view)`;
+        listEl.appendChild(li);
+    }
+    listEl.hidden = listEl.children.length === 0;
 }
 
 function buildFilterParams() {
