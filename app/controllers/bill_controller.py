@@ -1155,7 +1155,12 @@ async def import_csv_records(
             continue
 
         dt_raw = _csv_cell(row, "DATE/TIME", "txn_datetime", "TXN_DATETIME")
-        txn_datetime = _parse_datetime(dt_raw) or datetime.combine(txn_date, datetime.min.time())
+        # DATE may itself carry a time (e.g. "1/2/2026 9:14:12") when there is no DATE/TIME column.
+        txn_datetime = (
+            _parse_datetime(dt_raw)
+            or _parse_datetime(date_raw)
+            or datetime.combine(txn_date, datetime.min.time())
+        )
 
         notes_raw = _csv_cell(row, "NOTES", "notes")
         ref_raw = _csv_cell(row, "REFERENCE", "reference")
