@@ -1088,6 +1088,13 @@ async def datatable_query(
     }
 
 
+IMPORT_SKIP_DETAIL_LIMIT = 50
+
+
+class NoActiveBillerRulesError(Exception):
+    """Raised when a CSV import is attempted before any active biller rules exist."""
+
+
 async def import_csv_records(
     db: AsyncSession,
     file_bytes: bytes,
@@ -1098,12 +1105,15 @@ async def import_csv_records(
     text = file_bytes.decode("utf-8-sig", errors="ignore")
     reader = csv.DictReader(io.StringIO(text))
     charge_map, late_map = await _get_biller_rule_maps(db)
+    if not charge_map:
+        raise NoActiveBillerRulesError()
     import_batch_id = f"IMP-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}-{uuid4().hex[:8].upper()}"
     raw_logged = 0
 
     created = 0
     skipped = 0
     duplicates = 0
+    skipped_rows: list[dict] = []
 
     for row_number, row in enumerate(reader, start=2):
         raw_row = {str(k or ""): str(v or "") for k, v in row.items()}
@@ -1122,6 +1132,16 @@ async def import_csv_records(
                 )
             )
             raw_logged += 1
+            if status != "CREATED" and len(skipped_rows) < IMPORT_SKIP_DETAIL_LIMIT:
+                skipped_rows.append(
+                    {
+                        "row": row_number,
+                        "status": status,
+                        "reason": note or "",
+                        "biller": str(row.get("BILLER") or row.get("biller") or "").strip(),
+                        "account": str(row.get("ACCOUNT") or row.get("account") or "").strip(),
+                    }
+                )
 
         date_raw = _csv_cell(row, "DATE", "txn_date", "TXN_DATE")
         txn_date = _parse_date(date_raw)
@@ -1226,4 +1246,5 @@ async def import_csv_records(
         "duplicates": duplicates,
         "import_batch_id": import_batch_id,
         "raw_logged": raw_logged,
+        "skipped_rows": skipped_rows,
     }

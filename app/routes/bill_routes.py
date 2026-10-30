@@ -39,6 +39,7 @@ from app.controllers.bill_controller import (
     get_record,
     has_active_biller_rule,
     import_csv_records,
+    NoActiveBillerRulesError,
     batch_mark_cash_and_export,
     reconciliation_report_summary,
     reconciliation_by_user_summary,
@@ -1448,12 +1449,18 @@ async def import_csv_endpoint(
             raise HTTPException(status_code=400, detail="Please upload a CSV file")
 
         file_bytes = await file.read()
-        result = await import_csv_records(
-            db,
-            file_bytes,
-            processed_by_user_id=current_user.id,
-            source_filename=file.filename,
-        )
+        try:
+            result = await import_csv_records(
+                db,
+                file_bytes,
+                processed_by_user_id=current_user.id,
+                source_filename=file.filename,
+            )
+        except NoActiveBillerRulesError:
+            raise HTTPException(
+                status_code=400,
+                detail="No active biller rules found. Add biller rules in Settings before importing records.",
+            )
         await _log_record_audit(
             db,
             action="import_csv",
