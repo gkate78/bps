@@ -825,6 +825,198 @@ async def reconciliation_report_summary(
     }
 
 
+INSIGHTS_TOP_BILLERS = 8
+INSIGHTS_TOP_CUSTOMERS = 10
+LAPSED_MIN_VISITS = 3
+LAPSED_AFTER_DAYS = 45
+
+
+def _insights_totals(rows: list) -> dict:
+    count = len(rows)
+    bill_total = round(sum(float(r.bill_amt or 0) for r in rows), 2)
+    late_rows = [r for r in rows if r.due_date is not None and r.txn_date > r.due_date]
+    with_due = sum(1 for r in rows if r.due_date is not None)
+    return {
+        "transactions": count,
+        "bill_total": bill_total,
+        "service_income": round(sum(float(r.charge or 0) for r in rows), 2),
+        "late_charges": round(sum(float(r.late_charge or 0) for r in rows), 2),
+        "customers": len({r.account for r in rows}),
+        "avg_bill": round(bill_total / count, 2) if count else 0.0,
+        "late_rate": round(len(late_rows) / with_due, 4) if with_due else 0.0,
+    }
+
+
+async def insights_summary(
+    db: AsyncSession,
+    *,
+    from_date: date,
+    to_date: date,
+    biller: Optional[str] = None,
+) -> dict:
+    """Business insights for [from_date, to_date], compared with the equal-length period before it."""
+    span_days = (to_date - from_date).days + 1
+    prev_to = from_date - timedelta(days=1)
+    prev_from = prev_to - timedelta(days=span_days - 1)
+
+    columns = (
+        BillRecord.txn_date,
+        BillRecord.txn_datetime,
+        BillRecord.biller,
+        BillRecord.account,
+        BillRecord.customer_name,
+        BillRecord.bill_amt,
+        BillRecord.charge,
+        BillRecord.late_charge,
+        BillRecord.due_date,
+    )
+    stmt = select(*columns).where(BillRecord.txn_date >= prev_from, BillRecord.txn_date <= to_date)
+    if biller:
+        stmt = stmt.where(func.upper(BillRecord.biller) == biller.strip().upper())
+    all_rows = (await db.execute(stmt)).all()
+    rows = [r for r in all_rows if r.txn_date >= from_date]
+    prev_rows = [r for r in all_rows if r.txn_date < from_date]
+
+    # Trend: by day for short ranges, by month otherwise.
+    granularity = "day" if span_days <= 62 else "month"
+    trend: dict[str, dict] = {}
+    cursor = from_date
+    while cursor <= to_date:
+        key = cursor.isoformat() if granularity == "day" else cursor.strftime("%Y-%m")
+        trend.setdefault(key, {"period": key, "transactions": 0, "bill_total": 0.0, "service_income": 0.0})
+        cursor += timedelta(days=1)
+    for r in rows:
+        key = r.txn_date.isoformat() if granularity == "day" else r.txn_date.strftime("%Y-%m")
+        bucket = trend[key]
+        bucket["transactions"] += 1
+        bucket["bill_total"] += float(r.bill_amt or 0)
+        bucket["service_income"] += float(r.charge or 0)
+
+    by_biller: dict[str, dict] = {}
+    for r in rows:
+        name = str(r.biller or "").strip().upper() or "(NONE)"
+        item = by_biller.setdefault(
+            name, {"biller": name, "transactions": 0, "bill_total": 0.0, "service_income": 0.0, "late": 0, "with_due": 0}
+        )
+        item["transactions"] += 1
+        item["bill_total"] += float(r.bill_amt or 0)
+        item["service_income"] += float(r.charge or 0)
+        if r.due_date is not None:
+            item["with_due"] += 1
+            if r.txn_date > r.due_date:
+                item["late"] += 1
+    billers = sorted(by_biller.values(), key=lambda x: x["transactions"], reverse=True)
+    if len(billers) > INSIGHTS_TOP_BILLERS:
+        rest = billers[INSIGHTS_TOP_BILLERS - 1 :]
+        other = {"biller": "OTHER", "transactions": 0, "bill_total": 0.0, "service_income": 0.0, "late": 0, "with_due": 0}
+        for item in rest:
+            for key in ("transactions", "bill_total", "service_income", "late", "with_due"):
+                other[key] += item[key]
+        billers = billers[: INSIGHTS_TOP_BILLERS - 1] + [other]
+    for item in billers:
+        item["late_rate"] = round(item["late"] / item["with_due"], 4) if item["with_due"] else 0.0
+
+    # Busy times: weekday (Mon=0) x hour; rows imported without a time sit at hour 0.
+    heatmap = [[0] * 24 for _ in range(7)]
+    timed = 0
+    for r in rows:
+        when = r.txn_datetime
+        if when is None:
+            continue
+        if when.hour or when.minute or when.second:
+            timed += 1
+        heatmap[when.weekday()][when.hour] += 1
+
+    # Day of month: averaged over how often each day occurs in the range (29th-31st are rarer).
+    dom_counts = [0] * 32
+    dom_billers: list[dict[str, int]] = [{} for _ in range(32)]
+    for r in rows:
+        day = r.txn_date.day
+        dom_counts[day] += 1
+        name = str(r.biller or "").strip().upper() or "(NONE)"
+        dom_billers[day][name] = dom_billers[day].get(name, 0) + 1
+    dom_occurrences = [0] * 32
+    cursor = from_date
+    while cursor <= to_date:
+        dom_occurrences[cursor.day] += 1
+        cursor += timedelta(days=1)
+    day_of_month = []
+    for day in range(1, 32):
+        top_biller = max(dom_billers[day].items(), key=lambda kv: kv[1]) if dom_billers[day] else (None, 0)
+        day_of_month.append(
+            {
+                "day": day,
+                "transactions": dom_counts[day],
+                "occurrences": dom_occurrences[day],
+                "avg": round(dom_counts[day] / dom_occurrences[day], 2) if dom_occurrences[day] else 0.0,
+                "top_biller": top_biller[0],
+                "top_biller_transactions": top_biller[1],
+            }
+        )
+
+    by_customer: dict[str, dict] = {}
+    for r in rows:
+        item = by_customer.setdefault(
+            r.account,
+            {"account": r.account, "name": r.customer_name, "billers": set(), "visits": 0, "bill_total": 0.0, "last_visit": r.txn_date},
+        )
+        item["visits"] += 1
+        item["bill_total"] += float(r.bill_amt or 0)
+        item["billers"].add(str(r.biller or "").strip().upper())
+        if r.txn_date >= item["last_visit"]:
+            item["last_visit"] = r.txn_date
+            item["name"] = r.customer_name
+
+    def _customer_out(item: dict) -> dict:
+        return {
+            "account": item["account"],
+            "name": item["name"],
+            "billers": sorted(item["billers"]),
+            "visits": item["visits"],
+            "bill_total": round(item["bill_total"], 2),
+            "last_visit": item["last_visit"].isoformat(),
+            "days_since": (to_date - item["last_visit"]).days,
+        }
+
+    customers = list(by_customer.values())
+    top_customers = sorted(customers, key=lambda x: (x["visits"], x["bill_total"]), reverse=True)[:INSIGHTS_TOP_CUSTOMERS]
+    lapsed = sorted(
+        (c for c in customers if c["visits"] >= LAPSED_MIN_VISITS and (to_date - c["last_visit"]).days > LAPSED_AFTER_DAYS),
+        key=lambda x: x["visits"],
+        reverse=True,
+    )
+    repeat = sum(1 for c in customers if c["visits"] > 1)
+
+    for bucket in trend.values():
+        bucket["bill_total"] = round(bucket["bill_total"], 2)
+        bucket["service_income"] = round(bucket["service_income"], 2)
+    for item in billers:
+        item["bill_total"] = round(item["bill_total"], 2)
+        item["service_income"] = round(item["service_income"], 2)
+
+    return {
+        "range": {"from": from_date.isoformat(), "to": to_date.isoformat(), "biller": biller or None},
+        "previous_range": {"from": prev_from.isoformat(), "to": prev_to.isoformat()},
+        "totals": _insights_totals(rows),
+        "previous_totals": _insights_totals(prev_rows),
+        "granularity": granularity,
+        "trend": list(trend.values()),
+        "billers": billers,
+        "heatmap": heatmap,
+        "has_times": timed > 0,
+        "day_of_month": day_of_month,
+        "customers": {
+            "total": len(customers),
+            "repeat": repeat,
+            "repeat_rate": round(repeat / len(customers), 4) if customers else 0.0,
+            "top": [_customer_out(c) for c in top_customers],
+            "lapsed": [_customer_out(c) for c in lapsed[:INSIGHTS_TOP_CUSTOMERS]],
+            "lapsed_total": len(lapsed),
+            "lapsed_rule": {"min_visits": LAPSED_MIN_VISITS, "after_days": LAPSED_AFTER_DAYS},
+        },
+    }
+
+
 def _build_record_filters(
     *,
     biller: Optional[str],
