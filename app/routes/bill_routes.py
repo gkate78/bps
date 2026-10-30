@@ -39,6 +39,7 @@ from app.controllers.bill_controller import (
     get_record,
     has_active_biller_rule,
     import_csv_records,
+    insights_summary,
     NoActiveBillerRulesError,
     batch_mark_cash_and_export,
     reconciliation_report_summary,
@@ -528,6 +529,37 @@ async def get_reports_summary(
 ):
     ref_date = reference_date or date_alias or date.today()
     return await reconciliation_report_summary(db, period=period, reference_date=ref_date)
+
+
+@router.get("/admin/insights", response_class=HTMLResponse, include_in_schema=False)
+async def admin_insights_page(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
+    if not current_user:
+        return RedirectResponse(url="/auth/signin", status_code=303)
+    if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
+        return RedirectResponse(url="/customer/dashboard", status_code=303)
+    return templates.TemplateResponse(
+        "insights.html",
+        {"request": request, "current_user": current_user, "billers": await get_distinct_billers(db)},
+    )
+
+
+@router.get("/api/admin/insights")
+async def get_insights(
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    biller: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_owner_or_admin),
+):
+    end = to_date or date.today()
+    start = from_date or date(end.year, 1, 1)
+    if start > end:
+        raise HTTPException(status_code=400, detail="From date must be on or before To date")
+    return await insights_summary(db, from_date=start, to_date=end, biller=biller or None)
 
 
 @router.get("/api/admin/records/kpis")

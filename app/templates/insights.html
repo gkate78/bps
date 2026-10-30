@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}Insights{% endblock %}
+{% block topbar_title %}Insights{% endblock %}
+{% block topbar_subtitle %}See trends, busy times, billers, and customers at a glance.{% endblock %}
+{% block topbar_actions %}
+<a href="/admin/records" class="btn btn-secondary">Records</a>
+<a href="/admin/reports" class="btn btn-secondary">Reports</a>
+<a href="/admin/settings" class="btn btn-secondary">Admin Settings</a>
+<form method="post" action="/auth/logout" class="inline-action">
+    <button type="submit" class="btn btn-secondary">Logout</button>
+</form>
+{% endblock %}
+
+{% block content %}
+<section class="panel">
+    <div class="controls-grid insights-filters">
+        <div class="field">
+            <label for="insFrom">From</label>
+            <input type="date" id="insFrom">
+        </div>
+        <div class="field">
+            <label for="insTo">To</label>
+            <input type="date" id="insTo">
+        </div>
+        <div class="field">
+            <label for="insBiller">Biller</label>
+            <select id="insBiller">
+                <option value="">All billers</option>
+                {% for biller in billers %}
+                <option value="{{ biller }}">{{ biller }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="field">
+            <label for="insPreset">Quick range</label>
+            <select id="insPreset">
+                <option value="">Custom</option>
+                <option value="ytd" selected>This year</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+                <option value="month">This month</option>
+                <option value="lastmonth">Last month</option>
+            </select>
+        </div>
+    </div>
+    <p id="insStatus" class="status-text insights-status" role="status"></p>
+</section>
+
+<section class="kpi-strip insights-kpis" id="insKpis" aria-label="Key figures"></section>
+
+<section class="panel">
+    <div class="panel-head insights-head">
+        <h2 id="trendTitle">Trend</h2>
+        <div class="segmented" role="group" aria-label="Measure">
+            <button type="button" class="seg-btn is-active" data-measure="transactions">Transactions</button>
+            <button type="button" class="seg-btn" data-measure="service_income">Service income</button>
+            <button type="button" class="seg-btn" data-measure="bill_total">Bills paid</button>
+        </div>
+    </div>
+    <div class="chart-box" id="trendChart"></div>
+    <details class="chart-data"><summary>View data</summary><div id="trendTable"></div></details>
+</section>
+
+<div class="insights-grid">
+    <section class="panel">
+        <div class="panel-head"><h2 id="billerTitle">Billers</h2></div>
+        <div class="chart-box" id="billerChart"></div>
+        <details class="chart-data"><summary>View data</summary><div id="billerTable"></div></details>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head"><h2>Paid after due date</h2></div>
+        <p class="chart-note" id="lateNote"></p>
+        <div class="chart-box" id="lateChart"></div>
+        <details class="chart-data"><summary>View data</summary><div id="lateTable"></div></details>
+    </section>
+</div>
+
+<section class="panel">
+    <div class="panel-head"><h2>Busiest times</h2></div>
+    <p class="chart-note" id="heatNote"></p>
+    <div class="chart-box" id="heatChart"></div>
+    <details class="chart-data"><summary>View data</summary><div id="heatTable"></div></details>
+</section>
+
+<section class="panel">
+    <div class="panel-head"><h2>Busiest days of the month</h2></div>
+    <p class="chart-note" id="domNote"></p>
+    <div class="chart-box" id="domChart"></div>
+    <details class="chart-data"><summary>View data</summary><div id="domTable"></div></details>
+</section>
+
+<div class="insights-grid">
+    <section class="panel">
+        <div class="panel-head"><h2>Top customers</h2></div>
+        <p class="chart-note" id="customerNote"></p>
+        <div class="table-scroll" id="topCustomers"></div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-head"><h2>Regulars who haven't come back</h2></div>
+        <p class="chart-note" id="lapsedNote"></p>
+        <div class="table-scroll" id="lapsedCustomers"></div>
+    </section>
+</div>
+
+<div class="chart-tooltip" id="chartTooltip" role="tooltip" hidden></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/insights.js"></script>
+{% endblock %}
