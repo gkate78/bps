@@ -46,6 +46,22 @@ async def init_db() -> None:
                 "ON customer_accounts(account)"
             )
         )
+        rule_columns = {row[1] for row in (await conn.execute(text("PRAGMA table_info(biller_rules)"))).fetchall()}
+        if "account_format" not in rule_columns:
+            await conn.execute(
+                text("ALTER TABLE biller_rules ADD COLUMN account_format VARCHAR(16) NOT NULL DEFAULT 'NUMERIC'")
+            )
+            # Billers that already have accounts containing letters (e.g. SSS) take letters and numbers.
+            await conn.execute(
+                text(
+                    """
+                    UPDATE biller_rules SET account_format = 'ALPHANUMERIC'
+                    WHERE UPPER(TRIM(biller)) IN (
+                        SELECT DISTINCT UPPER(TRIM(biller)) FROM bill_records WHERE UPPER(account) GLOB '*[A-Z]*'
+                    )
+                    """
+                )
+            )
         # Lightweight migration: add txn_datetime for existing databases.
         columns = (await conn.execute(text("PRAGMA table_info(bill_records)"))).fetchall()
         col_names = {row[1] for row in columns}

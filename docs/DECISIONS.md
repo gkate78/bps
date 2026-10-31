@@ -350,3 +350,19 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Encoders and the admin need separate computers in the shop; a 4-digit PIN login over plain HTTP must not face the public internet.
 - Alternatives considered: Tailscale (simplest, but the free Personal plan is non-commercial; Standard is $8/user/month); Cloudflare Tunnel + Access (free plan up to 50 users, needs a domain, email one-time code gate); hosting on GCP Compute Engine (loses offline use, exposes the app publicly, adds server upkeep); router port forwarding; WSL NAT with netsh portproxy.
 - Follow-up: Owner's preferred option for future remote monitoring is Cloudflare Tunnel + Access (free plan, domain required, email one-time code before the PIN login); Tailscale remains a fallback (`windows-network-setup.ps1 -AllowTailscale`). Consider auto-starting BPS on boot.
+
+- Date: 2026-10-31
+- ID: DEC-043
+- Related task: BPS-227
+- Decision: Let admins and encoders add a rule for a biller that has none from the entry form (`POST /api/biller-rules`: service charge, late charge, optional account digits; Bayad system charge defaults to 5.39 like the Settings form). Existing or inactive rules cannot be changed this way (409) and stay admin-only in Admin Settings; each addition is written to the record audit log.
+- Why: Encoders couldn't save payments for new billers and can't open Admin Settings; leaving the form loses the entry in progress.
+- Alternatives considered: admin-only quick add; block the entry until an admin adds the rule.
+- Follow-up: The record create/update API does not enforce `account_digits` server-side (only the entry form and CSV import do); consider enforcing it in the API.
+
+- Date: 2026-10-31
+- ID: DEC-044
+- Related task: BPS-229
+- Decision: Add `biller_rules.account_format` (`NUMERIC` default, `ALPHANUMERIC` for billers such as SSS and PhilHealth whose references mix letters and numbers). `account_digits` is the exact account length, counting every character. Accounts must match the format (no spaces or symbols) and length on the entry form and in the record API for new records and when the account or biller changes; other edits of older records are not blocked. The migration marks billers with existing letter-containing accounts as `ALPHANUMERIC`.
+- Why: The form counted only digits, so SSS accounts like `AA123456789012` were rejected by hand entry while a letter typo in a numeric account could pass; the API didn't check accounts at all (resolves the DEC-043 follow-up).
+- Alternatives considered: a per-biller regex pattern; numbers-only everywhere a length is set.
+- Follow-up: CSV record imports still don't check account formats; consider flagging mismatches in the review list.

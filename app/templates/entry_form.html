@@ -108,6 +108,39 @@
     </div>
 </section>
 
+<dialog id="billerRuleDialog" class="app-dialog">
+    <div class="app-dialog-head">
+        <h3>New Biller</h3>
+        <button type="button" class="btn btn-ghost" id="billerRuleCloseBtn">Close</button>
+    </div>
+    <p class="app-dialog-text" id="billerRuleIntro"></p>
+    <form id="billerRuleForm" class="auth-form" novalidate>
+        <label>Biller
+            <input type="text" id="ruleBiller" maxlength="120" required>
+        </label>
+        <label>Service Charge
+            <input type="number" id="ruleServiceCharge" min="0" step="0.01" value="15" required>
+        </label>
+        <label>Late Charge
+            <input type="number" id="ruleLateCharge" min="0" step="0.01" value="0">
+        </label>
+        <label>Account Type
+            <select id="ruleAccountFormat">
+                <option value="NUMERIC">Numbers only</option>
+                <option value="ALPHANUMERIC">Letters and numbers (e.g., SSS, PhilHealth)</option>
+            </select>
+        </label>
+        <label>Account Length (optional)
+            <input type="number" id="ruleAccountDigits" min="1" step="1" placeholder="e.g., 10">
+        </label>
+        <p class="status-text" id="billerRuleStatus" role="status"></p>
+        <div class="dialog-actions">
+            <button type="button" class="btn btn-secondary" id="billerRuleCancelBtn">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="billerRuleSaveBtn">Save Rule</button>
+        </div>
+    </form>
+</dialog>
+
 <dialog id="confirmDialog" class="confirm-dialog">
     <div class="confirm-head">
         <h3>Confirm Before Save</h3>
@@ -127,6 +160,7 @@
 window.BILLER_CHARGES = {{ biller_charges | tojson }};
 window.BILLER_LATE_CHARGES = {{ biller_late_charges | tojson }};
 window.BILLER_ACCOUNT_DIGITS = {{ biller_account_digits | tojson }};
+window.BILLER_ACCOUNT_FORMATS = {{ biller_account_formats | tojson }};
 window.ROUTING_URGENT_WINDOW_DAYS = {{ routing_urgent_window_days | tojson }};
 </script>
 <script src="/static/js/entry_form.js"></script>

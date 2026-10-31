@@ -27,6 +27,7 @@ function formatMoney(value) {
 const BILLER_CHARGES = window.BILLER_CHARGES || {};
 const BILLER_LATE_CHARGES = window.BILLER_LATE_CHARGES || {};
 const BILLER_ACCOUNT_DIGITS = window.BILLER_ACCOUNT_DIGITS || {};
+const BILLER_ACCOUNT_FORMATS = window.BILLER_ACCOUNT_FORMATS || {};
 let lastSavedRecordId = null;
 let accountOptionsAbortController = null;
 let accountOptionsDebounceTimer = null;
@@ -96,6 +97,21 @@ function computeLateCharge(biller, dueDateValue) {
         return 0;
     }
     return round2(BILLER_LATE_CHARGES[normalizedBillerKey(biller)] || 0);
+}
+
+/** Same rule as the server: numbers only, or letters and numbers (e.g. SSS), with an optional exact length. */
+function accountFormatError(account, biller) {
+    const key = normalizedBillerKey(biller);
+    const value = String(account || "").trim().toUpperCase();
+    const length = BILLER_ACCOUNT_DIGITS[key] != null ? Number(BILLER_ACCOUNT_DIGITS[key]) : null;
+    if ((BILLER_ACCOUNT_FORMATS[key] || "NUMERIC") === "ALPHANUMERIC") {
+        if (!/^[A-Z0-9]+$/.test(value)) return `ACCOUNT MUST CONTAIN ONLY LETTERS AND NUMBERS (NO SPACES OR SYMBOLS) FOR ${key}.`;
+        if (length && value.length !== length) return `ACCOUNT MUST BE EXACTLY ${length} LETTERS/NUMBERS FOR ${key}.`;
+        return "";
+    }
+    if (!/^\d+$/.test(value)) return `ACCOUNT MUST CONTAIN NUMBERS ONLY FOR ${key}.`;
+    if (length && value.length !== length) return `ACCOUNT MUST BE EXACTLY ${length} DIGITS (NUMBERS ONLY) FOR ${key}.`;
+    return "";
 }
 
 function recomputeFinancials() {
@@ -271,17 +287,14 @@ function validatePayload(payload) {
         alert("ACCOUNT, BILLER, AND NAME ARE REQUIRED");
         return false;
     }
-    if (BILLER_CHARGES[normalizedBillerKey(payload.biller)] == null) {
-        alert("BILLER RULE IS NOT CONFIGURED. PLEASE UPDATE ADMIN SETTINGS.");
+    if (!isKnownBiller(payload.biller)) {
+        openBillerRuleDialog(payload.biller);
         return false;
     }
-    const requiredDigits = BILLER_ACCOUNT_DIGITS[normalizedBillerKey(payload.biller)];
-    if (requiredDigits != null) {
-        const accountDigits = String(payload.account || "").replace(/\D/g, "");
-        if (accountDigits.length !== Number(requiredDigits)) {
-            alert(`ACCOUNT MUST BE EXACTLY ${requiredDigits} DIGITS FOR ${payload.biller}.`);
-            return false;
-        }
+    const accountError = accountFormatError(payload.account, payload.biller);
+    if (accountError) {
+        alert(accountError);
+        return false;
     }
     if (payload.cp_number && !/^\d{11}$/.test(payload.cp_number)) {
         alert("CP NUMBER MUST BE EXACTLY 11 DIGITS");
@@ -592,6 +605,137 @@ if (myTx.body) {
         if (opening) {
             loadMyTransactions();
             myTx.panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    });
+}
+
+
+// --- New biller rule: add a rule without leaving the form ----------------------
+
+const ruleDialog = {
+    dialog: document.getElementById("billerRuleDialog"),
+    form: document.getElementById("billerRuleForm"),
+    intro: document.getElementById("billerRuleIntro"),
+    biller: document.getElementById("ruleBiller"),
+    serviceCharge: document.getElementById("ruleServiceCharge"),
+    lateCharge: document.getElementById("ruleLateCharge"),
+    accountDigits: document.getElementById("ruleAccountDigits"),
+    accountFormat: document.getElementById("ruleAccountFormat"),
+    status: document.getElementById("billerRuleStatus"),
+    saveBtn: document.getElementById("billerRuleSaveBtn"),
+};
+// Biller the user dismissed the popup for, so leaving the field again doesn't reopen it.
+let dismissedRuleBiller = "";
+
+function isKnownBiller(name) {
+    return BILLER_CHARGES[normalizedBillerKey(name)] != null;
+}
+
+function openBillerRuleDialog(name) {
+    const biller = normalizedBillerKey(name);
+    ruleDialog.biller.value = biller;
+    ruleDialog.serviceCharge.value = "15";
+    ruleDialog.lateCharge.value = "0";
+    ruleDialog.accountDigits.value = "";
+    // Suggest from the account typed so far, e.g. SPA0A0000000001 -> letters and numbers, length 15.
+    const typed = String(dom.account.value || "").trim().toUpperCase();
+    ruleDialog.accountFormat.value = /[A-Z]/.test(typed) ? "ALPHANUMERIC" : "NUMERIC";
+    if (typed) ruleDialog.accountDigits.placeholder = `e.g., ${typed.length}`;
+    ruleDialog.intro.textContent = `${biller || "This biller"} has no rule yet. Add its charges to continue.`;
+    ruleDialog.status.textContent = "";
+    ruleDialog.dialog.showModal();
+    ruleDialog.serviceCharge.focus();
+    ruleDialog.serviceCharge.select();
+}
+
+function closeBillerRuleDialog() {
+    dismissedRuleBiller = normalizedBillerKey(dom.biller.value);
+    ruleDialog.dialog.close();
+    if (dom.saveStatus && !isKnownBiller(dom.biller.value)) {
+        dom.saveStatus.textContent = "Biller has no rule yet; it's needed before saving.";
+    }
+}
+
+function addBillerOption(biller) {
+    const list = document.getElementById("billerOptions");
+    if (!list || Array.from(list.options).some((opt) => opt.value === biller)) return;
+    const option = document.createElement("option");
+    option.value = biller;
+    list.appendChild(option);
+}
+
+async function saveBillerRule(event) {
+    event.preventDefault();
+    const biller = normalizedBillerKey(ruleDialog.biller.value);
+    const serviceCharge = Number(ruleDialog.serviceCharge.value);
+    const lateCharge = Number(ruleDialog.lateCharge.value || 0);
+    const digitsRaw = String(ruleDialog.accountDigits.value || "").trim();
+    if (!biller) {
+        ruleDialog.status.textContent = "Enter the biller name.";
+        return;
+    }
+    if (!Number.isFinite(serviceCharge) || serviceCharge < 0 || !Number.isFinite(lateCharge) || lateCharge < 0) {
+        ruleDialog.status.textContent = "Charges must be zero or more.";
+        return;
+    }
+    if (digitsRaw && !(Number.isInteger(Number(digitsRaw)) && Number(digitsRaw) > 0)) {
+        ruleDialog.status.textContent = "Account digits must be a whole number above zero.";
+        return;
+    }
+
+    ruleDialog.saveBtn.disabled = true;
+    ruleDialog.status.textContent = "Saving...";
+    try {
+        const response = await fetch("/api/biller-rules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                biller,
+                service_charge: round2(serviceCharge),
+                late_charge: round2(lateCharge),
+                account_digits: digitsRaw ? Number(digitsRaw) : null,
+                account_format: ruleDialog.accountFormat.value,
+            }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const detail = Array.isArray(data.detail) ? "Please check the values." : data.detail;
+            ruleDialog.status.textContent = detail || "Could not save the rule.";
+            return;
+        }
+        BILLER_CHARGES[data.biller] = data.service_charge;
+        BILLER_LATE_CHARGES[data.biller] = data.late_charge;
+        if (data.account_digits) BILLER_ACCOUNT_DIGITS[data.biller] = data.account_digits;
+        BILLER_ACCOUNT_FORMATS[data.biller] = data.account_format;
+        addBillerOption(data.biller);
+        dom.biller.value = data.biller;
+        dismissedRuleBiller = "";
+        ruleDialog.dialog.close();
+        if (dom.saveStatus) dom.saveStatus.textContent = `Rule for ${data.biller} saved.`;
+        recomputeFinancials();
+        fetchKnownAccounts({ query: dom.account.value });
+        (dom.customerName.value ? dom.dueDate : dom.customerName).focus();
+    } catch (err) {
+        ruleDialog.status.textContent = "Could not save the rule. Check the connection and try again.";
+    } finally {
+        ruleDialog.saveBtn.disabled = false;
+    }
+}
+
+if (ruleDialog.dialog) {
+    ruleDialog.form.addEventListener("submit", saveBillerRule);
+    document.getElementById("billerRuleCancelBtn").addEventListener("click", closeBillerRuleDialog);
+    document.getElementById("billerRuleCloseBtn").addEventListener("click", closeBillerRuleDialog);
+    ruleDialog.dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        closeBillerRuleDialog();
+    });
+    ruleDialog.biller.addEventListener("input", () => setUppercaseInput(ruleDialog.biller));
+    // Offer the rule as soon as an unknown biller is entered (when leaving the field).
+    dom.biller.addEventListener("change", () => {
+        const biller = normalizedBillerKey(dom.biller.value);
+        if (biller && !isKnownBiller(biller) && biller !== dismissedRuleBiller) {
+            openBillerRuleDialog(biller);
         }
     });
 }

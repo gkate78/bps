@@ -41,6 +41,9 @@ from app.controllers.bill_controller import (
     import_csv_records,
     insights_summary,
     amount_review_report,
+    check_account_for_biller,
+    get_biller_account_formats,
+    normalize_account_format,
     my_transactions,
     normalize_cp_number,
     ImportFormatError,
@@ -210,6 +213,14 @@ class RecordResponse(RecordCreate):
     id: int
 
     model_config = {"from_attributes": True}
+
+
+class QuickBillerRuleCreate(BaseModel):
+    biller: str = Field(min_length=1, max_length=120)
+    service_charge: float = Field(default=0, ge=0)
+    late_charge: float = Field(default=0, ge=0)
+    account_digits: Optional[int] = Field(default=None, gt=0)
+    account_format: str = Field(default="NUMERIC", max_length=32)
 
 
 class AdminUserCreate(BaseModel):
@@ -759,11 +770,13 @@ async def upsert_biller_rule(
     system_charge_bpi: float = Form(0),
     late_charge: float = Form(0),
     account_digits: Optional[int] = Form(None),
+    account_format: str = Form("NUMERIC"),
     is_active: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
 ):
     cleaned_biller = biller.strip().upper()
+    account_format = normalize_account_format(account_format)
     if not cleaned_biller:
         return RedirectResponse(url="/admin/settings?error=Biller+name+is+required", status_code=303)
     if (
@@ -793,6 +806,7 @@ async def upsert_biller_rule(
             system_charge_bpi=round(float(system_charge_bpi), 2),
             late_charge=round(float(late_charge), 2),
             account_digits=int(account_digits) if account_digits else None,
+            account_format=account_format,
             is_active=is_active is not None,
         )
     else:
@@ -805,12 +819,65 @@ async def upsert_biller_rule(
         rule.system_charge_bpi = round(float(system_charge_bpi), 2)
         rule.late_charge = round(float(late_charge), 2)
         rule.account_digits = int(account_digits) if account_digits else None
+        rule.account_format = account_format
         rule.is_active = is_active is not None
         rule.updated_at = datetime.utcnow()
 
     db.add(rule)
     await db.commit()
     return RedirectResponse(url="/admin/settings?success=Biller+rule+saved", status_code=303)
+
+
+@router.post("/api/biller-rules", status_code=201)
+async def quick_add_biller_rule(
+    payload: QuickBillerRuleCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_data_entry_access),
+):
+    """Add a rule for a biller that has none, from the entry form. Existing rules are only edited in Settings."""
+    cleaned_biller = payload.biller.strip().upper()
+    if not cleaned_biller:
+        raise HTTPException(status_code=400, detail="Biller name is required")
+    existing = (await db.execute(select(BillerRule).where(BillerRule.biller == cleaned_biller))).scalar_one_or_none()
+    if existing is not None:
+        detail = (
+            f"{cleaned_biller} already has a rule"
+            if existing.is_active
+            else f"{cleaned_biller} has an inactive rule; an admin can reactivate it in Admin Settings"
+        )
+        raise HTTPException(status_code=409, detail=detail)
+
+    rule = BillerRule(
+        biller=cleaned_biller,
+        service_charge=round(float(payload.service_charge), 2),
+        late_charge=round(float(payload.late_charge), 2),
+        # Same default as the Settings form; other system charges can be set later in Settings.
+        system_charge_bayad=5.39,
+        account_digits=payload.account_digits,
+        account_format=normalize_account_format(payload.account_format),
+        is_active=True,
+    )
+    db.add(rule)
+    await db.commit()
+    await _log_record_audit(
+        db,
+        action="add_biller_rule",
+        status="success",
+        current_user=current_user,
+        channel="entry_form",
+        detail=(
+            f"biller={cleaned_biller}, service_charge={rule.service_charge}, "
+            f"late_charge={rule.late_charge}, account_digits={rule.account_digits}, "
+            f"account_format={rule.account_format}"
+        ),
+    )
+    return {
+        "biller": rule.biller,
+        "service_charge": rule.service_charge,
+        "late_charge": rule.late_charge,
+        "account_digits": rule.account_digits,
+        "account_format": rule.account_format,
+    }
 
 
 @router.post("/admin/settings/biller-rules/import-csv", include_in_schema=False)
@@ -890,6 +957,8 @@ async def import_biller_rules_csv(
             account_digits = int(raw_digits)
 
         is_active = _parse_active(row.get("IS_ACTIVE"))
+        # Optional column; when absent, existing rules keep their account format.
+        raw_format = str(row.get("ACCOUNT_FORMAT") or "").strip()
 
         existing = await db.execute(select(BillerRule).where(BillerRule.biller == biller))
         rule = existing.scalar_one_or_none()
@@ -905,6 +974,7 @@ async def import_biller_rules_csv(
                 system_charge_bpi=system_charge_bpi,
                 late_charge=late_charge,
                 account_digits=account_digits,
+                account_format=normalize_account_format(raw_format),
                 is_active=is_active,
             )
             created += 1
@@ -918,6 +988,8 @@ async def import_biller_rules_csv(
             rule.system_charge_bpi = system_charge_bpi
             rule.late_charge = late_charge
             rule.account_digits = account_digits
+            if raw_format:
+                rule.account_format = normalize_account_format(raw_format)
             rule.is_active = is_active
             rule.updated_at = datetime.utcnow()
             updated += 1
@@ -987,6 +1059,7 @@ async def entry_form_page(
             "biller_charges": await get_biller_charges(db),
             "biller_late_charges": await get_biller_late_charges(db),
             "biller_account_digits": await get_biller_account_digits(db),
+            "biller_account_formats": await get_biller_account_formats(db),
             "routing_urgent_window_days": ROUTING_URGENT_WINDOW_DAYS,
             "current_user": current_user,
             "show_admin_records_link": show_admin_records_link,
@@ -1344,6 +1417,9 @@ async def create_record_endpoint(
     payload.cp_number = normalize_cp_number(payload.cp_number)
     if not _is_valid_cp_number(payload.cp_number):
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
+    account_error = await check_account_for_biller(db, payload.account, payload.biller)
+    if account_error:
+        raise HTTPException(status_code=400, detail=account_error)
 
     initial_payload = payload.model_dump()
     if initial_payload.get("late_charge") in (None, 0) and initial_payload.get("amt2") is not None:
@@ -1447,6 +1523,14 @@ async def update_record_endpoint(
     if "amt2" in updates and "late_charge" not in updates:
         updates["late_charge"] = updates.get("amt2")
     updates.pop("amt2", None)
+    # Check the account format only when the account or biller changes, so older records stay editable.
+    current = await get_record(db, record_id)
+    new_account = str(updates.get("account", current.account) or "").strip().upper()
+    new_biller = str(updates.get("biller", current.biller) or "").strip().upper()
+    if new_account != str(current.account or "").upper() or new_biller != str(current.biller or "").upper():
+        account_error = await check_account_for_biller(db, new_account, new_biller)
+        if account_error:
+            raise HTTPException(status_code=400, detail=account_error)
     updates["processed_by_user_id"] = current_user.id
 
     record = await update_record(db, record_id, updates)

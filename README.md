@@ -17,6 +17,8 @@ BPS helps teams manage bill records end-to-end: encode customer bills, process s
 - **Reconciliation and reports**: EOD reconciliation with optional cash-on-hand variance, per-user reconciliation totals, daily/monthly/yearly report summaries, and an **Amounts to review** list of imported records whose file amounts differ from biller rules or don't add up
 - **Insights** (`/admin/insights`): KPI tiles with change vs the previous period, monthly/daily trend, biller share, late-payment rate by biller, weekday × hour busy-times heatmap, busiest days of the month, top customers, and regulars who haven't come back
 - **Admin visibility tools**: on-demand transaction audit log, read-only Database View with auto-load + row search, and KPI-focused dashboards
+- **Account format per biller**: each biller rule sets the account type, *Numbers only* or *Letters and numbers* (e.g. SSS `1A000000000001`, PhilHealth `SPA0A0000000001`), plus an optional exact length (`ACCOUNT_DIGITS`, counting all characters); enforced on the entry form and by the API for new records and account/biller changes
+- **New billers during entry**: entering a biller with no rule opens a **New Biller** popup (service charge, late charge, account type, optional account length) that saves the rule and continues the entry; admins and encoders can add new rules this way, existing rules are edited only in Admin Settings, and each addition is audit-logged
 - **Biller rules and receipts**: popup biller-rule maintenance, per-field receipt visibility toggles, and receipt footer controls; 58mm thermal receipt in bold Arial (12px details, 14px business name, 16px total) with amounts flush right
 - **Works offline**: jQuery, DataTables, and fonts are served from `app/static/vendor/` (see its README), so no internet connection is needed to run the app
 - **Customer dashboard**: phone-scoped bill visibility with account/biller filters and automatic `customer_accounts.user_id` linking on auth success
@@ -155,7 +157,7 @@ Sample files:
 - `sample_biller_rules.csv`
 
 `sample_biller_rules.csv` headers:
-- `BILLER`, `SERVICE_CHARGE`, `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPI CREDIT CARD`, `BPI`, `LATE_CHARGE`, `ACCOUNT_DIGITS`, `IS_ACTIVE`
+- `BILLER`, `SERVICE_CHARGE`, `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPI CREDIT CARD`, `BPI`, `LATE_CHARGE`, `ACCOUNT_DIGITS`, `IS_ACTIVE`, `ACCOUNT_FORMAT` (optional: `NUMERIC` or `ALPHANUMERIC`; when omitted, existing rules keep their format and new ones are `NUMERIC`)
 
 ## Project Docs
 - `docs/WORKFLOW.md` - development loop and definition of done

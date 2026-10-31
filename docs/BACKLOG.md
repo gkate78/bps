@@ -10,6 +10,7 @@
 ## LATER
 - [ ] BPS-223 | Theme: Operations insight | Outcome: Separate read-only analytics app for 2020–2025 yearly CSV history (parked) | Done when: yearly files load with data-quality reporting and year-over-year views, real data stays local, and a public demo runs on synthetic data
 - [ ] BPS-226 | Theme: Operations insight | Outcome: Admin can monitor the shop's BPS remotely | Done when: Cloudflare Tunnel + Access (preferred) is set up on a shop-owned domain with an email one-time-code gate, without exposing the PIN login publicly (on hold, DEC-042)
+- [ ] BPS-228 | Theme: Documentation | Outcome: Demo video showing how to use the app, linked from the docs (parked until the app is final) | Done when: a walkthrough of sign-in, entry, receipt, My Transactions, records/processing, reconciliation, reports, and Insights is recorded with sample data only and linked in README
 - [ ] BPS-212 | Theme: Schema cleanup | Outcome: Remove legacy columns after stabilization (`amt2`, deprecated routing fields) | Done when: controlled SQLite table-rebuild migration is executed in all environments with rollback notes
 
 ## Done
@@ -37,3 +38,5 @@
 - [x] BPS-222 | Shipped on: 2026-10-31 | Notes: Larger, bolder 58mm receipt with values-only header fields and right-aligned amounts; entry form asks for "Amount Received" before payment details (DEC-039).
 - [x] BPS-224 | Shipped on: 2026-10-31 | Notes: My Transactions on the entry form: encoders see their own payments with date range, totals, and receipt reprint; new `created_by_user_id` backfilled from create audit logs (DEC-041).
 - [x] BPS-225 | Shipped on: 2026-10-31 | Notes: Shop-network use: `run_local.sh lan` for other shop computers, plus `scripts/windows-network-setup.ps1` (WSL mirrored networking, Private-only firewall rules); remote access on hold (DEC-042).
+- [x] BPS-227 | Shipped on: 2026-10-31 | Notes: New Biller popup on the entry form: an unknown biller opens a dialog to add its rule (service/late charge, account digits) via `POST /api/biller-rules`, then the entry continues (DEC-043).
+- [x] BPS-229 | Shipped on: 2026-10-31 | Notes: Per-biller account format (numbers only vs letters and numbers) with exact length, enforced on the entry form and server-side; SSS auto-detected as letters and numbers (DEC-044).
