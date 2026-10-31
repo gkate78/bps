@@ -1206,3 +1206,50 @@ table tbody td {
 .review-table td.amount-cell {
     white-space: nowrap;
 }
+
+/* My Transactions (entry form) */
+.mytx-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 0.6rem;
+}
+
+.mytx-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem;
+}
+
+.mytx-filters label {
+    display: grid;
+    gap: 0.2rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-weight: 600;
+}
+
+.mytx-kpis {
+    margin: 0.8rem 0 0.4rem;
+}
+
+.mytx-status {
+    margin: 0.4rem 0 0.6rem;
+    font-weight: 400;
+}
+
+.mytx-table td {
+    vertical-align: middle;
+}
+
+.mytx-table td:first-child,
+.mytx-table td.amount-cell {
+    white-space: nowrap;
+}
+
+.btn-small {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.85rem;
+}

@@ -41,6 +41,7 @@ from app.controllers.bill_controller import (
     import_csv_records,
     insights_summary,
     amount_review_report,
+    my_transactions,
     normalize_cp_number,
     ImportFormatError,
     NoActiveBillerRulesError,
@@ -1278,6 +1279,21 @@ async def batch_mark_cash_export_endpoint(
     )
 
 
+@router.get("/api/records/mine")
+async def get_my_transactions(
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_data_entry_access),
+):
+    """Payments the signed-in user entered; defaults to today."""
+    end = to_date or date.today()
+    start = from_date or end
+    if start > end:
+        raise HTTPException(status_code=400, detail="From date must be on or before To date")
+    return await my_transactions(db, user_id=current_user.id, from_date=start, to_date=end)
+
+
 @router.get("/api/records/{record_id}", response_model=RecordResponse)
 async def get_record_endpoint(
     record_id: int,
@@ -1334,6 +1350,7 @@ async def create_record_endpoint(
         initial_payload["late_charge"] = initial_payload.get("amt2")
     initial_payload.pop("amt2", None)
     initial_payload["processed_by_user_id"] = current_user.id
+    initial_payload["created_by_user_id"] = current_user.id
     record = await create_record(db, initial_payload)
     await upsert_customer_from_record(
         db,

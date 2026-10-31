@@ -74,6 +74,27 @@ async def init_db() -> None:
             await conn.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_bill_records_processed_by_user_id ON bill_records(processed_by_user_id)")
             )
+        if "created_by_user_id" not in col_names:
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN created_by_user_id INTEGER"))
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_bill_records_created_by_user_id ON bill_records(created_by_user_id)")
+            )
+            # Backfill from the latest successful create audit for each record, else the processing user.
+            await conn.execute(
+                text(
+                    """
+                    UPDATE bill_records
+                    SET created_by_user_id = (
+                        SELECT a.user_id FROM record_audit_logs a
+                        WHERE a.record_id = bill_records.id AND a.action = 'create' AND a.status = 'success'
+                        ORDER BY a.id DESC LIMIT 1
+                    )
+                    """
+                )
+            )
+            await conn.execute(
+                text("UPDATE bill_records SET created_by_user_id = processed_by_user_id WHERE created_by_user_id IS NULL")
+            )
         if "amount_review" not in col_names:
             await conn.execute(text("ALTER TABLE bill_records ADD COLUMN amount_review TEXT"))
         if "late_charge" not in col_names:

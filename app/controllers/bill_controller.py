@@ -468,6 +468,7 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         payment_method=payload.get("payment_method"),
         payment_channel=payload.get("payment_channel"),
         processed_by_user_id=payload.get("processed_by_user_id"),
+        created_by_user_id=payload.get("created_by_user_id"),
     )
 
     db.add(record)
@@ -944,6 +945,48 @@ async def reconciliation_report_summary(
         "reference_date": reference_date.isoformat(),
         "items": items,
         "totals": totals,
+    }
+
+
+MY_TRANSACTIONS_LIMIT = 500
+
+
+async def my_transactions(db: AsyncSession, *, user_id: int, from_date: date, to_date: date) -> dict:
+    """Records the given user entered in [from_date, to_date], newest first, with totals."""
+    stmt = (
+        select(BillRecord)
+        .where(
+            BillRecord.created_by_user_id == user_id,
+            BillRecord.txn_date >= from_date,
+            BillRecord.txn_date <= to_date,
+        )
+        .order_by(BillRecord.txn_datetime.desc(), BillRecord.id.desc())
+    )
+    records = (await db.execute(stmt)).scalars().all()
+    items = [
+        {
+            "id": r.id,
+            "txn_datetime": r.txn_datetime.isoformat() if r.txn_datetime else None,
+            "account": r.account,
+            "customer_name": r.customer_name,
+            "biller": r.biller,
+            "bill_amt": r.bill_amt,
+            "total": r.total,
+            "cash": r.cash,
+            "change_amt": r.change_amt,
+            "payment_method": r.payment_method,
+            "reference": r.reference,
+        }
+        for r in records[:MY_TRANSACTIONS_LIMIT]
+    ]
+    return {
+        "range": {"from": from_date.isoformat(), "to": to_date.isoformat()},
+        "count": len(records),
+        "total": round(sum(float(r.total or 0) for r in records), 2),
+        "cash": round(sum(float(r.cash or 0) for r in records), 2),
+        "service_charges": round(sum(float(r.charge or 0) for r in records), 2),
+        "items": items,
+        "truncated": len(records) > MY_TRANSACTIONS_LIMIT,
     }
 
 
@@ -1653,6 +1696,7 @@ async def import_csv_records(
         if not payload.get("confirmation_reference"):
             payload["confirmation_reference"] = payload["reference"]
         payload["processed_by_user_id"] = processed_by_user_id
+        payload["created_by_user_id"] = processed_by_user_id
         payload["amount_review"] = json.dumps(amount_review) if amount_review else None
         payload = _normalize_text_fields(payload)
 
