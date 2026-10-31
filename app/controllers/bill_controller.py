@@ -228,6 +228,50 @@ async def get_biller_account_digits(db: AsyncSession) -> dict[str, int]:
     }
 
 
+ACCOUNT_FORMATS = ("NUMERIC", "ALPHANUMERIC")
+
+
+def normalize_account_format(value) -> str:
+    """NUMERIC (default) or ALPHANUMERIC; accepts a few friendly spellings from forms and CSV files."""
+    key = re.sub(r"[^A-Z]", "", str(value or "").upper())
+    if key in {"ALPHANUMERIC", "LETTERSANDNUMBERS", "LETTERSNUMBERS", "MIXED", "TEXT"}:
+        return "ALPHANUMERIC"
+    return "NUMERIC"
+
+
+def account_format_error(account: str, biller: str, length: Optional[int], account_format: str) -> Optional[str]:
+    """Message explaining why the account doesn't fit the biller's rule, or None if it does."""
+    value = str(account or "").strip().upper()
+    if account_format == "ALPHANUMERIC":
+        if not re.fullmatch(r"[A-Z0-9]+", value):
+            return f"Account must contain only letters and numbers (no spaces or symbols) for {biller}"
+        if length and len(value) != length:
+            return f"Account must be exactly {length} letters/numbers for {biller}"
+        return None
+    if not value.isdigit():
+        return f"Account must contain numbers only for {biller}"
+    if length and len(value) != length:
+        return f"Account must be exactly {length} digits (numbers only) for {biller}"
+    return None
+
+
+async def get_biller_account_formats(db: AsyncSession) -> dict[str, str]:
+    result = await db.execute(select(BillerRule).where(BillerRule.is_active == True))  # noqa: E712
+    return {_normalized_biller_key(item.biller): normalize_account_format(item.account_format) for item in result.scalars()}
+
+
+async def check_account_for_biller(db: AsyncSession, account: str, biller: str) -> Optional[str]:
+    """Validate an account against the biller's active rule; billers without a rule are checked elsewhere."""
+    key = _normalized_biller_key(biller)
+    rule = (
+        await db.execute(select(BillerRule).where(BillerRule.biller == key, BillerRule.is_active == True))  # noqa: E712
+    ).scalar_one_or_none()
+    if rule is None:
+        return None
+    length = int(rule.account_digits) if rule.account_digits else None
+    return account_format_error(account, key, length, normalize_account_format(rule.account_format))
+
+
 async def has_active_biller_rule(db: AsyncSession, biller: str) -> bool:
     key = _normalized_biller_key(biller)
     if not key:

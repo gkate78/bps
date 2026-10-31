@@ -17,7 +17,10 @@ class BillerRule(SQLModel, table=True):
     system_charge_bpi_cc: float = Field(default=0, nullable=False)
     system_charge_bpi: float = Field(default=0, nullable=False)
     late_charge: float = Field(default=0, nullable=False)
+    # Required account length (digits, or letters+numbers for ALPHANUMERIC billers like SSS).
     account_digits: Optional[int] = Field(default=None, nullable=True)
+    # NUMERIC: numbers only. ALPHANUMERIC: letters and numbers (e.g. SSS, PhilHealth references).
+    account_format: str = Field(default="NUMERIC", max_length=16, nullable=False)
     is_active: bool = Field(default=True, nullable=False, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

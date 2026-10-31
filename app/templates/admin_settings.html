@@ -118,7 +118,7 @@
                         <th class="amount-cell">BPI Credit Card</th>
                         <th class="amount-cell">BPI</th>
                         <th class="amount-cell">Late Charge</th>
-                        <th>Account Digits</th>
+                        <th>Account</th>
                         <th>Active</th>
                         <th>Actions</th>
                     </tr>
@@ -135,7 +135,7 @@
                         <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi_cc) }}</td>
                         <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi) }}</td>
                         <td class="amount-cell">{{ "{:,.2f}".format(rule.late_charge) }}</td>
-                        <td>{{ rule.account_digits if rule.account_digits else "-" }}</td>
+                        <td>{{ "Letters + numbers" if rule.account_format == "ALPHANUMERIC" else "Numbers only" }}{% if rule.account_digits %}, {{ rule.account_digits }}{% endif %}</td>
                         <td>{{ "YES" if rule.is_active else "NO" }}</td>
                         <td>
                             <button
@@ -151,6 +151,7 @@
                                 data-system-charge-bpi="{{ "{:.2f}".format(rule.system_charge_bpi) }}"
                                 data-late-charge="{{ "{:.2f}".format(rule.late_charge) }}"
                                 data-account-digits="{{ rule.account_digits if rule.account_digits else '' }}"
+                                data-account-format="{{ rule.account_format or 'NUMERIC' }}"
                                 data-is-active="{{ '1' if rule.is_active else '0' }}"
                             >Update</button>
                             <form method="post" action="/admin/settings/biller-rules/{{ rule.id }}/delete" class="inline-action">
@@ -198,7 +199,13 @@
         <label>Late Charge
             <input type="number" name="late_charge" id="ruleLateChargeInput" min="0" step="0.01" value="0">
         </label>
-        <label>Account Digits (Optional)
+        <label>Account Type
+            <select name="account_format" id="ruleAccountFormatInput">
+                <option value="NUMERIC">Numbers only</option>
+                <option value="ALPHANUMERIC">Letters and numbers (e.g., SSS, PhilHealth)</option>
+            </select>
+        </label>
+        <label>Account Length (Optional)
             <input type="number" name="account_digits" id="ruleAccountDigitsInput" min="1" step="1" placeholder="e.g., 13">
         </label>
         <label>
@@ -237,6 +244,7 @@
     const systemChargeBpiInput = document.getElementById("ruleSystemChargeBpiInput");
     const lateChargeInput = document.getElementById("ruleLateChargeInput");
     const accountDigitsInput = document.getElementById("ruleAccountDigitsInput");
+    const accountFormatInput = document.getElementById("ruleAccountFormatInput");
     const isActiveInput = document.getElementById("ruleIsActiveInput");
 
     if (!openBtn || !dialog || !closeDialogBtn || !form || !title || !saveBtn || !cancelBtn) {
@@ -269,6 +277,7 @@
         systemChargeBpiInput.value = "0";
         lateChargeInput.value = "0";
         accountDigitsInput.value = "";
+        accountFormatInput.value = "NUMERIC";
         isActiveInput.checked = true;
         billerInput.readOnly = false;
     }
@@ -302,6 +311,7 @@
             systemChargeBpiInput.value = data.systemChargeBpi || "0";
             lateChargeInput.value = data.lateCharge || "0";
             accountDigitsInput.value = data.accountDigits || "";
+            accountFormatInput.value = data.accountFormat || "NUMERIC";
             isActiveInput.checked = data.isActive === "1";
             dialog.showModal();
             serviceChargeInput.focus();
