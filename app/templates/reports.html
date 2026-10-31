@@ -75,8 +75,51 @@
         </table>
     </div>
 </section>
+
+<section class="panel">
+    <div class="panel-head">
+        <h2>Amounts to review</h2>
+    </div>
+    <p class="chart-note">Imported records keep the amounts in your file. These are the ones where the file's amounts don't add up or differ from your biller rules.</p>
+    <div class="controls-grid">
+        <div class="field">
+            <label for="reviewIssue">Issue</label>
+            <select id="reviewIssue">
+                <option value="">All issues</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="reviewFrom">From</label>
+            <input type="date" id="reviewFrom">
+        </div>
+        <div class="field">
+            <label for="reviewTo">To</label>
+            <input type="date" id="reviewTo">
+        </div>
+    </div>
+    <p id="reviewSummary" class="status-text review-summary" role="status"></p>
+    <div class="table-scroll reports-table-wrap">
+        <table class="report-table review-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Customer</th>
+                    <th>Account</th>
+                    <th>Biller</th>
+                    <th class="amount-cell">Bill</th>
+                    <th class="amount-cell">Late charge<br><span class="th-sub">file / rule</span></th>
+                    <th class="amount-cell">Charge<br><span class="th-sub">file / rule</span></th>
+                    <th class="amount-cell">Total<br><span class="th-sub">file / parts</span></th>
+                    <th>Issue</th>
+                </tr>
+            </thead>
+            <tbody id="reviewBody"></tbody>
+        </table>
+    </div>
+</section>
 {% endblock %}
 
 {% block scripts %}
 <script src="/static/js/reports.js"></script>
+<script src="/static/js/amount_review.js"></script>
 {% endblock %}

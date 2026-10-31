@@ -744,6 +744,20 @@ function renderImportSkipped(listEl, result) {
         li.textContent = `...and ${total - shown} more (see batch ${result.import_batch_id} in the Database view)`;
         listEl.appendChild(li);
     }
+    (result.warnings || []).forEach((warning) => {
+        const li = document.createElement("li");
+        li.textContent = warning;
+        listEl.appendChild(li);
+    });
+    if (result.flagged) {
+        const li = document.createElement("li");
+        li.append(`${result.flagged} imported row(s) kept file amounts that differ from your biller rules or don't add up. `);
+        const link = document.createElement("a");
+        link.href = "/admin/reports";
+        link.textContent = "Review them in Reports";
+        li.appendChild(link);
+        listEl.appendChild(li);
+    }
     listEl.hidden = listEl.children.length === 0;
 }
 
