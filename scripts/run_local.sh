@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Run BPS for everyday local use, with data kept outside the project folder.
-#   ./scripts/run_local.sh            start the app on http://127.0.0.1:8000
+#   ./scripts/run_local.sh            start the app on http://127.0.0.1:8000 (this computer only)
+#   ./scripts/run_local.sh lan        also accept other computers on the shop network
 #   ./scripts/run_local.sh backup     back up the database only
+# "lan" needs the one-time Windows setup in scripts/windows-network-setup.ps1.
 # Data folder defaults to ~/bps-data (override with BPS_DATA_DIR).
 set -euo pipefail
 
@@ -40,6 +42,25 @@ if [[ "${1:-}" == "backup" ]]; then
     exit 0
 fi
 
+HOST=127.0.0.1
+if [[ "${1:-}" == "lan" ]]; then
+    HOST=0.0.0.0
+fi
+
 echo "Data folder: $DATA_DIR"
-echo "Open: http://127.0.0.1:$PORT/auth/signin"
-exec "$PYTHON" -m uvicorn main:app --host 127.0.0.1 --port "$PORT"
+echo "Open on this computer: http://127.0.0.1:$PORT/auth/signin"
+if [[ "$HOST" == "0.0.0.0" ]]; then
+    if command -v wslinfo >/dev/null && [[ "$(wslinfo --networking-mode 2>/dev/null)" != "mirrored" ]]; then
+        # In WSL's default NAT mode the addresses here are internal and unreachable from other devices.
+        echo "Note: WSL is not in mirrored networking mode, so other devices can't connect yet."
+        echo "      Run scripts/windows-network-setup.ps1 as Administrator once, then 'wsl --shutdown'."
+    else
+        for ip in $(hostname -I 2>/dev/null); do
+            case "$ip" in
+                100.*) echo "Open from your Tailscale devices: http://$ip:$PORT/auth/signin" ;;
+                10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[0-1].*) echo "Open from shop computers:        http://$ip:$PORT/auth/signin" ;;
+            esac
+        done
+    fi
+fi
+exec "$PYTHON" -m uvicorn main:app --host "$HOST" --port "$PORT"
