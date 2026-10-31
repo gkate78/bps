@@ -74,6 +74,8 @@ async def init_db() -> None:
             await conn.execute(
                 text("CREATE INDEX IF NOT EXISTS ix_bill_records_processed_by_user_id ON bill_records(processed_by_user_id)")
             )
+        if "amount_review" not in col_names:
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN amount_review TEXT"))
         if "late_charge" not in col_names:
             await conn.execute(text("ALTER TABLE bill_records ADD COLUMN late_charge FLOAT NOT NULL DEFAULT 0"))
             if "amt2" in col_names:

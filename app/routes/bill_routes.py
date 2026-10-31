@@ -40,6 +40,9 @@ from app.controllers.bill_controller import (
     has_active_biller_rule,
     import_csv_records,
     insights_summary,
+    amount_review_report,
+    normalize_cp_number,
+    ImportFormatError,
     NoActiveBillerRulesError,
     batch_mark_cash_and_export,
     reconciliation_report_summary,
@@ -560,6 +563,17 @@ async def get_insights(
     if start > end:
         raise HTTPException(status_code=400, detail="From date must be on or before To date")
     return await insights_summary(db, from_date=start, to_date=end, biller=biller or None)
+
+
+@router.get("/api/admin/records/amount-review")
+async def get_amount_review(
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    issue: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_owner_or_admin),
+):
+    return await amount_review_report(db, from_date=from_date, to_date=to_date, issue=issue or None)
 
 
 @router.get("/api/admin/records/kpis")
@@ -1311,6 +1325,7 @@ async def create_record_endpoint(
 
     if payload.bill_amt <= 0:
         raise HTTPException(status_code=400, detail="Bill amount is required")
+    payload.cp_number = normalize_cp_number(payload.cp_number)
     if not _is_valid_cp_number(payload.cp_number):
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
 
@@ -1326,6 +1341,7 @@ async def create_record_endpoint(
         biller=record.biller,
         customer_name=record.customer_name,
         phone=record.cp_number or "",
+        txn_date=record.txn_date,
     )
     await _log_record_audit(
         db,
@@ -1403,6 +1419,8 @@ async def update_record_endpoint(
 
     if "due_date" in updates and updates["due_date"] is None:
         raise HTTPException(status_code=400, detail="Due date is required")
+    if "cp_number" in updates:
+        updates["cp_number"] = normalize_cp_number(updates.get("cp_number"))
     if "cp_number" in updates and not _is_valid_cp_number(updates.get("cp_number")):
         raise HTTPException(status_code=400, detail="CP number must be exactly 11 digits")
     if "payment_method" in updates:
@@ -1421,6 +1439,7 @@ async def update_record_endpoint(
         biller=record.biller,
         customer_name=record.customer_name,
         phone=record.cp_number or "",
+        txn_date=record.txn_date,
     )
     await _log_record_audit(
         db,
@@ -1488,6 +1507,8 @@ async def import_csv_endpoint(
                 processed_by_user_id=current_user.id,
                 source_filename=file.filename,
             )
+        except ImportFormatError as exc:
+            raise HTTPException(status_code=400, detail=f"{exc} Fix the header row and import again.")
         except NoActiveBillerRulesError:
             raise HTTPException(
                 status_code=400,

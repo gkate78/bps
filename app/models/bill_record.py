@@ -32,6 +32,8 @@ class BillRecord(SQLModel, table=True):
     payment_method: Optional[str] = Field(default=None, max_length=32)
     payment_channel: Optional[str] = Field(default=None, max_length=32, index=True)
     processed_by_user_id: Optional[int] = Field(default=None, index=True)
+    # JSON note set on import when the file's amounts differ from the biller rules or don't add up.
+    amount_review: Optional[str] = Field(default=None)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

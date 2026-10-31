@@ -1180,3 +1180,29 @@ table tbody td {
 .insights-table td:last-child {
     white-space: nowrap;
 }
+
+/* Amounts to review */
+.review-summary {
+    margin: 0.6rem 0;
+    font-weight: 400;
+}
+
+.th-sub {
+    font-weight: 400;
+    font-size: 0.78rem;
+    color: var(--muted);
+}
+
+.review-table td.is-diff {
+    font-weight: 700;
+}
+
+.review-issue {
+    display: block;
+    white-space: nowrap;
+}
+
+.review-table td:first-child,
+.review-table td.amount-cell {
+    white-space: nowrap;
+}

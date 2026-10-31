@@ -3,6 +3,7 @@ import io
 import json
 import math
 import os
+import re
 import secrets
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -54,21 +55,50 @@ def _parse_datetime(value: str | None) -> Optional[datetime]:
     return None
 
 
+# Spreadsheet error values and "not available" markers that mean "no value".
+SPREADSHEET_PLACEHOLDERS = {
+    "#N/A", "#NAME?", "#REF!", "#VALUE!", "#DIV/0!", "#NUM!", "#NULL!", "#SPILL!", "#CALC!", "NA", "N/A",
+}
+
+
+def _is_placeholder(value) -> bool:
+    return str(value or "").strip().upper() in SPREADSHEET_PLACEHOLDERS
+
+
+def normalize_cp_number(value) -> str:
+    """Digits-only mobile number; restores a leading 0 dropped by spreadsheets and blanks placeholders like NA."""
+    raw = str(value or "").strip()
+    if _is_placeholder(raw) or re.fullmatch(r"\d{1,2}/\d{1,2}/\d{2,4}", raw):
+        return ""
+    # Spreadsheets sometimes format a phone as a number, e.g. "9,477,437,685.00".
+    raw = re.sub(r"\.0+$", "", raw.replace(",", ""))
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10 and digits.startswith("9"):
+        return "0" + digits
+    if len(digits) == 12 and digits.startswith("639"):
+        return "0" + digits[2:]
+    return digits
+
+
+def _header_key(name) -> str:
+    return " ".join(str(name or "").split()).lower()
+
+
 def _csv_cell(row: dict, *names: str) -> str:
-    """First non-empty value for any header alias (exact key, then case-insensitive)."""
+    """First real value for any header alias (exact key, then case- and spacing-insensitive)."""
     for name in names:
         if not name:
             continue
         if name in row:
             v = row.get(name)
-            if v is not None and str(v).strip():
+            if v is not None and str(v).strip() and not _is_placeholder(v):
                 return str(v).strip()
-    lowered = {(k or "").strip().lower(): v for k, v in row.items()}
+    lowered = {_header_key(k): v for k, v in row.items()}
     for name in names:
-        lk = (name or "").strip().lower()
+        lk = _header_key(name)
         if lk in lowered:
             v = lowered[lk]
-            if v is not None and str(v).strip():
+            if v is not None and str(v).strip() and not _is_placeholder(v):
                 return str(v).strip()
     return ""
 
@@ -109,7 +139,7 @@ def _normalize_text_fields(payload: dict) -> dict:
         value = payload.get(key)
         if value is None:
             continue
-        payload[key] = str(value).strip().upper()
+        payload[key] = normalize_cp_number(value) if key == "cp_number" else str(value).strip().upper()
     return payload
 
 
@@ -291,6 +321,63 @@ def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: d
     return payload
 
 
+AMOUNT_REVIEW_ISSUES = {
+    "TOTAL_MISMATCH": "Total doesn't equal bill + late charge + charge",
+    "CHARGE_DIFFERS_FROM_RULE": "Service charge differs from biller rule",
+    "LATE_CHARGE_DIFFERS_FROM_RULE": "Late charge differs from biller rule",
+}
+
+
+def _apply_file_amounts(
+    payload: dict,
+    file_amounts: dict[str, Optional[float]],
+    charge_map: dict[str, float],
+    late_map: dict[str, float],
+) -> tuple[dict, Optional[dict]]:
+    """Keep the amounts recorded in an import file (what was actually collected), filling blanks from the
+    biller rules. Returns the payload and an amount review note when the file disagrees with the rules
+    or its amounts don't add up."""
+    expected = _apply_computations(dict(payload), charge_map, late_map)
+    bill_amt = expected["bill_amt"]
+    late_charge = file_amounts["late_charge"] if file_amounts.get("late_charge") is not None else expected["late_charge"]
+    charge = file_amounts["charge"] if file_amounts.get("charge") is not None else expected["charge"]
+    parts_total = round(bill_amt + late_charge + charge, 2)
+    total = file_amounts["total"] if file_amounts.get("total") is not None else parts_total
+    cash = round(float(payload.get("cash", 0) or 0), 2)
+    change_amt = file_amounts["change_amt"] if file_amounts.get("change_amt") is not None else round(cash - total, 2)
+
+    issues = []
+    if abs(parts_total - total) >= 0.01:
+        issues.append("TOTAL_MISMATCH")
+    if file_amounts.get("charge") is not None and abs(charge - expected["charge"]) >= 0.01:
+        issues.append("CHARGE_DIFFERS_FROM_RULE")
+    if file_amounts.get("late_charge") is not None and abs(late_charge - expected["late_charge"]) >= 0.01:
+        issues.append("LATE_CHARGE_DIFFERS_FROM_RULE")
+
+    payload.update(
+        {
+            "bill_amt": bill_amt,
+            "late_charge": round(late_charge, 2),
+            "amt2": round(late_charge, 2),
+            "charge": round(charge, 2),
+            "total": round(total, 2),
+            "cash": cash,
+            "change_amt": round(change_amt, 2),
+        }
+    )
+    review = None
+    if issues:
+        review = {
+            "issues": issues,
+            "expected": {
+                "late_charge": expected["late_charge"],
+                "charge": expected["charge"],
+                "total_from_parts": parts_total,
+            },
+        }
+    return payload, review
+
+
 async def _is_duplicate_record(
     db: AsyncSession,
     *,
@@ -397,6 +484,20 @@ async def get_record(db: AsyncSession, record_id: int) -> BillRecord:
     return record
 
 
+AMOUNT_INPUT_FIELDS = ("biller", "bill_amt", "late_charge", "charge", "total", "cash", "change_amt", "due_date", "txn_date")
+
+
+def _amount_inputs_changed(record: BillRecord, updates: dict) -> bool:
+    for key in AMOUNT_INPUT_FIELDS:
+        new, old = updates.get(key), getattr(record, key)
+        if isinstance(old, (int, float)) and not isinstance(old, bool):
+            if abs(float(new or 0) - float(old or 0)) >= 0.005:
+                return True
+        elif str(new or "").strip().upper() != str(old or "").strip().upper():
+            return True
+    return False
+
+
 async def update_record(db: AsyncSession, record_id: int, updates: dict) -> BillRecord:
     record = await get_record(db, record_id)
 
@@ -456,13 +557,15 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
             "processed_by_user_id": updates.get("processed_by_user_id", record.processed_by_user_id),
         }
     )
-    updates = _apply_computations(
-        {
-            **updates
-        },
-        charge_map,
-        late_map,
-    )
+    if _amount_inputs_changed(record, updates):
+        updates = _apply_computations(updates, charge_map, late_map)
+        # Amounts now follow the biller rules, so any import review note no longer applies.
+        updates["amount_review"] = None
+    else:
+        # Keep stored amounts (e.g. amounts kept from an import file) when only other fields change.
+        for key in ("late_charge", "charge", "total", "change_amt"):
+            updates[key] = getattr(record, key)
+        updates["amt2"] = record.late_charge
     updates = _sanitize_payment_fields(updates)
 
     for key, value in updates.items():
@@ -548,17 +651,36 @@ async def upsert_customer_from_record(
     biller: str,
     customer_name: str,
     phone: str,
+    txn_date: Optional[date] = None,
 ) -> Customer:
-    """Insert or update customer_accounts by account (unique). New accounts saved so next entry can auto-fill."""
+    """Insert or update customer_accounts by account (unique). New accounts saved so next entry can auto-fill.
+
+    Blank or placeholder values never replace saved details, and a payment older than the account's latest
+    record only fills in details that are missing (so importing old files can't revert newer details).
+    """
     account = account.strip()
     biller = (biller or "").strip()
     customer_name = (customer_name or "").strip()
-    phone = (phone or "").strip()[:11]
+    if _is_placeholder(customer_name):
+        customer_name = ""
+    phone = normalize_cp_number(phone)[:11]
     existing = await get_customer_by_account(db, account)
     if existing:
-        existing.biller = biller or existing.biller
-        existing.customer_name = customer_name or existing.customer_name
-        existing.phone = phone or existing.phone
+        is_older = False
+        if txn_date is not None:
+            newer = await db.execute(
+                select(BillRecord.id).where(BillRecord.account == account, BillRecord.txn_date > txn_date).limit(1)
+            )
+            is_older = newer.scalar_one_or_none() is not None
+        existing_phone = "" if _is_placeholder(existing.phone) else (existing.phone or "")
+        if is_older:
+            existing.biller = existing.biller or biller
+            existing.customer_name = existing.customer_name or customer_name
+            existing.phone = existing_phone or phone
+        else:
+            existing.biller = biller or existing.biller
+            existing.customer_name = customer_name or existing.customer_name
+            existing.phone = phone or existing_phone
         existing.updated_at = datetime.utcnow()
         db.add(existing)
         await db.commit()
@@ -822,6 +944,76 @@ async def reconciliation_report_summary(
         "reference_date": reference_date.isoformat(),
         "items": items,
         "totals": totals,
+    }
+
+
+async def amount_review_report(
+    db: AsyncSession,
+    *,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    issue: Optional[str] = None,
+) -> dict:
+    """Imported records whose file amounts differ from the biller rules or don't add up."""
+    stmt = select(BillRecord).where(BillRecord.amount_review.is_not(None))
+    if from_date:
+        stmt = stmt.where(BillRecord.txn_date >= from_date)
+    if to_date:
+        stmt = stmt.where(BillRecord.txn_date <= to_date)
+    records = (await db.execute(stmt.order_by(BillRecord.txn_date.desc(), BillRecord.id.desc()))).scalars().all()
+
+    counts = {key: 0 for key in AMOUNT_REVIEW_ISSUES}
+    items = []
+    charge_diff_total = 0.0
+    late_diff_total = 0.0
+    for record in records:
+        try:
+            review = json.loads(record.amount_review or "{}")
+        except ValueError:
+            continue
+        issues = [i for i in review.get("issues", []) if i in AMOUNT_REVIEW_ISSUES]
+        if not issues:
+            continue
+        for i in issues:
+            counts[i] += 1
+        if issue and issue not in issues:
+            continue
+        expected = review.get("expected", {})
+        charge_diff = round(float(record.charge or 0) - float(expected.get("charge", record.charge) or 0), 2)
+        late_diff = round(float(record.late_charge or 0) - float(expected.get("late_charge", record.late_charge) or 0), 2)
+        total_diff = round(float(record.total or 0) - float(expected.get("total_from_parts", record.total) or 0), 2)
+        if "CHARGE_DIFFERS_FROM_RULE" in issues:
+            charge_diff_total += charge_diff
+        if "LATE_CHARGE_DIFFERS_FROM_RULE" in issues:
+            late_diff_total += late_diff
+        items.append(
+            {
+                "id": record.id,
+                "txn_date": record.txn_date.isoformat(),
+                "account": record.account,
+                "customer_name": record.customer_name,
+                "biller": record.biller,
+                "bill_amt": record.bill_amt,
+                "late_charge": record.late_charge,
+                "charge": record.charge,
+                "total": record.total,
+                "expected_late_charge": expected.get("late_charge"),
+                "expected_charge": expected.get("charge"),
+                "total_from_parts": expected.get("total_from_parts"),
+                "charge_diff": charge_diff,
+                "late_diff": late_diff,
+                "total_diff": total_diff,
+                "issues": issues,
+            }
+        )
+
+    return {
+        "issue_labels": AMOUNT_REVIEW_ISSUES,
+        "counts": counts,
+        "flagged_records": len(records),
+        "items": items,
+        "charge_diff_total": round(charge_diff_total, 2),
+        "late_diff_total": round(late_diff_total, 2),
     }
 
 
@@ -1287,6 +1479,36 @@ class NoActiveBillerRulesError(Exception):
     """Raised when a CSV import is attempted before any active biller rules exist."""
 
 
+class ImportFormatError(Exception):
+    """Raised when an import file's header row is missing required columns."""
+
+
+IMPORT_REQUIRED_COLUMNS = {
+    "DATE (or DATE/TIME)": ("DATE", "DATE/TIME", "txn_date", "txn_datetime"),
+    "ACCOUNT": ("ACCOUNT",),
+    "BILLER": ("BILLER",),
+    "NAME": ("NAME", "customer_name"),
+}
+
+
+def _check_import_headers(fieldnames) -> list[str]:
+    """Raise ImportFormatError when required columns are missing; return warnings about unusable headers."""
+    headers = list(fieldnames or [])
+    keys = {_header_key(h) for h in headers}
+    unnamed = [str(i) for i, h in enumerate(headers, start=1) if not _header_key(h) or _is_placeholder(h)]
+    missing = [
+        label for label, aliases in IMPORT_REQUIRED_COLUMNS.items() if not any(_header_key(a) in keys for a in aliases)
+    ]
+    if missing:
+        message = f"Missing columns: {', '.join(missing)}."
+        if unnamed:
+            message += f" Column(s) {', '.join(unnamed)} have no proper header name."
+        raise ImportFormatError(message)
+    if unnamed:
+        return [f"Column(s) {', '.join(unnamed)} have no proper header name and were ignored."]
+    return []
+
+
 async def import_csv_records(
     db: AsyncSession,
     file_bytes: bytes,
@@ -1296,6 +1518,7 @@ async def import_csv_records(
 ) -> dict:
     text = file_bytes.decode("utf-8-sig", errors="ignore")
     reader = csv.DictReader(io.StringIO(text))
+    warnings = _check_import_headers(reader.fieldnames)
     charge_map, late_map = await _get_biller_rule_maps(db)
     if not charge_map:
         raise NoActiveBillerRulesError()
@@ -1305,7 +1528,9 @@ async def import_csv_records(
     created = 0
     skipped = 0
     duplicates = 0
+    flagged = 0
     skipped_rows: list[dict] = []
+    flagged_rows: list[dict] = []
 
     for row_number, row in enumerate(reader, start=2):
         raw_row = {str(k or ""): str(v or "") for k, v in row.items()}
@@ -1371,11 +1596,7 @@ async def import_csv_records(
             "customer_name": _csv_cell(row, "NAME", "customer_name", "CUSTOMER_NAME"),
             "cp_number": _csv_cell(row, "NUMBER", "CP NUM", "cp_number", "CP_NUMBER"),
             "bill_amt": _parse_float(_csv_cell(row, "AMT", "BILL AMT", "bill_amt", "BILL_AMT")),
-            "late_charge": _parse_float(_csv_cell(row, "LATE_CHARGE", "LATE CHARGE", "AMT2", "amt2")),
-            "charge": _parse_float(_csv_cell(row, "CHARGE", "SERVICE CHARGE", "charge")),
-            "total": _parse_float(_csv_cell(row, "TOTAL", "total")),
             "cash": _parse_float(_csv_cell(row, "CASH", "cash")),
-            "change_amt": _parse_float(_csv_cell(row, "CHANGE", "change_amt", "CHANGE_AMT")),
             "due_date": _parse_date(_csv_cell(row, "DUE DATE", "due_date", "DUE_DATE")),
             "notes": notes_raw or None,
             "reference": ref_raw or None,
@@ -1396,7 +1617,17 @@ async def import_csv_records(
             skipped += 1
             continue
 
-        payload = _apply_computations(payload, charge_map, late_map)
+        # Keep the file's own amounts (what was actually collected); blanks fall back to the biller rules.
+        file_amounts = {}
+        for key, aliases in (
+            ("late_charge", ("LATE_CHARGE", "LATE CHARGE", "AMT2")),
+            ("charge", ("CHARGE", "SERVICE CHARGE")),
+            ("total", ("TOTAL",)),
+            ("change_amt", ("CHANGE", "CHANGE_AMT")),
+        ):
+            cell = _csv_cell(row, *aliases)
+            file_amounts[key] = _parse_float(cell) if cell else None
+        payload, amount_review = _apply_file_amounts(payload, file_amounts, charge_map, late_map)
 
         amount = _normalized_amount(payload)
         is_duplicate = await _is_duplicate_record(
@@ -1422,11 +1653,23 @@ async def import_csv_records(
         if not payload.get("confirmation_reference"):
             payload["confirmation_reference"] = payload["reference"]
         payload["processed_by_user_id"] = processed_by_user_id
+        payload["amount_review"] = json.dumps(amount_review) if amount_review else None
         payload = _normalize_text_fields(payload)
 
         db.add(BillRecord(**payload))
         _log_raw("CREATED", payload.get("reference"))
         created += 1
+        if amount_review:
+            flagged += 1
+            if len(flagged_rows) < IMPORT_SKIP_DETAIL_LIMIT:
+                flagged_rows.append(
+                    {
+                        "row": row_number,
+                        "biller": payload["biller"],
+                        "account": payload["account"],
+                        "issues": amount_review["issues"],
+                    }
+                )
         # Keep customer_accounts in sync so lookup can prefill for this account
         await upsert_customer_from_record(
             db,
@@ -1434,6 +1677,7 @@ async def import_csv_records(
             biller=payload["biller"],
             customer_name=payload["customer_name"],
             phone=payload.get("cp_number", ""),
+            txn_date=payload["txn_date"],
         )
 
     await db.commit()
@@ -1444,4 +1688,7 @@ async def import_csv_records(
         "import_batch_id": import_batch_id,
         "raw_logged": raw_logged,
         "skipped_rows": skipped_rows,
+        "flagged": flagged,
+        "flagged_rows": flagged_rows,
+        "warnings": warnings,
     }
