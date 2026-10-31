@@ -342,3 +342,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: `processed_by_user_id` is overwritten when an admin edits or processes a record, which would make payments disappear from the encoder's list.
 - Alternatives considered: query the audit log at read time; reuse `processed_by_user_id`.
 - Follow-up: Could feed per-encoder reconciliation totals from the same field.
+
+- Date: 2026-10-31
+- ID: DEC-042
+- Related task: BPS-225
+- Decision: Serve the shop from one computer: `run_local.sh lan` binds 0.0.0.0 (default stays 127.0.0.1); Windows setup uses WSL mirrored networking and allows TCP 8000 only on Private networks from private LAN ranges. Remote access from outside the shop is on hold: keep the local app plus the existing online deployment.
+- Why: Encoders and the admin need separate computers in the shop; a 4-digit PIN login over plain HTTP must not face the public internet.
+- Alternatives considered: Tailscale (simplest, but the free Personal plan is non-commercial; Standard is $8/user/month); Cloudflare Tunnel + Access (free plan up to 50 users, needs a domain, email one-time code gate); hosting on GCP Compute Engine (loses offline use, exposes the app publicly, adds server upkeep); router port forwarding; WSL NAT with netsh portproxy.
+- Follow-up: If remote monitoring is needed, prefer Cloudflare Tunnel + Access or Tailscale (`windows-network-setup.ps1 -AllowTailscale`); consider auto-starting BPS on boot.

@@ -52,6 +52,17 @@ Keep real data separate from development so code changes and test imports never 
 - To restore, stop the app and copy a file from `~/bps-data/backups/` over `~/bps-data/bills_admin.db`.
 - New model columns are not added to existing databases automatically: add an `ALTER TABLE` step in `init_db()` in `app/database.py` for each one.
 
+### Using BPS from other shop computers
+One computer runs BPS and keeps the database; other computers on the shop network use a browser.
+
+One-time setup on the computer that runs BPS:
+1. In PowerShell **as Administrator**, from the project folder (e.g. `\\wsl.localhost\Ubuntu\home\<you>\projects\bps`):
+   `powershell -ExecutionPolicy Bypass -File scripts\windows-network-setup.ps1`
+   It switches WSL to mirrored networking, asks before marking the current network Private (answer yes only on the shop's own network), and opens port 8000 on Private networks to local-network addresses only. Undo the firewall rules with `-Remove`.
+2. Run `wsl --shutdown`, reopen WSL, then start BPS with `./scripts/run_local.sh lan`. It prints the address for shop computers, e.g. `http://192.168.1.20:8000`.
+
+Notes: traffic on the shop network is plain HTTP, so only use `lan` mode on a network you control. The BPS computer must stay on and awake while others use it. `./scripts/run_local.sh` without `lan` stays this-computer-only. Remote access from outside the shop is not set up (see DEC-042); the script's `-AllowTailscale` switch exists for if Tailscale is adopted later.
+
 ### Maintenance scripts
 Run from the project root with `venv/bin/python`. Data-changing scripts are dry runs unless `--apply` is passed; back up first with `./scripts/run_local.sh backup`.
 

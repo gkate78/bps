@@ -9,6 +9,7 @@
 
 ## LATER
 - [ ] BPS-223 | Theme: Operations insight | Outcome: Separate read-only analytics app for 2020–2025 yearly CSV history (parked) | Done when: yearly files load with data-quality reporting and year-over-year views, real data stays local, and a public demo runs on synthetic data
+- [ ] BPS-226 | Theme: Operations insight | Outcome: Admin can monitor the shop's BPS remotely | Done when: secure remote access (Cloudflare Tunnel + Access or Tailscale) is chosen and set up without exposing the PIN login publicly (on hold, DEC-042)
 - [ ] BPS-212 | Theme: Schema cleanup | Outcome: Remove legacy columns after stabilization (`amt2`, deprecated routing fields) | Done when: controlled SQLite table-rebuild migration is executed in all environments with rollback notes
 
 ## Done
@@ -35,3 +36,4 @@
 - [x] BPS-221 | Shipped on: 2026-10-31 | Notes: Offline mode: jQuery, DataTables, and fonts vendored under `app/static/vendor/` (DEC-038).
 - [x] BPS-222 | Shipped on: 2026-10-31 | Notes: Larger, bolder 58mm receipt with values-only header fields and right-aligned amounts; entry form asks for "Amount Received" before payment details (DEC-039).
 - [x] BPS-224 | Shipped on: 2026-10-31 | Notes: My Transactions on the entry form: encoders see their own payments with date range, totals, and receipt reprint; new `created_by_user_id` backfilled from create audit logs (DEC-041).
+- [x] BPS-225 | Shipped on: 2026-10-31 | Notes: Shop-network use: `run_local.sh lan` for other shop computers, plus `scripts/windows-network-setup.ps1` (WSL mirrored networking, Private-only firewall rules); remote access on hold (DEC-042).
