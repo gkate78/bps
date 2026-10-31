@@ -296,7 +296,7 @@ function validatePayload(payload) {
         return false;
     }
     if (payload.cash < payload.total) {
-        alert("CASH MUST BE GREATER THAN OR EQUAL TO TOTAL");
+        alert("AMOUNT RECEIVED MUST BE GREATER THAN OR EQUAL TO TOTAL");
         return false;
     }
     return true;
@@ -314,7 +314,7 @@ function confirmDetails(payload) {
         ["LATE CHARGE", formatMoney(payload.late_charge)],
         ["SERVICE CHARGE", formatMoney(payload.charge)],
         ["TOTAL", formatMoney(payload.total)],
-        ["CASH", formatMoney(payload.cash)],
+        ["AMOUNT RECEIVED", formatMoney(payload.cash)],
         ["CHANGE", formatMoney(payload.change_amt)],
     ];
 
