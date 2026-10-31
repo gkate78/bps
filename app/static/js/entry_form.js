@@ -386,6 +386,7 @@ async function saveEntry(event) {
     lastSavedRecordId = saved.id;
     dom.printReceiptBtn.disabled = false;
     dom.saveStatus.textContent = "SAVED SUCCESSFULLY";
+    loadMyTransactions();
 }
 
 function printReceipt() {
@@ -478,3 +479,119 @@ if (dom.currentDateTime) {
 }
 clearForm();
 fetchKnownAccounts();
+
+// --- My Transactions: payments the signed-in user entered ---------------------
+
+const myTx = {
+    panel: document.getElementById("myTxPanel"),
+    toggleBtn: document.getElementById("myTxToggleBtn"),
+    from: document.getElementById("myTxFrom"),
+    to: document.getElementById("myTxTo"),
+    todayBtn: document.getElementById("myTxTodayBtn"),
+    status: document.getElementById("myTxStatus"),
+    body: document.getElementById("myTxBody"),
+    count: document.getElementById("myTxCount"),
+    total: document.getElementById("myTxTotal"),
+};
+
+function myTxToday() {
+    return toLocalISOString(new Date()).slice(0, 10);
+}
+
+function myTxDateTime(value) {
+    if (!value) return "-";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    return d.toLocaleString("en-PH", { month: "2-digit", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function myTxCell(text, className) {
+    const td = document.createElement("td");
+    td.textContent = text ?? "";
+    if (className) td.className = className;
+    return td;
+}
+
+function renderMyTransactions(data) {
+    myTx.count.textContent = String(data.count);
+    myTx.total.textContent = formatMoney(data.total);
+    const range = data.range.from === data.range.to ? data.range.from : `${data.range.from} to ${data.range.to}`;
+    myTx.status.textContent = data.truncated
+        ? `Showing the latest ${data.items.length} of ${data.count} payments for ${range}.`
+        : `Payments you entered for ${range}.`;
+
+    if (!data.items.length) {
+        const tr = document.createElement("tr");
+        const td = myTxCell("No payments entered for these dates.");
+        td.colSpan = 10;
+        tr.appendChild(td);
+        myTx.body.replaceChildren(tr);
+        return;
+    }
+    myTx.body.replaceChildren(
+        ...data.items.map((item) => {
+            const tr = document.createElement("tr");
+            const actions = document.createElement("td");
+            const reprint = document.createElement("button");
+            reprint.type = "button";
+            reprint.className = "btn btn-secondary btn-small";
+            reprint.textContent = "Reprint";
+            reprint.addEventListener("click", () => window.open(`/api/records/${item.id}/receipt?copies=1`, "_blank"));
+            actions.appendChild(reprint);
+            tr.append(
+                myTxCell(myTxDateTime(item.txn_datetime)),
+                myTxCell(item.customer_name),
+                myTxCell(item.account),
+                myTxCell(item.biller),
+                myTxCell(formatMoney(item.total), "amount-cell"),
+                myTxCell(formatMoney(item.cash), "amount-cell"),
+                myTxCell(formatMoney(item.change_amt), "amount-cell"),
+                myTxCell(item.payment_method || "-"),
+                myTxCell(item.reference || "-"),
+                actions,
+            );
+            return tr;
+        }),
+    );
+}
+
+async function loadMyTransactions() {
+    if (!myTx.body || myTx.panel.hidden) return;
+    const params = new URLSearchParams();
+    if (myTx.from.value) params.set("from_date", myTx.from.value);
+    if (myTx.to.value) params.set("to_date", myTx.to.value);
+    myTx.status.textContent = "Loading...";
+    try {
+        const response = await fetch(`/api/records/mine?${params}`);
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            myTx.status.textContent = err.detail || "Could not load your transactions";
+            return;
+        }
+        renderMyTransactions(await response.json());
+    } catch (err) {
+        myTx.status.textContent = "Could not load your transactions";
+    }
+}
+
+if (myTx.body) {
+    myTx.from.value = myTxToday();
+    myTx.to.value = myTxToday();
+    [myTx.from, myTx.to].forEach((el) => el.addEventListener("change", loadMyTransactions));
+    myTx.todayBtn.addEventListener("click", () => {
+        myTx.from.value = myTxToday();
+        myTx.to.value = myTxToday();
+        loadMyTransactions();
+    });
+    // Hidden until asked for, so the entry form stays uncluttered.
+    myTx.toggleBtn.addEventListener("click", () => {
+        const opening = myTx.panel.hidden;
+        myTx.panel.hidden = !opening;
+        myTx.toggleBtn.setAttribute("aria-expanded", String(opening));
+        myTx.toggleBtn.textContent = opening ? "Hide My Transactions" : "My Transactions";
+        if (opening) {
+            loadMyTransactions();
+            myTx.panel.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+    });
+}

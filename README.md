@@ -10,6 +10,7 @@ BPS helps teams manage bill records end-to-end: encode customer bills, process s
 
 ## Core Capabilities
 - **Auth and roles**: phone + 4-digit PIN, OTP signup verification, PIN reset, lockout policy, auth logs, role-based routing (`admin`, `encoder`, `customer`)
+- **My Transactions** (button next to Save/Print/Clear on the entry form): each encoder sees the payments they entered (today by default, with a date range), their payment count and total collected, and can reprint receipts; based on `created_by_user_id`, which later admin edits don't change
 - **Record operations**: create/edit/delete bill records, searchable/paginated table, due-status/date filters, duplicate prevention (`txn_date + account + biller + amount`)
 - **Payment tracking**: separate `confirmation_reference` and `payment_reference`, explicit `payment_channel`, and operator tracking through `processed_by_user_id`
 - **CSV import (curated + raw)**: import into `bill_records` with operational defaults and preserve immutable source rows in `bill_record_import_raw` with `import_batch_id`

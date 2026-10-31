@@ -334,3 +334,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The public repository exposed user PIN hashes and lightly masked customer records; older years used different rates and would overwrite current customer details.
 - Alternatives considered: making the repository private; leaving history as is.
 - Follow-up: Ask GitHub Support to purge cached views and `refs/pull/1/head`; sample data must use invented names and accounts.
+
+- Date: 2026-10-31
+- ID: DEC-041
+- Related task: BPS-224
+- Decision: Track who entered each record in a new `created_by_user_id` column (set on form entry and import, never changed by edits) and use it for the encoder's My Transactions list via `/api/records/mine`; backfill existing rows from the latest successful `create` audit log entry, else `processed_by_user_id`.
+- Why: `processed_by_user_id` is overwritten when an admin edits or processes a record, which would make payments disappear from the encoder's list.
+- Alternatives considered: query the audit log at read time; reuse `processed_by_user_id`.
+- Follow-up: Could feed per-encoder reconciliation totals from the same field.

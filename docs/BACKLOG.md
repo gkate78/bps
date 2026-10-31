@@ -34,3 +34,4 @@
 - [x] BPS-220 | Shipped on: 2026-10-31 | Notes: Phone normalization on import/entry/edit and customer-detail protection against blank or older data (DEC-037).
 - [x] BPS-221 | Shipped on: 2026-10-31 | Notes: Offline mode: jQuery, DataTables, and fonts vendored under `app/static/vendor/` (DEC-038).
 - [x] BPS-222 | Shipped on: 2026-10-31 | Notes: Larger, bolder 58mm receipt with values-only header fields and right-aligned amounts; entry form asks for "Amount Received" before payment details (DEC-039).
+- [x] BPS-224 | Shipped on: 2026-10-31 | Notes: My Transactions on the entry form: encoders see their own payments with date range, totals, and receipt reprint; new `created_by_user_id` backfilled from create audit logs (DEC-041).

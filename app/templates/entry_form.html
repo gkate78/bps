@@ -67,9 +67,45 @@
             <button type="submit" class="btn btn-primary">Save Entry</button>
             <button type="button" class="btn btn-secondary" id="printReceiptBtn" disabled>Print Receipt</button>
             <button type="button" class="btn btn-secondary" id="clearEntryBtn">Clear</button>
+            <button type="button" class="btn btn-secondary" id="myTxToggleBtn" aria-expanded="false" aria-controls="myTxPanel">My Transactions</button>
             <span id="saveStatus" class="status-text"></span>
         </div>
     </form>
+</section>
+
+<section class="panel" id="myTxPanel" hidden>
+    <div class="panel-head mytx-head">
+        <h2>My Transactions</h2>
+        <div class="mytx-filters">
+            <label>From<input type="date" id="myTxFrom"></label>
+            <label>To<input type="date" id="myTxTo"></label>
+            <button type="button" class="btn btn-secondary" id="myTxTodayBtn">Today</button>
+        </div>
+    </div>
+    <div class="kpi-strip mytx-kpis">
+        <article class="kpi-card"><p class="kpi-label">Payments</p><p class="kpi-value" id="myTxCount">0</p></article>
+        <article class="kpi-card"><p class="kpi-label">Total collected</p><p class="kpi-value" id="myTxTotal">0.00</p></article>
+    </div>
+    <p id="myTxStatus" class="status-text mytx-status" role="status"></p>
+    <div class="table-scroll">
+        <table class="report-table mytx-table">
+            <thead>
+                <tr>
+                    <th>Date/Time</th>
+                    <th>Name</th>
+                    <th>Account</th>
+                    <th>Biller</th>
+                    <th class="amount-cell">Total</th>
+                    <th class="amount-cell">Received</th>
+                    <th class="amount-cell">Change</th>
+                    <th>Mode</th>
+                    <th>Reference</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="myTxBody"></tbody>
+        </table>
+    </div>
 </section>
 
 <dialog id="confirmDialog" class="confirm-dialog">
