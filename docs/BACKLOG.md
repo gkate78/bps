@@ -9,7 +9,7 @@
 
 ## LATER
 - [ ] BPS-223 | Theme: Operations insight | Outcome: Separate read-only analytics app for 2020–2025 yearly CSV history (parked) | Done when: yearly files load with data-quality reporting and year-over-year views, real data stays local, and a public demo runs on synthetic data
-- [ ] BPS-226 | Theme: Operations insight | Outcome: Admin can monitor the shop's BPS remotely | Done when: secure remote access (Cloudflare Tunnel + Access or Tailscale) is chosen and set up without exposing the PIN login publicly (on hold, DEC-042)
+- [ ] BPS-226 | Theme: Operations insight | Outcome: Admin can monitor the shop's BPS remotely | Done when: Cloudflare Tunnel + Access (preferred) is set up on a shop-owned domain with an email one-time-code gate, without exposing the PIN login publicly (on hold, DEC-042)
 - [ ] BPS-212 | Theme: Schema cleanup | Outcome: Remove legacy columns after stabilization (`amt2`, deprecated routing fields) | Done when: controlled SQLite table-rebuild migration is executed in all environments with rollback notes
 
 ## Done
