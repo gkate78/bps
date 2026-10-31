@@ -7,15 +7,18 @@
     <style>
         @page {
             size: 58mm auto;
-            margin: 0.5mm 3mm 2mm 3mm;
+            /* top right bottom left: the printer adds its own right-hand gap, so the right margin is smaller. */
+            margin: 0.5mm 1.5mm 2mm 3mm;
         }
         body {
-            font-family: "Courier New", monospace;
+            /* Bold sans-serif prints darker and reads more easily than Courier on thermal paper. */
+            font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
             margin: 0;
-            color: #111;
+            color: #000;
             width: 58mm;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 700;
+            line-height: 1.15;
         }
         .preview-actions {
             width: 58mm;
@@ -46,41 +49,60 @@
         }
         .shop {
             text-align: center;
-            margin-bottom: 2mm;
+            margin-bottom: 1.5mm;
         }
         .shop h1 {
             margin: 0;
-            font-size: 11px;
+            font-size: 14px;
             letter-spacing: 0.2px;
             text-transform: uppercase;
         }
         .shop p {
             margin: 0.5mm 0 0;
-            font-size: 11px;
+            font-size: 12px;
             text-transform: uppercase;
-            line-height: 1.2;
+            line-height: 1.25;
         }
         .line {
             display: flex;
+            flex-wrap: wrap;
             justify-content: space-between;
-            padding: 1mm 0;
-            font-size: 11px;
+            column-gap: 2mm;
+            padding: 0.4mm 0;
+            font-size: 12px;
             text-transform: uppercase;
         }
+        .info {
+            padding: 0.3mm 0;
+            text-transform: uppercase;
+            overflow-wrap: anywhere;
+        }
+        .info + .line {
+            margin-top: 1mm;
+        }
+        /* Amounts stay on one line, flush right, with equal-width digits so decimals line up. */
+        .line span:last-child {
+            margin-left: auto;
+            text-align: right;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
         .total {
-            font-weight: 700;
-            font-size: 11px;
+            font-size: 16px;
+            border-top: 1px dashed #000;
+            margin-top: 0.8mm;
+            padding-top: 1mm;
         }
         .meta {
             margin-top: 2mm;
-            font-size: 11px;
+            font-size: 12px;
             text-align: center;
             text-transform: uppercase;
         }
         .sign {
-            margin-top: 7mm;
+            margin-top: 10mm; /* room for one extra line to sign */
             text-align: center;
-            font-size: 11px;
+            font-size: 12px;
             text-transform: uppercase;
         }
         .sign-line {
@@ -89,8 +111,10 @@
             width: 70%;
         }
         @media print {
-            body { margin: 0; }
-            .receipt { padding: 0; }
+            /* Fit the printable area inside the @page margins so the right edge isn't cut off,
+               but never wider than the 58mm roll if the printer reports larger paper. */
+            body { margin: 0; width: auto; max-width: 58mm; }
+            .receipt { padding: 0; width: 100%; }
             .preview-actions { display: none; }
         }
     </style>
@@ -113,34 +137,19 @@
             {% endif %}
         </div>
         {% if receipt_settings.show_reference %}
-        <div class="line">
-            <span>{% if receipt_settings.show_headings %}REFERENCE{% endif %}</span>
-            <span>{{ record.reference or "-" }}</span>
-        </div>
+        <div class="info">{{ record.reference or "-" }}</div>
         {% endif %}
         {% if receipt_settings.show_txn_datetime %}
-        <div class="line">
-            <span>{% if receipt_settings.show_headings %}TXN DATE/TIME{% endif %}</span>
-            <span>{{ record.txn_datetime }}</span>
-        </div>
+        <div class="info">{{ record.txn_datetime.strftime("%m/%d/%Y %I:%M %p") if record.txn_datetime else "-" }}</div>
         {% endif %}
         {% if receipt_settings.show_account %}
-        <div class="line">
-            <span>{% if receipt_settings.show_headings %}ACCOUNT{% endif %}</span>
-            <span>{{ record.account }}</span>
-        </div>
+        <div class="info">{{ record.account }}</div>
         {% endif %}
         {% if receipt_settings.show_biller %}
-        <div class="line">
-            <span>{% if receipt_settings.show_headings %}BILLER{% endif %}</span>
-            <span>{{ record.biller }}</span>
-        </div>
+        <div class="info">{{ record.biller }}</div>
         {% endif %}
         {% if receipt_settings.show_customer_name %}
-        <div class="line">
-            <span>{% if receipt_settings.show_headings %}NAME{% endif %}</span>
-            <span>{{ record.customer_name }}</span>
-        </div>
+        <div class="info">{{ record.customer_name }}</div>
         {% endif %}
         {% if receipt_settings.show_bill_amt %}
         <div class="line">
