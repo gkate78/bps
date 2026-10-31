@@ -5,9 +5,10 @@
 
 ## NEXT
 - [ ] BPS-209 | Theme: Customer comms | Outcome: SMS/Viber confirmation with reference + posting ETA | Done when: message trigger is sent after submission (post-MVP)
-- [ ] BPS-211 | Theme: Import observability | Outcome: Batch-level import review and replay tools | Done when: admin can filter by `import_batch_id`, inspect row outcomes, and optionally re-run selected skipped rows
+- [ ] BPS-211 | Theme: Import observability | Outcome: Batch-level import review and replay tools | Done when: admin can filter by `import_batch_id`, inspect row outcomes, and optionally re-run selected skipped rows | Progress: import results now list skipped/duplicate rows with reasons (BPS-216)
 
 ## LATER
+- [ ] BPS-223 | Theme: Operations insight | Outcome: Separate read-only analytics app for 2020–2025 yearly CSV history (parked) | Done when: yearly files load with data-quality reporting and year-over-year views, real data stays local, and a public demo runs on synthetic data
 - [ ] BPS-212 | Theme: Schema cleanup | Outcome: Remove legacy columns after stabilization (`amt2`, deprecated routing fields) | Done when: controlled SQLite table-rebuild migration is executed in all environments with rollback notes
 
 ## Done
@@ -25,3 +26,11 @@
 - [x] BPS-205 (follow-up) | Shipped on: 2026-04-05 | Notes: Added per-user reconciliation table polish (auto-refresh on selector changes, total-row alignment, pending/status spacing) and reports totals spacing updates.
 - [x] BPS-213 | Shipped on: 2026-04-05 | Notes: Added immutable raw-ingest logging table (`bill_record_import_raw`) with `import_batch_id` and row-level status/note/json for CSV import traceability.
 - [x] BPS-214 | Shipped on: 2026-04-05 | Notes: Auto-link `customer_accounts.user_id` on signup/signin by phone match with customer-dashboard fallback for linkage consistency.
+- [x] BPS-215 | Shipped on: 2026-10-30 | Notes: Python 3.14 compatibility: pinned `sqlalchemy==2.0.44` and `sqlmodel==0.0.44` (0.0.45+ rejects naive datetimes) (DEC-033).
+- [x] BPS-216 | Shipped on: 2026-10-31 | Notes: Import feedback: reject files missing required columns, block imports with no active biller rules, list skipped/duplicate rows with reasons, treat spreadsheet placeholders as blank, match headers ignoring case/spaces.
+- [x] BPS-217 | Shipped on: 2026-10-30 | Notes: `scripts/run_local.sh` runs everyday use from `~/bps-data` with generated `SESSION_SECRET` and automatic backups (DEC-034).
+- [x] BPS-218 | Shipped on: 2026-10-30 | Notes: Insights page (`/admin/insights`): KPI deltas, trend, biller share, late-payment rate, busy-times heatmap, busiest days of the month, top and lapsed customers (DEC-035).
+- [x] BPS-219 | Shipped on: 2026-10-31 | Notes: Imports keep the file's amounts and time of day; differences flagged in Reports → Amounts to review; one-off repair scripts for earlier imports (DEC-036).
+- [x] BPS-220 | Shipped on: 2026-10-31 | Notes: Phone normalization on import/entry/edit and customer-detail protection against blank or older data (DEC-037).
+- [x] BPS-221 | Shipped on: 2026-10-31 | Notes: Offline mode: jQuery, DataTables, and fonts vendored under `app/static/vendor/` (DEC-038).
+- [x] BPS-222 | Shipped on: 2026-10-31 | Notes: Larger, bolder 58mm receipt with values-only header fields and right-aligned amounts; entry form asks for "Amount Received" before payment details (DEC-039).

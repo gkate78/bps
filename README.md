@@ -13,9 +13,11 @@ BPS helps teams manage bill records end-to-end: encode customer bills, process s
 - **Record operations**: create/edit/delete bill records, searchable/paginated table, due-status/date filters, duplicate prevention (`txn_date + account + biller + amount`)
 - **Payment tracking**: separate `confirmation_reference` and `payment_reference`, explicit `payment_channel`, and operator tracking through `processed_by_user_id`
 - **CSV import (curated + raw)**: import into `bill_records` with operational defaults and preserve immutable source rows in `bill_record_import_raw` with `import_batch_id`
-- **Reconciliation and reports**: EOD reconciliation with optional cash-on-hand variance, per-user reconciliation totals, and daily/monthly/yearly report summaries
+- **Reconciliation and reports**: EOD reconciliation with optional cash-on-hand variance, per-user reconciliation totals, daily/monthly/yearly report summaries, and an **Amounts to review** list of imported records whose file amounts differ from biller rules or don't add up
+- **Insights** (`/admin/insights`): KPI tiles with change vs the previous period, monthly/daily trend, biller share, late-payment rate by biller, weekday × hour busy-times heatmap, busiest days of the month, top customers, and regulars who haven't come back
 - **Admin visibility tools**: on-demand transaction audit log, read-only Database View with auto-load + row search, and KPI-focused dashboards
-- **Biller rules and receipts**: popup biller-rule maintenance, per-field receipt visibility toggles, and receipt footer controls
+- **Biller rules and receipts**: popup biller-rule maintenance, per-field receipt visibility toggles, and receipt footer controls; 58mm thermal receipt in bold Arial (12px details, 14px business name, 16px total) with amounts flush right
+- **Works offline**: jQuery, DataTables, and fonts are served from `app/static/vendor/` (see its README), so no internet connection is needed to run the app
 - **Customer dashboard**: phone-scoped bill visibility with account/biller filters and automatic `customer_accounts.user_id` linking on auth success
 
 ## Payment Method and Channel Rules
@@ -24,6 +26,8 @@ BPS helps teams manage bill records end-to-end: encode customer bills, process s
 - `payment_method` and `payment_channel` are intentionally independent fields for operational auditability
 
 ## Local Development
+Requires Python 3.12+ (tested on 3.12 and 3.14). `sqlmodel` is pinned to 0.0.44: later versions reject the timezone-naive datetimes the app stores.
+
 ### Run (Linux/macOS)
 ```bash
 python3 -m venv venv
@@ -46,6 +50,17 @@ Keep real data separate from development so code changes and test imports never 
 - For development, run `uvicorn main:app --reload --port 8001`; it uses the throwaway `bills_admin.db` in the project folder.
 - To restore, stop the app and copy a file from `~/bps-data/backups/` over `~/bps-data/bills_admin.db`.
 - New model columns are not added to existing databases automatically: add an `ALTER TABLE` step in `init_db()` in `app/database.py` for each one.
+
+### Maintenance scripts
+Run from the project root with `venv/bin/python`. Data-changing scripts are dry runs unless `--apply` is passed; back up first with `./scripts/run_local.sh backup`.
+
+| Script | Purpose |
+|---|---|
+| `scripts/backup_db.py --db <path>` | Consistent SQLite backup (used by `run_local.sh`) |
+| `scripts/repair_txn_times.py --db <path>` | Restore time of day on records imported before DATE values with times were kept |
+| `scripts/clean_phone_numbers.py --db <path>` | Normalize stored phone numbers (blank `NA`, restore dropped leading 0) and fill customers' missing phones |
+| `scripts/apply_file_amounts.py --db <path>` | Put the import file's own amounts back on records imported before file amounts were kept, flagging differences for review |
+| `scripts/db_view.py` | Read-only database preview |
 
 ### Windows (PowerShell) quickstart
 ```powershell
@@ -91,8 +106,10 @@ export ENCODER_PHONES=09175556666,09174443333
 If a signed-up phone is not configured as admin/encoder, it is treated as `customer`.
 
 ## CSV Import Format
-Supported headers (case-sensitive):
-- `DATE` or `DATE/TIME`
+Headers are matched ignoring case and extra spaces. `DATE` (or `DATE/TIME`), `ACCOUNT`, `BILLER`, and `NAME` are required: a file missing any of them is rejected before import with a message naming the missing columns. Columns with no usable header (blank or `#NAME?`) are ignored and reported as a warning.
+
+Supported headers:
+- `DATE` or `DATE/TIME` (a `DATE` value may include a time, e.g. `1/2/2026 9:14:12`, which is kept)
 - `ACCOUNT`
 - `BILLER`
 - `NAME`
@@ -112,6 +129,11 @@ Supported headers (case-sensitive):
 - `payment_channel` (optional)
 
 Import behavior:
+- The file's own late charge, charge, total, and change are kept (they are what was actually collected); blank cells fall back to the biller rules. Rows whose amounts don't add up or differ from the rules are imported and flagged in **Reports → Amounts to review**. Editing such a record keeps its amounts unless an amount-related field changes.
+- Spreadsheet placeholders (`#N/A`, `#NAME?`, `NA`, ...) are treated as blank.
+- Phone numbers are normalized: a dropped leading 0 is restored (`9171234567` → `09171234567`), `+63` becomes `0`, number-formatted cells like `9,171,234,567.00` are read correctly, and placeholders or dates become blank.
+- Saved customer details are never overwritten with blank values or with rows older than the account's latest payment, so importing an older file can't revert newer names or phone numbers.
+- Rows for billers without an active rule are skipped; the result lists each skipped or duplicate row with its reason.
 - If `payment_reference` is blank and `REFERENCE` exists, `payment_reference` falls back to `REFERENCE`
 - Import sets operational defaults for curated records (`payment_method=CASH`, `payment_channel=CASH`, and missing references fallback to `reference`)
 - Every row is also persisted to immutable `bill_record_import_raw` with `import_batch_id` for traceability

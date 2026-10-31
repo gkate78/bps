@@ -61,6 +61,11 @@ Unless explicitly overridden by a task requirement:
 3. Text form values are normalized to uppercase before persistence.
 4. Amount displays should use comma separators with 2 decimal places on summaries/receipts/tables.
 5. CSV imports should preserve immutable source rows (`bill_record_import_raw`) while `bill_records` remains the curated operational table.
+6. Phone and CP numbers are normalized before validation (leading 0 restored, `+63` → `0`, placeholders like `NA` blanked).
+7. Imports keep the file's amounts; differences from biller rules are flagged, not corrected.
+8. No CDN or other internet dependency at runtime: vendor front-end assets under `app/static/vendor/`.
+9. Never commit databases, real data exports, or backups; sample files use invented names and accounts.
+10. Data-changing scripts default to a dry run and are tested on a copy before touching live data.
 
 ## 7) Weekly Cadence
 1. Monday: pick top `NOW` items from backlog

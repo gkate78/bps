@@ -270,3 +270,67 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Reduce extra clicks, prevent “does not auto show” confusion, and improve readability of per-user totals during EOD checks.
 - Alternatives considered: keep manual load only; rely on default table CSS without per-column spacing/alignment tuning.
 - Follow-up: Consider sticky table footer for totals on long per-user lists.
+
+- Date: 2026-10-30
+- ID: DEC-033
+- Related task: BPS-215
+- Decision: Pin `sqlalchemy==2.0.44` and `sqlmodel==0.0.44` for Python 3.14 support; do not upgrade SQLModel past 0.0.44 until stored datetimes are timezone-aware.
+- Why: SQLAlchemy 2.0.30 and SQLModel 0.0.19 fail to import on Python 3.14; SQLModel 0.0.45+ rejects naive datetimes, which the app writes via `datetime.utcnow()` (about 38 call sites).
+- Alternatives considered: latest SQLModel with a datetime refactor; downgrading the venv to Python 3.12.
+- Follow-up: Move to timezone-aware datetimes, then lift the pin.
+
+- Date: 2026-10-30
+- ID: DEC-034
+- Related task: BPS-217
+- Decision: Keep live data in `~/bps-data` (run via `scripts/run_local.sh`), separate from the project-folder database used for development, with a SQLite-API backup on every start (last 30 kept).
+- Why: The app is used day to day while it is being improved; experiments, test imports, and schema changes must never touch real records.
+- Alternatives considered: a single database with manual copies; Docker volumes.
+- Follow-up: Data-changing scripts default to dry runs and are tested on copies before running on live data.
+
+- Date: 2026-10-30
+- ID: DEC-035
+- Related task: BPS-218
+- Decision: Build Insights as server-side aggregation (`/api/admin/insights`) plus hand-drawn inline SVG charts in plain JavaScript, with hover details and a data table under each chart. Day-of-month bars show the average per occurrence of that day in the range; the busy-times heatmap hides edge hours holding under 0.5% of transactions.
+- Why: No new front-end dependency or build step, works offline, and averages avoid understating the 29th–31st.
+- Alternatives considered: a charting library (Chart.js); extending the Reports tables only.
+- Follow-up: Revisit performance if the record count grows past tens of thousands (aggregation loads rows into Python).
+
+- Date: 2026-10-31
+- ID: DEC-036
+- Related task: BPS-219
+- Decision: CSV imports keep the file's late charge, charge, total, and change (falling back to biller rules only for blank cells) and store an `amount_review` JSON note on records that differ from the rules or don't add up. Edits recompute amounts only when an amount-related field changes. Supersedes the part of earlier import behavior that recalculated amounts from rules.
+- Why: Imported files record what was actually collected, including operator errors the owner wants visible rather than silently corrected; biller rates also change over time.
+- Alternatives considered: always recompute from rules; skip inconsistent rows; keep file amounts without flagging.
+- Follow-up: `scripts/apply_file_amounts.py` restored file amounts on earlier imports; consider a "mark reviewed" action in the Amounts to review list.
+
+- Date: 2026-10-31
+- ID: DEC-037
+- Related task: BPS-220
+- Decision: Normalize phone numbers to digits with a leading 0 (restoring zeros dropped by spreadsheets, converting `+63`, reading number-formatted cells, blanking placeholders and dates) before the existing 11-digit validation; never overwrite saved customer details with blank values or with rows older than the account's latest payment.
+- Why: Spreadsheet exports stored `NA` and 10-digit numbers for hundreds of records; out-of-order imports could revert newer customer details.
+- Alternatives considered: reject non-conforming numbers; always take the last imported row.
+- Follow-up: `scripts/clean_phone_numbers.py` cleaned existing rows. Extends DEC-003.
+
+- Date: 2026-10-31
+- ID: DEC-038
+- Related task: BPS-221
+- Decision: Serve jQuery, DataTables, and the Space Grotesk / Source Sans 3 fonts from `app/static/vendor/` instead of CDNs, with licenses and sources documented there.
+- Why: The app must work without internet; the Records table broke offline when the CDN scripts couldn't load.
+- Alternatives considered: rely on browser cache; system fonts only.
+- Follow-up: Update vendored files deliberately (same version folder naming) when upgrading.
+
+- Date: 2026-10-31
+- ID: DEC-039
+- Related task: BPS-222
+- Decision: Receipt uses bold Arial (12px details, 14px business name, 16px total), prints reference/date/account/biller/name as values only, keeps amount labels with amounts flush right, and fits the printable width up to 58mm (right page margin 1.5mm, left 3mm). The entry form labels the cash field "Amount Received" and asks for it before payment details; the receipt keeps "CASH".
+- Why: Courier at 11px printed small and faint on thermal paper; amounts were pushed off the right edge by a fixed 58mm body inside 52mm of printable width.
+- Alternatives considered: larger monospace font; centered header values.
+- Follow-up: The `@page size: 58mm auto` declaration is invalid CSS and ignored by browsers; printer driver paper size governs.
+
+- Date: 2026-10-31
+- ID: DEC-040
+- Related task: Data privacy
+- Decision: Never commit databases, real CSV exports, or backups; removed `bills_admin.db` and `sample_masked_records.csv` from all git history (filter-repo + force-push of `main` and `release/v1.1-pwa`). Pre-2026 history is analysed outside BPS (BPS-223) rather than imported.
+- Why: The public repository exposed user PIN hashes and lightly masked customer records; older years used different rates and would overwrite current customer details.
+- Alternatives considered: making the repository private; leaving history as is.
+- Follow-up: Ask GitHub Support to purge cached views and `refs/pull/1/head`; sample data must use invented names and accounts.
