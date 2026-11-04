@@ -60,7 +60,8 @@
             </tbody>
             <tfoot>
                 <tr><th>Customers paid</th><th></th><th class="num">{{ s.load_charged_cents | peso }}</th></tr>
-                <tr><th>Load income (fees + promo rounding)</th><th></th><th class="num">{{ s.load_income_cents | peso }}</th></tr>
+                <tr><th>Deducted by GCash/Maya (after discount)</th><th></th><th class="num">{{ s.load_cost_cents | peso }}</th></tr>
+                <tr><th>Load income (fees + promo rounding + discount)</th><th></th><th class="num">{{ s.load_income_cents | peso }}</th></tr>
             </tfoot>
         </table>
     </section>

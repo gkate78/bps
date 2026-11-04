@@ -1,12 +1,13 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pos.auth_adapter import User, display_name, get_current_user, page_user
 from pos.controllers import eod_controller as eod
+from pos.controllers import gsheets_controller as gsheets
 from pos.controllers.sale_controller import PosError
 from pos.controllers.settings_controller import list_wallets
 from pos.database import get_db
@@ -47,11 +48,18 @@ async def eod_page(
 
 
 @router.post("/api/eod/{day}")
-async def save_eod(day: str, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def save_eod(
+    day: str,
+    request: Request,
+    background: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     try:
         report = await eod.save_close(db, _day(day), await request.json(), user)
     except PosError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    background.add_task(gsheets.backup_after_eod, user.id)
     return {"expected_cash_cents": report.expected_cash_cents, "difference_cents": report.difference_cents}
 
 

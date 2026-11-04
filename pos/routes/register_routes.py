@@ -8,13 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from pos.auth_adapter import User, display_name, find_admin_by_pin, get_current_user, page_user
+from pos.controllers import parked_controller as parked
 from pos.controllers import sale_controller as sales
 from pos.controllers import suggest_controller as suggest
 from pos.controllers.settings_controller import get_fee_schedule, get_settings, receipt_business, list_networks, list_services, list_wallets
 from pos.database import get_db
-from pos.fees import FeeError, quote_load, quote_wallet
+from pos.fees import FeeError, load_cost, quote_load, quote_wallet
+from pos.models import PosWallet
 from pos.money import MoneyError, to_cents
-from pos.schemas import BalancePaymentIn, JobStatusIn, SaleIn, VoidIn, WalletTxnIn
+from pos.schemas import BalancePaymentIn, JobStatusIn, ParkIn, SaleIn, VoidIn, WalletTxnIn
 from pos.templating import templates
 
 router = APIRouter(prefix="/pos")
@@ -48,6 +50,7 @@ async def register_page(request: Request, user: User = Depends(page_user), db: A
 async def load_quote(
     amount: str = Query(""),
     promo: bool = Query(False),
+    wallet_id: Optional[int] = Query(None),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -55,7 +58,9 @@ async def load_quote(
         q = quote_load(to_cents(amount, field="Load amount"), promo, await get_fee_schedule(db))
     except (MoneyError, FeeError) as exc:
         raise _bad_request(exc)
+    wallet = await db.get(PosWallet, wallet_id) if wallet_id else None
     return {
+        "cost_cents": load_cost(q.load_cents, wallet.load_discount_bp) if wallet else q.load_cents,
         "load_cents": q.load_cents,
         "priced_cents": q.priced_cents,
         "fee_cents": q.fee_cents,
@@ -116,6 +121,34 @@ async def create_wallet_txn(
     except sales.PosError as exc:
         raise _bad_request(exc)
     return {"id": txn.id, "txn_no": txn.txn_no, "change_cents": txn.change_cents, "give_cents": txn.give_cents}
+
+
+@router.get("/api/parked")
+async def list_parked(_: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return await parked.list_parked(db)
+
+
+@router.post("/api/parked")
+async def park(data: ParkIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        row = await parked.park(db, data, user)
+    except parked.ParkError as exc:
+        raise _bad_request(exc)
+    return {"id": row.id, "label": row.label}
+
+
+@router.post("/api/parked/{parked_id}/resume")
+async def resume_parked(parked_id: int, _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await parked.take(db, parked_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Already resumed or discarded (maybe on another computer)")
+    return result
+
+
+@router.post("/api/parked/{parked_id}/discard")
+async def discard_parked(parked_id: int, _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await parked.take(db, parked_id)
+    return {"ok": True}
 
 
 async def _approve_void(db: AsyncSession, user: User, pin: str) -> User:

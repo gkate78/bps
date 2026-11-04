@@ -8,6 +8,12 @@
 
 <div id="notice" class="alert" hidden></div>
 
+<!-- On hold: not paid yet, another customer is being served -->
+<section id="parkedBar" class="parked" hidden>
+    <span class="field-label">Parked <span class="muted">(not paid yet)</span></span>
+    <ul id="parkedList" class="parked-list"></ul>
+</section>
+
 <!-- Shop sale: services and load, paid in cash -->
 <section id="tab-shop" class="register">
     <div class="panel">
@@ -57,7 +63,10 @@
                 <label class="check"><input type="checkbox" id="loadPromo"> Promo <span class="muted">(price rounds up to the next ₱10)</span></label>
                 <label>Promo name <span class="muted">(optional)</span> <input type="text" id="loadDesc" maxlength="160"></label>
             </div>
-            <label>Reference no. <span class="muted">(optional)</span> <input type="text" id="loadRef" maxlength="60"></label>
+            <div class="row2">
+                <label>Deducted by the app ₱ <span class="muted">(if different)</span> <input type="text" id="loadDeducted" inputmode="decimal"></label>
+                <label>Reference no. <span class="muted">(optional)</span> <input type="text" id="loadRef" maxlength="60"></label>
+            </div>
             <div class="quote" id="loadQuote">Enter the load amount.</div>
             <button type="submit" class="btn btn-primary">Add load</button>
         </form>
@@ -108,6 +117,7 @@
             </div>
             <div class="actions">
                 <button type="button" class="btn btn-secondary" id="clearSale">Clear</button>
+                <button type="button" class="btn btn-secondary" id="parkSale" title="Put this sale on hold and serve the next customer">Park</button>
                 <button type="submit" class="btn btn-primary btn-big" id="saveSale">Save &amp; Print</button>
             </div>
         </form>
@@ -159,6 +169,7 @@
         </div>
         <div class="actions">
             <button type="button" class="btn btn-secondary" id="clearWallet">Clear</button>
+            <button type="button" class="btn btn-secondary" id="parkWallet" title="Put this on hold and serve the next customer">Park</button>
             <button type="button" class="btn btn-primary btn-big" id="saveWallet">Save &amp; Print</button>
         </div>
     </div>

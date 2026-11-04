@@ -76,8 +76,9 @@ class PosSalePayment(SQLModel, table=True):
 class PosSaleLine(SQLModel, table=True):
     """
     kind=service: description, qty x unit price.
-    kind=load: load_cents is sent from wallet_id; line_total_cents is what the customer paid
-    (promo price rounded up + fee), so shop income is line_total_cents - load_cents.
+    kind=load: load_cents is sent from wallet_id, which deducts wallet_cost_cents (after the app's
+    discount); line_total_cents is what the customer paid (promo price rounded up + fee), so shop
+    income is line_total_cents - cost_cents.
     Names are copied onto the line so later renames don't change old sales.
     """
 
@@ -100,5 +101,10 @@ class PosSaleLine(SQLModel, table=True):
     mobile_no: Optional[str] = Field(default=None, max_length=11)
     is_promo: bool = Field(default=False, nullable=False)
     load_cents: int = Field(default=0, nullable=False)
+    wallet_cost_cents: Optional[int] = Field(default=None)  # empty on loads from before discounts: the full load
     fee_cents: int = Field(default=0, nullable=False)
     reference: Optional[str] = Field(default=None, max_length=60)
+
+    @property
+    def cost_cents(self) -> int:
+        return self.load_cents if self.wallet_cost_cents is None else self.wallet_cost_cents

@@ -471,6 +471,15 @@ async def admin_database_page(
     query_sql = text(f"SELECT * FROM {selected_table}{order_sql} LIMIT :limit")
     data_rows = (await db.execute(query_sql, {"limit": limit})).fetchall()
     rows = [dict(row._mapping) for row in data_rows]
+    # Shop register amounts are whole centavos (`total_cents`); show them in pesos (`total`).
+    cents_columns = [name for name in display_columns if name.endswith("_cents")]
+    if cents_columns:
+        for row in rows:
+            for name in cents_columns:
+                value = row.get(name)
+                row[name[: -len("_cents")]] = value / 100 if value is not None else None
+        display_columns = [name[: -len("_cents")] if name in cents_columns else name for name in display_columns]
+        amount_columns = amount_columns + [name[: -len("_cents")] for name in cents_columns]
     if selected_table == "bill_records":
         for row in rows:
             if "amt2" in row:

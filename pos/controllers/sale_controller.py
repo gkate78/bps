@@ -8,7 +8,7 @@ from sqlmodel import select
 
 from pos.auth_adapter import User, display_name, normalize_phone, validate_mobile, validate_phone
 from pos.controllers.settings_controller import add_audit, get_fee_schedule
-from pos.fees import FeeError, quote_load, quote_wallet
+from pos.fees import FeeError, load_cost, quote_load, quote_wallet
 from pos.money import MoneyError, to_cents, to_cents_optional
 from pos.models import PosNetwork, PosSale, PosSaleLine, PosSalePayment, PosService, PosWallet, PosWalletTxn
 from pos.schemas import BalancePaymentIn, SaleIn, WalletTxnIn
@@ -102,6 +102,12 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
                 quote = quote_load(_money(line.amount, "Load amount"), line.is_promo, schedule)
             except (MoneyError, FeeError) as exc:
                 raise PosError(f"Load: {exc}") from exc
+            if (line.deducted or "").strip():
+                cost = _money(line.deducted, f"Amount {wallet.name} deducted")
+                if not 0 < cost <= quote.load_cents:
+                    raise PosError(f"Amount {wallet.name} deducted must be more than zero and not more than the load")
+            else:
+                cost = load_cost(quote.load_cents, wallet.load_discount_bp)
             lines.append(
                 PosSaleLine(
                     kind="load",
@@ -117,6 +123,7 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
                     mobile_no=mobile,
                     is_promo=line.is_promo,
                     load_cents=quote.load_cents,
+                    wallet_cost_cents=cost,
                     fee_cents=quote.fee_cents,
                     reference=clean_text(line.reference, 60),
                 )
@@ -488,6 +495,7 @@ class DaySummary:
     service_sales_cents: int = 0
     load_count: int = 0
     load_sent_cents: int = 0
+    load_cost_cents: int = 0  # what GCash/Maya deducted (after their discount)
     load_charged_cents: int = 0
     load_by_network: dict = field(default_factory=lambda: defaultdict(lambda: [0, 0]))  # name -> [count, sent]
     cash_in_count: int = 0
@@ -515,7 +523,7 @@ class DaySummary:
 
     @property
     def load_income_cents(self) -> int:
-        return self.load_charged_cents - self.load_sent_cents
+        return self.load_charged_cents - self.load_cost_cents
 
     @property
     def income_cents(self) -> int:
@@ -542,11 +550,12 @@ async def day_summary(db: AsyncSession, start: date, end: date) -> DaySummary:
             if line.kind == "load":
                 out.load_count += 1
                 out.load_sent_cents += line.load_cents
+                out.load_cost_cents += line.cost_cents
                 out.load_charged_cents += line.line_total_cents
                 out.load_by_network[line.network_name][0] += 1
                 out.load_by_network[line.network_name][1] += line.load_cents
-                out.wallet_deltas[line.wallet_name] -= line.load_cents
-                out.wallet_parts[line.wallet_name]["loads"] -= line.load_cents
+                out.wallet_deltas[line.wallet_name] -= line.cost_cents
+                out.wallet_parts[line.wallet_name]["loads"] -= line.cost_cents
             else:
                 out.service_totals[line.service_name] += line.line_total_cents
                 out.service_sales_cents += line.line_total_cents
