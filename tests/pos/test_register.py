@@ -65,6 +65,11 @@ def test_shop_sale_with_services_and_load(shop):
     # GCash balance went down by the actual promo price
     assert "-₱59.00" in s
 
+    # Admin → Database shows the register's tables, amounts in pesos.
+    db_view = client.get("/admin/database?table=pos_sales").text
+    assert "Shop Sales" in db_view and "S-000001" in db_view and "215.00" in db_view and "total_cents" not in db_view
+    assert "A4 COLORED" in client.get("/admin/database?table=pos_sale_lines").text
+
 
 def test_shop_sale_paid_via_gcash(shop):
     client = shop.client
@@ -326,3 +331,30 @@ def test_rename_service_keeps_old_sales(shop):
     assert "TARPAULIN" in client.get("/pos/receipt/sale/1").text  # old sale keeps its name
     r = client.post(f"/pos/settings/services/{i['TARPAULIN']}/rename", data={"name": "printing"})  # name taken
     assert "PRINTING already exists" in r.text
+
+
+def test_maya_load_discount(shop):
+    """Maya deducts ₱96.03 for a ₱99 load (3% off); the wallet and income use what was deducted."""
+    client = shop.client
+    i = ids()
+    q = client.get(f"/pos/api/quote/load?amount=99&promo=true&wallet_id={i['MAYA']}").json()
+    assert q["cost_cents"] == 9_603 and q["total_cents"] == 11_000  # ₱99 promo → ₱100 + ₱10 fee
+    assert client.get(f"/pos/api/quote/load?amount=99&promo=true&wallet_id={i['GCASH']}").json()["cost_cents"] == 9_900
+
+    load = {"kind": "load", "network_id": i["GLOBE"], "wallet_id": i["MAYA"], "mobile_no": "09181112222", "amount": "99", "is_promo": True}
+    assert client.post("/pos/api/sales", json={"lines": [load], "cash": "110"}).status_code == 200
+    # The app showed a different amount once: typed in, it's used instead.
+    assert client.post("/pos/api/sales", json={"lines": [{**load, "deducted": "96.50"}], "cash": "110"}).status_code == 200
+    bad = client.post("/pos/api/sales", json={"lines": [{**load, "deducted": "120"}], "cash": "110"})
+    assert bad.status_code == 400 and "not more than the load" in bad.text
+
+    s = client.get("/pos/summary").text
+    assert "₱192.53" in s  # deducted: 96.03 + 96.50
+    assert "₱27.47" in s  # load income: 220 - 192.53
+    assert "-₱192.53" in s  # Maya balance
+
+    # Discounts are set per account in Settings.
+    r = client.post("/pos/settings/wallets/discounts", data={f"discount_{i['GCASH']}": "2.5", f"discount_{i['MAYA']}": "3"})
+    assert "Discounts saved" in r.text
+    assert client.get(f"/pos/api/quote/load?amount=100&wallet_id={i['GCASH']}").json()["cost_cents"] == 9_750
+    assert "from 0 to 49.99" in client.post("/pos/settings/wallets/discounts", data={f"discount_{i['MAYA']}": "abc"}).text

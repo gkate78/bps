@@ -167,6 +167,12 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .quote ol { margin: 0; padding-left: 1.3rem; display: grid; gap: 0.3rem; }
 
 .cart { position: sticky; top: 1rem; }
+.parked { display: grid; gap: 0.4rem; }
+.parked-list { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.parked-list li { display: flex; align-items: center; gap: 0.6rem; background: #fff8e6; border: 1px solid #f1d58f; border-radius: 10px; padding: 0.45rem 0.5rem 0.45rem 0.8rem; max-width: 100%; }
+.parked-list .who { display: grid; min-width: 0; }
+.parked-list .who strong, .parked-list .who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 18rem; }
+.parked-list .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
 .lines { width: 100%; border-collapse: collapse; }
 .lines th { text-align: left; color: var(--muted); font-size: 0.85rem; padding: 0.3rem 0.2rem; border-bottom: 1px solid var(--border); }
 .lines td { padding: 0.45rem 0.2rem; border-bottom: 1px solid #eef2fa; vertical-align: top; }
@@ -256,6 +262,7 @@ table.eod input.money { width: 9rem; text-align: right; padding: 0.35rem 0.5rem;
 .inline-row { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
 .chips { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .chips li { display: inline-flex; align-items: center; gap: 0.2rem; border: 1px solid var(--border); border-radius: 999px; padding: 0.15rem 0.2rem 0.15rem 0.75rem; font-weight: 700; }
+textarea.code { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; margin: 0.5rem 0; }
 .chips li.off { color: #8a93ab; border-style: dashed; }
 
 .dialog { border: 1px solid var(--border); border-radius: 14px; padding: 1.2rem; width: min(440px, 92vw); }

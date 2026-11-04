@@ -103,6 +103,11 @@ def quote_load(amount_cents: int, is_promo: bool, s: FeeSchedule = DEFAULT_SCHED
     return LoadQuote(load_cents=amount_cents, priced_cents=priced, fee_cents=fee, total_cents=priced + fee)
 
 
+def load_cost(load_cents: int, discount_bp: int) -> int:
+    """What the wallet app actually deducts for a load after its discount (basis points: 300 = 3%), to the centavo."""
+    return (load_cents * (10_000 - discount_bp) + 5_000) // 10_000
+
+
 @dataclass(frozen=True)
 class WalletQuote:
     kind: WalletKind

@@ -9,3 +9,24 @@ document.querySelectorAll("form[data-rename]").forEach((form) => {
         form.elements.name.value = name.trim().toUpperCase();
     });
 });
+
+// Google Sheets: copy the Apps Script; show that a backup is running (it can take a minute).
+document.querySelectorAll("[data-copy]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+        const box = document.getElementById(btn.dataset.copy);
+        box.select();
+        try {
+            await navigator.clipboard.writeText(box.value);
+        } catch (_) {
+            document.execCommand("copy");
+        }
+        btn.textContent = "Copied";
+    });
+});
+document.querySelectorAll("form[data-busy]").forEach((form) => {
+    form.addEventListener("submit", () => {
+        const btn = form.querySelector("button");
+        btn.disabled = true;
+        btn.textContent = form.dataset.busy;
+    });
+});

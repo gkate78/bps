@@ -17,6 +17,37 @@
         </form>
     </section>
 
+    <section class="panel" id="gsheets">
+        <h2>Backup to Google Sheets</h2>
+        <p class="muted small">A copy of bills, customers and shop records in your own Google Sheet, one tab each, for viewing from anywhere. PINs and settings are not sent. To restore BPS, use the database backups in <code>~/bps-data/backups</code>.</p>
+        {% if settings.gsheets_last_at %}
+        <div class="alert {{ 'alert-warn' if (settings.gsheets_last_result or '').startswith('FAILED') else 'alert-success' }}">
+            Last backup {{ settings.gsheets_last_at.strftime("%m/%d %I:%M %p") }}: {{ settings.gsheets_last_result }}
+        </div>
+        {% endif %}
+        <details {{ 'open' if not settings.gsheets_url }}>
+            <summary>Set up (once)</summary>
+            <ol class="small">
+                <li>Make a new Google Sheet (e.g. "BPS BACKUP"). Keep it private.</li>
+                <li>In the sheet: <strong>Extensions → Apps Script</strong>. Delete what's there and paste the script below (it has your backup password in it). Save.</li>
+                <li><strong>Deploy → New deployment</strong> → type <strong>Web app</strong>, Execute as <strong>Me</strong>, Who has access <strong>Anyone</strong> → Deploy, and allow access when Google asks.</li>
+                <li>Copy the <strong>Web app URL</strong> into the box below and save, then press <strong>Back up now</strong>.</li>
+            </ol>
+            <textarea id="gsheetsScript" class="code" rows="8" readonly>{{ gsheets_script }}</textarea>
+            <button type="button" class="btn btn-secondary btn-small" data-copy="gsheetsScript">Copy script</button>
+        </details>
+        <form method="post" action="/pos/settings/gsheets" class="stack">
+            <label>Web app URL <input type="url" name="url" value="{{ settings.gsheets_url or '' }}" placeholder="https://script.google.com/macros/s/…/exec" maxlength="500"></label>
+            <label class="check"><input type="checkbox" name="after_eod" value="1" {{ 'checked' if settings.gsheets_after_eod }}> Back up automatically each time End of day is saved</label>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+        {% if settings.gsheets_url %}
+        <form method="post" action="/pos/settings/gsheets/backup" class="inline-row" data-busy="Backing up…">
+            <button type="submit" class="btn btn-primary">Back up now</button>
+        </form>
+        {% endif %}
+    </section>
+
     <section class="panel" id="fees">
         <h2>Fees (loading and GCash/Maya)</h2>
         <form method="post" action="/pos/settings/fees" class="stack">
@@ -88,6 +119,15 @@
             </li>
             {% endfor %}
         </ul>
+        <span class="field-label">Load discount <span class="muted">(what the app takes off a load: Maya deducts ₱96.03 for ₱99 = 3%)</span></span>
+        <form method="post" action="/pos/settings/wallets/discounts" class="stack">
+            <div class="row3">
+                {% for w in wallets %}
+                <label>{{ w.name }} % <input type="text" name="discount_{{ w.id }}" inputmode="decimal" value="{{ '%g' % (w.load_discount_bp / 100) }}"></label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-secondary">Save discounts</button>
+        </form>
         <form method="post" action="/pos/settings/wallets" class="inline-row">
             <input type="text" name="name" placeholder="Account name" required>
             <select name="provider"><option value="GCASH">GCash</option><option value="MAYA">Maya</option></select>

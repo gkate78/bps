@@ -28,11 +28,14 @@
     }
 
     // ---------- Tabs ----------
+    function showTab(name) {
+        document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === name));
+        $("tab-shop").hidden = name !== "shop";
+        $("tab-wallet").hidden = name !== "wallet";
+    }
     document.querySelectorAll(".tab").forEach((tab) => {
         tab.addEventListener("click", () => {
-            document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t === tab));
-            $("tab-shop").hidden = tab.dataset.tab !== "shop";
-            $("tab-wallet").hidden = tab.dataset.tab !== "wallet";
+            showTab(tab.dataset.tab);
             hush();
             if (tab.dataset.tab === "wallet") $("wAmount").focus();
         });
@@ -100,9 +103,16 @@
         }
         try {
             const promo = $("loadPromo").checked;
-            const q = await getJson(`/pos/api/quote/load?amount=${encodeURIComponent(amount)}&promo=${promo}`);
+            const wallet = document.querySelector('input[name="load_wallet"]:checked');
+            const q = await getJson(
+                `/pos/api/quote/load?amount=${encodeURIComponent(amount)}&promo=${promo}${wallet ? `&wallet_id=${wallet.value}` : ""}`,
+            );
             const base = q.priced_cents !== q.load_cents ? `${peso(q.load_cents)} promo → ${peso(q.priced_cents)}` : peso(q.load_cents);
-            $("loadQuote").innerHTML = `${escapeHtml(base)} + ${escapeHtml(peso(q.fee_cents))} fee = <strong>${escapeHtml(peso(q.total_cents))}</strong>`;
+            const deducts = wallet && q.cost_cents !== q.load_cents ? ` · ${wallet.dataset.name} deducts about ${peso(q.cost_cents)}` : "";
+            $("loadQuote").innerHTML =
+                `${escapeHtml(base)} + ${escapeHtml(peso(q.fee_cents))} fee = <strong>${escapeHtml(peso(q.total_cents))}</strong>` +
+                `<span class="muted">${escapeHtml(deducts)}</span>`;
+            $("loadDeducted").placeholder = (q.cost_cents / 100).toFixed(2);
             return q;
         } catch (err) {
             $("loadQuote").textContent = err.message;
@@ -112,6 +122,7 @@
     const updateLoadQuote = debounce(fetchLoadQuote);
     $("loadAmount").addEventListener("input", updateLoadQuote);
     $("loadPromo").addEventListener("change", updateLoadQuote);
+    document.querySelectorAll('input[name="load_wallet"]').forEach((el) => el.addEventListener("change", updateLoadQuote));
 
     $("loadEditor").addEventListener("submit", async (event) => {
         event.preventDefault();
@@ -123,6 +134,10 @@
         if (!/^09\d{9}$/.test(mobile)) return say("Mobile no. must be 11 digits starting with 09", "error");
         const q = await fetchLoadQuote();
         if (!q) return say($("loadQuote").textContent || "Check the load amount", "error");
+        const deducted = $("loadDeducted").value.trim() ? toCents($("loadDeducted").value) : null;
+        if ($("loadDeducted").value.trim() && (!deducted || deducted > q.load_cents)) {
+            return say(`Amount ${wallet.dataset.name} deducted must be more than zero and not more than the load`, "error");
+        }
         hush();
         cart.push({
             kind: "load",
@@ -135,12 +150,16 @@
             mobile_no: mobile,
             amount: $("loadAmount").value,
             is_promo: $("loadPromo").checked,
+            deducted: $("loadDeducted").value.trim(),
             reference: $("loadRef").value.trim(),
             total_cents: q.total_cents,
-            detail: `${mobile} · ${peso(q.load_cents)}${$("loadPromo").checked ? " promo" : ""} + ${peso(q.fee_cents)} fee via ${wallet.dataset.name}`,
+            detail:
+                `${mobile} · ${peso(q.load_cents)}${$("loadPromo").checked ? " promo" : ""} + ${peso(q.fee_cents)} fee via ${wallet.dataset.name}` +
+                ` (deducts ${peso(deducted ?? q.cost_cents)})`,
         });
         renderCart();
-        ["loadMobile", "loadAmount", "loadDesc", "loadRef"].forEach((id) => ($(id).value = ""));
+        ["loadMobile", "loadAmount", "loadDesc", "loadRef", "loadDeducted"].forEach((id) => ($(id).value = ""));
+        $("loadDeducted").placeholder = "";
         $("loadPromo").checked = false;
         $("loadQuote").textContent = "Enter the load amount.";
         $("loadMobile").focus();
@@ -437,6 +456,158 @@
         if (event.key === "Enter") $("saveWallet").click();
     });
     $("walletForm").addEventListener("submit", (event) => event.preventDefault());
+
+    // ---------- Parked: on hold, not paid, while another customer is served ----------
+    const SALE_FIELDS = ["custName", "custPhone", "birNo", "downPayment", "promisedDate", "cashIn", "payRef"];
+    const WALLET_FIELDS = ["wAmount", "wMobile", "wRef", "wName", "wTendered"];
+    const radio = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value ?? null;
+    const setRadio = (name, value) => {
+        const el = value !== null && document.querySelector(`input[name="${name}"][value="${CSS.escape(String(value))}"]`);
+        if (el) el.checked = true;
+    };
+    const readFields = (ids) => Object.fromEntries(ids.map((id) => [id, $(id).value]));
+    const fillFields = (values) => Object.entries(values || {}).forEach(([id, value]) => $(id) && ($(id).value = value ?? ""));
+
+    const saleInProgress = () => cart.length > 0;
+    const walletInProgress = () => WALLET_FIELDS.some((id) => $(id).value.trim());
+
+    function saleParking() {
+        const names = {};
+        cart.forEach((line) => (names[line.name] = (names[line.name] || 0) + line.qty));
+        return {
+            kind: "sale",
+            label: $("custName").value.trim(),
+            summary: Object.entries(names).map(([name, qty]) => (qty > 1 ? `${name} ×${qty}` : name)).join(", "),
+            total_cents: cartTotal(),
+            data: { cart: cart.slice(), fields: readFields(SALE_FIELDS), isJob: isJob(), pay: radio("pay") },
+        };
+    }
+
+    function walletParking() {
+        const wallet = walletChoice()?.parentElement.textContent.trim() || "";
+        const kind = walletKind() === "cash_in" ? "CASH-IN" : "CASH-OUT";
+        return {
+            kind: "wallet",
+            label: $("wName").value.trim() || $("wMobile").value,
+            summary: `${wallet} ${kind}${$("wName").value.trim() && $("wMobile").value ? ` · ${$("wMobile").value}` : ""}`,
+            total_cents: toCents($("wAmount").value) || 0,
+            data: { fields: readFields(WALLET_FIELDS), kind: walletKind(), wallet: radio("wallet"), fee_mode: feeMode() },
+        };
+    }
+
+    function restore(item) {
+        const data = item.data || {};
+        if (item.kind === "sale") {
+            clearSale();
+            showEditor(null);
+            cart.push(...(data.cart || []));
+            fillFields(data.fields);
+            $("isJob").checked = !!data.isJob;
+            setRadio("pay", data.pay);
+            if (data.fields?.custName || data.fields?.custPhone || data.fields?.birNo || data.isJob) {
+                document.querySelector("#checkoutForm details").open = true;
+            }
+            renderCart();
+            showTab("shop");
+        } else {
+            clearWallet();
+            setRadio("kind", data.kind);
+            setRadio("wallet", data.wallet);
+            setRadio("fee_mode", data.fee_mode);
+            fillFields(data.fields);
+            showTab("wallet");
+            fetchWalletQuote();
+        }
+    }
+
+    function parkedTime(iso) {
+        const at = new Date(iso);
+        const time = at.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
+        return at.toDateString() === new Date().toDateString() ? time : `${at.toLocaleDateString("en-PH", { month: "short", day: "numeric" })} ${time}`;
+    }
+
+    async function loadParked() {
+        let items;
+        try {
+            items = await getJson("/pos/api/parked");
+        } catch (_) {
+            return;
+        }
+        $("parkedBar").hidden = !items.length;
+        $("parkedList").innerHTML = items
+            .map(
+                (p) => `<li>
+                    <span class="who"><strong>${escapeHtml(p.label)}</strong><span class="muted small">${escapeHtml(p.summary)} · ${escapeHtml(parkedTime(p.parked_at))}</span></span>
+                    <span class="amt">${escapeHtml(peso(p.total_cents))}</span>
+                    <button type="button" class="btn btn-primary btn-small" data-resume="${p.id}" data-kind="${p.kind}">Resume</button>
+                    <button type="button" class="btn btn-ghost btn-small" data-discard="${p.id}" data-label="${escapeHtml(p.label)}" aria-label="Discard">✕</button>
+                </li>`,
+            )
+            .join("");
+    }
+
+    async function park(which) {
+        const body = which === "sale" ? saleParking() : walletParking();
+        const result = await postJson("/pos/api/parked", body);
+        if (which === "sale") {
+            clearSale();
+            showEditor(null);
+        } else {
+            clearWallet();
+        }
+        return result;
+    }
+
+    $("parkSale").addEventListener("click", async () => {
+        if (!saleInProgress()) return say("Nothing to park yet. Add an item first.", "error");
+        try {
+            const result = await park("sale");
+            say(`Parked ${result.label}. Ready for the next customer.`);
+        } catch (err) {
+            say(err.message, "error");
+        }
+        loadParked();
+    });
+
+    $("parkWallet").addEventListener("click", async () => {
+        if (!walletInProgress()) return say("Nothing to park yet. Enter the amount first.", "error");
+        try {
+            const result = await park("wallet");
+            say(`Parked ${result.label}. Ready for the next customer.`);
+        } catch (err) {
+            say(err.message, "error");
+        }
+        loadParked();
+    });
+
+    $("parkedList").addEventListener("click", async (event) => {
+        const resume = event.target.closest("[data-resume]");
+        const discard = event.target.closest("[data-discard]");
+        if (discard) {
+            if (!confirm(`Discard the parked transaction for ${discard.dataset.label}? It was not paid.`)) return;
+            await postJson(`/pos/api/parked/${discard.dataset.discard}/discard`, {}).catch((err) => say(err.message, "error"));
+            return loadParked();
+        }
+        if (!resume) return;
+        resume.disabled = true;
+        try {
+            // Whatever is on the screen of the same kind goes on hold in its place.
+            const { resume: id, kind } = resume.dataset;
+            let swapped = null;
+            if (kind === "sale" && saleInProgress()) swapped = await park("sale");
+            if (kind === "wallet" && walletInProgress()) swapped = await park("wallet");
+            const item = await postJson(`/pos/api/parked/${id}/resume`, {});
+            restore(item);
+            say(`Resumed ${item.label}.${swapped ? ` ${swapped.label} was parked.` : ""}`);
+        } catch (err) {
+            say(err.message, "error");
+        }
+        loadParked();
+    });
+
+    loadParked();
+    window.addEventListener("focus", loadParked);
+    setInterval(loadParked, 30000);
 
     // Coming from a bill ("Next: Shop sale"): fill in the customer, nothing else.
     const fromBill = new URLSearchParams(window.location.search);

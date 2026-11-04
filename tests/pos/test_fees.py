@@ -113,3 +113,12 @@ def test_default_schedule_is_valid():
 def test_invalid_brackets_rejected(brackets):
     with pytest.raises(FeeError):
         validate_schedule(FeeSchedule(brackets=brackets))
+
+
+def test_load_cost_after_wallet_discount():
+    from pos.fees import load_cost
+
+    assert load_cost(9_900, 300) == 9_603  # Maya: ₱99 → ₱96.03
+    assert load_cost(5_000, 300) == 4_850
+    assert load_cost(9_900, 0) == 9_900
+    assert load_cost(3_300, 250) == 3_218  # ₱32.175 rounds to ₱32.18

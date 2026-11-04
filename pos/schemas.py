@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,7 @@ class SaleLineIn(BaseModel):
     mobile_no: Optional[str] = None
     amount: Optional[str] = None
     is_promo: bool = False
+    deducted: Optional[str] = None  # what the GCash/Maya app deducted; blank = the account's discount
     reference: Optional[str] = None
 
 
@@ -61,3 +62,11 @@ class JobStatusIn(BaseModel):
 class VoidIn(BaseModel):
     reason: str = ""
     admin_pin: str = ""
+
+
+class ParkIn(BaseModel):
+    kind: Literal["sale", "wallet"]
+    label: str = ""
+    summary: str = ""
+    total_cents: int = 0
+    data: dict[str, Any]

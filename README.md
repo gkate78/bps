@@ -25,10 +25,12 @@ BPS helps teams manage bill records end-to-end: encode customer bills, process s
 
 ## Shop Register (`/pos`)
 The print shop's cash register runs inside BPS on the shop computer (on when `POS_ENABLED=1`, which `run_local.sh` sets; off on the online deployment). Use **Shop register →** in the top bar, or **Next: Shop sale** after saving a bill (a separate transaction; only the customer's name and phone carry over). Encoders work it as cashiers; admins also get its Settings.
-- **Register**: shop services with typed prices (suggestions from past sales), loading (fee added automatically; promos rounded up to the next ₱10), paid in cash or to the shop's GCash/Maya; **job orders** with a down payment (tarpaulin, invitations, …)
+- **Register**: shop services with typed prices (suggestions from past sales), loading (fee added automatically; promos rounded up to the next ₱10), each account's load discount (Maya 3%: ₱96.03 for ₱99) taken into its balance and the load income, paid in cash or to the shop's GCash/Maya; **job orders** with a down payment (tarpaulin, invitations, …)
+- **Park** an unpaid sale or GCash/Maya transaction to serve the next customer first, then **Resume** it (not counted anywhere until it's paid)
 - **GCash / Maya cash-in and cash-out** as their own transactions, with step-by-step instructions and the fee rule (₱20 per full ₱1,000 plus ₱10/₱20 on the remainder; loads of ₱50 or less +₱5)
 - **Job orders**: balances collected later, in parts if needed; **Sales** list with reprint and void (admin PIN); **Summary** of shop income
 - **End of day** (`/pos/eod`): one count for the whole counter. Expected cash = starting cash + bills paid in cash + shop cash + GCash/Maya cash-in − cash-out payouts − bills paid to billers in cash − cash taken out (± moves to/from GCash/Maya). Each GCash/Maya account gets an expected balance too. Bills count as paid to the biller when their payment reference is first entered (`settled_at`); Bayad/bank settlements are listed for reference.
+- **Admin → Database** also shows the register's tables. **Backup to Google Sheets** (register Settings): paste the given Apps Script into your own Google Sheet, deploy it as a web app, and save its link; BPS then copies bills and shop records there with **Back up now** and after each End of day. It's a copy for viewing; restore from the `.db` backups.
 - 58mm receipts, 1 copy, with the BPS business details and the footer "THIS IS NOT AN OFFICIAL RECEIPT" (the BIR invoice booklet is still used). Money is stored as integer centavos.
 - Code in `pos/` (tables `pos_*` in the same database); design notes in DEC-045/DEC-046 and the register's plan (`cashreg/docs/PLAN.md`).
 

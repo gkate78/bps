@@ -382,3 +382,27 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Bills are settled sometimes in cash but mostly online, often not the same day they're collected, so the count needs when and how each bill was paid out; until now only `updated_at` hinted at it. Existing records were recorded as cash while the app was being tested, so they're left out.
 - Alternatives considered: use `updated_at` as the settlement time; record settlements by hand as cash movements.
 - Follow-up: The older Reconciliation page still compares cash on hand with all bills collected (including GCash); point staff to End of day for the drawer count.
+
+- Date: 2026-11-04
+- ID: DEC-047
+- Related task: BPS-231
+- Decision: The register can **park** a shop sale or a GCash/Maya transaction that isn't paid yet, so the next customer can be served first. Parking saves the screen as-is (cart, customer, cash received, wallet choices) in `pos_parked_txns` under the customer's name (or WALK-IN); Resume puts it back and removes it, parking whatever of the same kind is on the screen in its place; ✕ discards it. Parked transactions are not sales: no number, no receipt, no money in the summary or End of day, which instead warns while any are still parked.
+- Why: Customers often wait at the counter (files to send, money still arriving in GCash) while others need quick service; clearing the sale meant re-entering it.
+- Alternatives considered: keep parked carts in the browser only (lost if the browser data is cleared, invisible to a second computer); save them as unpaid job orders (would number and count them as sales).
+- Follow-up: none.
+
+- Date: 2026-11-04
+- ID: DEC-048
+- Related task: BPS-232
+- Decision: (1) Admin → Database lists the shop register's tables too (added by `register_pos`), with `*_cents` columns shown in pesos without the suffix. (2) Backup to Google Sheets: register Settings holds an Apps Script web app link (must be `https://script.google.com/macros/s/…/exec`) and a generated password; BPS posts each of 13 tabs (bills, customers, billers, staff names and roles, shop sales and lines, job order payments, GCash/Maya cash-in/out, End of day, cash movements, services, accounts) and the script replaces that tab and notes the time in a BACKUP INFO tab. Runs from a "Back up now" button and, when on, in the background after End of day is saved; the result shows in Settings and the register audit log. Never sent: PIN hashes, OTP fields, settings (including the password), auth logs, raw imports.
+- Why: The owner wants the records viewable outside the shop computer, without a Google Cloud project or new libraries.
+- Alternatives considered: a Google Cloud service account with the Sheets API (more setup, extra dependencies); an Excel download uploaded by hand.
+- Follow-up: The sheet is a copy for viewing, not for restoring; the `.db` backups remain the restore path. Whole tabs are rewritten each time; if bills grow past tens of thousands of rows, send only recent changes.
+
+- Date: 2026-11-04
+- ID: DEC-049
+- Related task: BPS-233
+- Decision: Each GCash/Maya account has a load discount (`pos_wallets.load_discount_bp`, basis points; Maya 3% because Maya deducts ₱96.03 for a ₱99 load, GCash 0% until known), set in register Settings. Each load line stores what the app deducted (`pos_sale_lines.wallet_cost_cents`): the account's discount by default, or the amount typed in "Deducted by the app" when the app shows something else (must be more than zero and not more than the load). Wallet balances in the Summary and End of day go down by that amount, and load income is what the customer paid minus it. Loads recorded before this keep an empty `wallet_cost_cents` and count as the full load.
+- Why: The expected Maya balance at closing was short by the discount on every load, and the discount is shop income.
+- Alternatives considered: a discount per network or per promo (no evidence it varies); typing the deducted amount for every load.
+- Follow-up: Confirm GCash's load discount and set it in Settings.

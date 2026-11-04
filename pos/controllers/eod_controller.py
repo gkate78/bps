@@ -25,7 +25,7 @@ from app.models import BillRecord
 from pos.auth_adapter import User, display_name
 from pos.controllers.sale_controller import PosError, clean_text, day_range, day_summary
 from pos.controllers.settings_controller import add_audit, get_settings, list_wallets
-from pos.models import PosCashMovement, PosDayClose, PosDayWallet, PosWallet
+from pos.models import PosCashMovement, PosDayClose, PosDayWallet, PosParkedTxn, PosWallet
 from pos.money import MoneyError, to_cents, to_cents_optional
 
 MOVEMENT_KINDS = {
@@ -73,6 +73,7 @@ class EodReport:
     wallets: list = field(default_factory=list)  # WalletReport
     other_settlements: dict = field(default_factory=dict)  # channel -> [count, cents]
     unsettled_bills: tuple = (0, 0)  # (count, cents) collected that day, not yet paid to billers
+    parked: tuple = (0, 0)  # (count, cents) parked by the end of the day and still not paid
     movements: list = field(default_factory=list)
     close: Optional[PosDayClose] = None
     closed_by: str = ""
@@ -129,6 +130,8 @@ async def eod_report(db: AsyncSession, day: date) -> EodReport:
         bills_by_method[_method(bill.payment_method)] += bill_cents(bill.total)
     unsettled = [b for b in bills_in if not b.settled_at and not (b.payment_reference or "").strip()]
     report.unsettled_bills = (len(unsettled), sum(bill_cents(b.total) - bill_cents(b.charge) for b in unsettled))
+    parked = (await db.execute(select(PosParkedTxn).where(PosParkedTxn.parked_at < hi))).scalars().all()
+    report.parked = (len(parked), sum(p.total_cents for p in parked))
 
     settled = (
         await db.execute(select(BillRecord).where(BillRecord.settled_at >= lo, BillRecord.settled_at < hi))

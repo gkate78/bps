@@ -28,6 +28,12 @@ class PosSettings(SQLModel, table=True):
     promo_round_cents: int = Field(default=1_000, nullable=False)
     # End of day: the usual cash the drawer starts with (filled in, can be changed per day).
     default_starting_cash_cents: int = Field(default=0, nullable=False)
+    # Google Sheets backup (pos/controllers/gsheets_controller.py): the Apps Script link and its password.
+    gsheets_url: Optional[str] = Field(default=None, max_length=500)
+    gsheets_password: Optional[str] = Field(default=None, max_length=64)
+    gsheets_after_eod: bool = Field(default=True, nullable=False)
+    gsheets_last_at: Optional[datetime] = Field(default=None)
+    gsheets_last_result: Optional[str] = Field(default=None, max_length=500)
 
     updated_at: datetime = Field(default_factory=datetime.now, nullable=False)
 
@@ -74,3 +80,5 @@ class PosWallet(SQLModel, table=True):
     name: str = Field(max_length=60, unique=True)
     provider: str = Field(max_length=20)  # GCASH | MAYA
     is_active: bool = Field(default=True, nullable=False)
+    # Discount the app gives on loads, in basis points (300 = 3%): Maya deducts ₱96.03 for a ₱99 load.
+    load_discount_bp: int = Field(default=0, nullable=False)

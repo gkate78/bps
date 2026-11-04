@@ -16,6 +16,24 @@ from fastapi.staticfiles import StaticFiles
 
 from pos.auth_adapter import NotSignedIn
 
+# Shown in BPS's Database View (Admin → Database), after the bills tables.
+DATABASE_VIEW_TABLES = {
+    "pos_sales": "Shop Sales",
+    "pos_sale_lines": "Shop Sale Lines",
+    "pos_sale_payments": "Shop Job Order Payments",
+    "pos_wallet_txns": "Shop GCash/Maya Cash-in/out",
+    "pos_parked_txns": "Shop Parked (unpaid)",
+    "pos_day_closes": "End of Day",
+    "pos_day_wallets": "End of Day GCash/Maya",
+    "pos_cash_movements": "Cash Movements",
+    "pos_services": "Shop Services",
+    "pos_networks": "Load Networks",
+    "pos_wallets": "GCash/Maya Accounts",
+    "pos_fee_brackets": "Fee Brackets",
+    "pos_settings": "Shop Settings",
+    "pos_audit_log": "Shop Audit Log",
+}
+
 
 def pos_enabled() -> bool:
     return os.getenv("POS_ENABLED", "").strip().lower() in ("1", "true", "yes")
@@ -23,6 +41,7 @@ def pos_enabled() -> bool:
 
 def register_pos(app: FastAPI) -> None:
     from app.routes.auth_routes import templates as bps_auth_templates
+    from app.routes import bill_routes
     from app.routes.bill_routes import templates as bps_bill_templates
     from pos.routes.eod_routes import router as eod_router
     from pos.routes.register_routes import router as register_router
@@ -36,6 +55,7 @@ def register_pos(app: FastAPI) -> None:
     # BPS pages show the Bills / Shop switch when the register is on.
     for bps_templates in (bps_auth_templates, bps_bill_templates):
         bps_templates.env.globals["pos_enabled"] = True
+    bill_routes.DATABASE_VIEW_TABLES.update(DATABASE_VIEW_TABLES)
 
     @app.exception_handler(NotSignedIn)
     async def _not_signed_in(request: Request, exc: NotSignedIn):

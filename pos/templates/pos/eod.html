@@ -17,6 +17,12 @@
         Totals below update as new transactions come in; save again after a late transaction.
     </div>
     {% endif %}
+    {% if r.parked[0] %}
+    <div class="alert alert-warn">
+        {{ r.parked[0] }} parked transaction{{ '' if r.parked[0] == 1 else 's' }} ({{ r.parked[1] | peso }}) {{ 'is' if r.parked[0] == 1 else 'are' }} not paid and not counted here.
+        <a href="/pos">Finish or discard {{ 'it' if r.parked[0] == 1 else 'them' }} in the register.</a>
+    </div>
+    {% endif %}
 </section>
 
 <div id="notice" class="alert" hidden></div>

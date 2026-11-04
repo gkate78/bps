@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import delete, select
 
 from pos.auth_adapter import User, page_admin
+from pos.controllers import gsheets_controller as gsheets
 from pos.controllers.sale_controller import clean_text
 from pos.controllers.settings_controller import (
     add_audit,
@@ -33,6 +34,16 @@ def _back(request: Request, message: str = "", error: str = "", anchor: str = ""
     return RedirectResponse(url=f"/pos/settings{'#' + anchor if anchor else ''}", status_code=303)
 
 
+async def _gsheets_password(db: AsyncSession) -> str:
+    """The Apps Script needs the password before there's a link, so make one the first time Settings opens."""
+    s = await get_settings(db)
+    if not s.gsheets_password:
+        s.gsheets_password = gsheets.new_password()
+        db.add(s)
+        await db.commit()
+    return s.gsheets_password
+
+
 @router.get("", response_class=HTMLResponse, include_in_schema=False)
 async def settings_page(request: Request, user: User = Depends(page_admin), db: AsyncSession = Depends(get_db)):
     flash = request.session.pop("pos_flash", None) or {}
@@ -47,6 +58,7 @@ async def settings_page(request: Request, user: User = Depends(page_admin), db: 
             "services": await list_services(db),
             "networks": await list_networks(db),
             "wallets": await list_wallets(db),
+            "gsheets_script": gsheets.script_text(await _gsheets_password(db)),
             "message": flash.get("message"),
             "error": flash.get("error"),
         },
@@ -73,6 +85,35 @@ async def save_business(
     add_audit(db, "settings", 1, "update_register", user.id)
     await db.commit()
     return _back(request, message="Saved", anchor="business")
+
+
+@router.post("/gsheets", include_in_schema=False)
+async def save_gsheets(
+    request: Request,
+    url: str = Form(""),
+    after_eod: str = Form(""),
+    user: User = Depends(page_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    url = url.strip()
+    if url and not gsheets.valid_url(url):
+        return _back(request, error=f"The link should start with {gsheets.URL_PREFIX} and end with /exec", anchor="gsheets")
+    s = await get_settings(db)
+    s.gsheets_url = url or None
+    s.gsheets_after_eod = bool(after_eod)
+    db.add(s)
+    add_audit(db, "settings", 1, "update_gsheets", user.id, {"url_set": bool(url), "after_eod": s.gsheets_after_eod})
+    await db.commit()
+    return _back(request, message="Saved", anchor="gsheets")
+
+
+@router.post("/gsheets/backup", include_in_schema=False)
+async def gsheets_backup(request: Request, user: User = Depends(page_admin)):
+    try:
+        message = await gsheets.run_backup("button", user.id)
+    except gsheets.BackupError as exc:
+        return _back(request, error=str(exc), anchor="gsheets")
+    return _back(request, message=message, anchor="gsheets")
 
 
 @router.post("/fees", include_in_schema=False)
@@ -128,6 +169,28 @@ async def add_wallet(
     add_audit(db, "wallet", wallet.id, "create", user.id, {"name": cleaned})
     await db.commit()
     return _back(request, message=f"{cleaned} added", anchor="wallets")
+
+
+@router.post("/wallets/discounts", include_in_schema=False)
+async def save_wallet_discounts(request: Request, user: User = Depends(page_admin), db: AsyncSession = Depends(get_db)):
+    form = await request.form()
+    changes = {}
+    for wallet in await list_wallets(db):
+        raw = str(form.get(f"discount_{wallet.id}", "")).strip() or "0"
+        try:
+            bp = round(float(raw) * 100)
+        except ValueError:
+            bp = -1
+        if not 0 <= bp < 5_000:
+            return _back(request, error=f"{wallet.name} discount must be a percent from 0 to 49.99", anchor="wallets")
+        if bp != wallet.load_discount_bp:
+            changes[wallet.name] = {"from": wallet.load_discount_bp, "to": bp}
+            wallet.load_discount_bp = bp
+            db.add(wallet)
+    if changes:
+        add_audit(db, "wallet", None, "load_discount", user.id, changes)
+    await db.commit()
+    return _back(request, message="Discounts saved", anchor="wallets")
 
 
 @router.post("/wallets/{item_id}/toggle", include_in_schema=False)

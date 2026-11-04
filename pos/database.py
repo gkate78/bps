@@ -13,6 +13,7 @@ DEFAULT_SERVICES = [
 ]
 DEFAULT_NETWORKS = ["GLOBE", "TM", "SMART", "TNT", "DITO", "GOMO"]
 DEFAULT_WALLETS = [("GCASH", "GCASH"), ("MAYA", "MAYA")]
+MAYA_LOAD_DISCOUNT_BP = 300  # Maya deducts ₱96.03 for a ₱99 load
 
 
 async def get_db() -> AsyncSession:
@@ -63,7 +64,22 @@ async def init_db() -> None:
         )
         if "checkout_paid_cents" in added:
             await conn.execute(text("UPDATE pos_sales SET checkout_paid_cents = total_cents, amount_paid_cents = total_cents"))
-        await _add_missing_columns(conn, "pos_settings", (("default_starting_cash_cents", "INTEGER NOT NULL DEFAULT 0"),))
+        await _add_missing_columns(conn, "pos_sale_lines", (("wallet_cost_cents", "INTEGER"),))
+        added = await _add_missing_columns(conn, "pos_wallets", (("load_discount_bp", "INTEGER NOT NULL DEFAULT 0"),))
+        if "load_discount_bp" in added:
+            await conn.execute(text(f"UPDATE pos_wallets SET load_discount_bp = {MAYA_LOAD_DISCOUNT_BP} WHERE provider = 'MAYA'"))
+        await _add_missing_columns(
+            conn,
+            "pos_settings",
+            (
+                ("default_starting_cash_cents", "INTEGER NOT NULL DEFAULT 0"),
+                ("gsheets_url", "VARCHAR(500)"),
+                ("gsheets_password", "VARCHAR(64)"),
+                ("gsheets_after_eod", "BOOLEAN NOT NULL DEFAULT 1"),
+                ("gsheets_last_at", "DATETIME"),
+                ("gsheets_last_result", "VARCHAR(500)"),
+            ),
+        )
 
     # Seed defaults once, only into empty tables.
     async with bps_db.AsyncSessionLocal() as db:
@@ -80,5 +96,5 @@ async def init_db() -> None:
                 db.add(PosNetwork(name=name, sort_order=order))
         if (await db.execute(select(PosWallet.id).limit(1))).first() is None:
             for name, provider in DEFAULT_WALLETS:
-                db.add(PosWallet(name=name, provider=provider))
+                db.add(PosWallet(name=name, provider=provider, load_discount_bp=MAYA_LOAD_DISCOUNT_BP if provider == "MAYA" else 0))
         await db.commit()
