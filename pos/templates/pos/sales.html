@@ -1,0 +1,76 @@
+{% extends "pos/base.html" %}
+{% block title %}Sales{% endblock %}
+{% block content %}
+<section class="panel">
+    <form method="get" action="/pos/sales" class="filters">
+        <label>From <input type="date" name="start" value="{{ start.isoformat() }}"></label>
+        <label>To <input type="date" name="end" value="{{ end.isoformat() }}"></label>
+        <label>Show
+            <select name="kind">
+                <option value="all" {{ 'selected' if kind == 'all' }}>Everything</option>
+                <option value="shop" {{ 'selected' if kind == 'shop' }}>Shop sales and job order payments</option>
+                <option value="wallet" {{ 'selected' if kind == 'wallet' }}>GCash / Maya</option>
+            </select>
+        </label>
+        <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="No., mobile, reference, description"></label>
+        <button type="submit" class="btn btn-primary">Show</button>
+    </form>
+</section>
+
+<div id="notice" class="alert" hidden></div>
+
+<section class="panel">
+    <h2>{{ rows | length }} transaction{{ '' if rows | length == 1 else 's' }}</h2>
+    <div class="table-wrap">
+        <table class="list">
+            <thead>
+                <tr><th>No.</th><th>Time</th><th>Type</th><th>Details</th><th class="num">Amount</th><th class="num">Fee</th><th>Cashier</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr class="{{ 'voided' if r.status == 'voided' }}">
+                    <td class="nowrap">{{ r.no }}</td>
+                    <td class="nowrap">{{ r.at.strftime("%m/%d %I:%M %p") }}</td>
+                    <td class="nowrap">{{ r.label }}</td>
+                    <td>
+                        {{ r.details }}
+                        {% if r.customer %}<div class="muted small">{{ r.customer }}</div>{% endif %}
+                        {% if r.bir_invoice_no %}<div class="muted small">BIR invoice {{ r.bir_invoice_no }}</div>{% endif %}
+                        {% if r.status == 'voided' %}<div class="badge-void">VOIDED · {{ r.void_reason }}</div>{% endif %}
+                    </td>
+                    <td class="num">{{ r.amount_cents | peso }}</td>
+                    <td class="num">{{ (r.fee_cents | peso) if r.fee_cents is not none else '' }}</td>
+                    <td class="nowrap">{{ r.cashier }}</td>
+                    <td class="nowrap">
+                        <a class="btn btn-secondary btn-small" target="receipt" href="/pos/receipt/{{ r.type }}/{{ r.id }}">Reprint</a>
+                        {% if r.status != 'voided' %}
+                        <button type="button" class="btn btn-danger btn-small" data-void-type="{{ r.type }}" data-void-id="{{ r.id }}" data-void-no="{{ r.no }}">Void</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="8" class="muted">Nothing for these dates.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<dialog id="voidDialog" class="dialog">
+    <form id="voidForm" method="dialog" class="stack" autocomplete="off">
+        <h2>Void <span id="voidNo"></span></h2>
+        <p class="muted">The transaction stays on record, marked VOIDED, and is left out of totals. An admin must approve with their PIN.
+            Voiding a job order also voids its balance payments; voiding a balance payment puts that amount back on the order's balance.</p>
+        <label>Reason <input type="text" id="voidReason" required minlength="3" maxlength="255"></label>
+        <label>Admin PIN <input type="password" id="voidPin" required maxlength="4" inputmode="numeric" pattern="\d{4}"></label>
+        <p id="voidError" class="alert alert-error" hidden></p>
+        <div class="actions">
+            <button type="button" class="btn btn-secondary" id="voidCancel">Cancel</button>
+            <button type="submit" class="btn btn-danger">Void</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script src="/pos/static/js/sales.js"></script>
+{% endblock %}

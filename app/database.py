@@ -113,6 +113,10 @@ async def init_db() -> None:
             )
         if "amount_review" not in col_names:
             await conn.execute(text("ALTER TABLE bill_records ADD COLUMN amount_review TEXT"))
+        if "settled_at" not in col_names:
+            # Left empty for existing records: only settlements from now on count in End of day.
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN settled_at DATETIME"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bill_records_settled_at ON bill_records(settled_at)"))
         if "late_charge" not in col_names:
             await conn.execute(text("ALTER TABLE bill_records ADD COLUMN late_charge FLOAT NOT NULL DEFAULT 0"))
             if "amt2" in col_names:

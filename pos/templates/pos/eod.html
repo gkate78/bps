@@ -1,0 +1,123 @@
+{% extends "pos/base.html" %}
+{% block title %}End of day{% endblock %}
+{% block content %}
+<section class="panel">
+    <form method="get" action="/pos/eod" class="filters">
+        <label>Day <input type="date" name="day" value="{{ r.day.isoformat() }}" onchange="this.form.submit()"></label>
+        <a class="btn btn-secondary" href="/pos/eod?day={{ (r.day - timedelta(days=1)).isoformat() }}">← Previous day</a>
+        <a class="btn btn-secondary" href="/pos/eod?day={{ (r.day + timedelta(days=1)).isoformat() }}">Next day →</a>
+    </form>
+    <p class="muted small">One count for the whole counter: bills and shop together. Enter the starting cash, record any cash taken out or added during the day, then count the drawer and check each GCash/Maya balance at closing.</p>
+    {% if r.close and r.close.closed_at %}
+    <div class="alert {{ 'alert-success' if r.difference_cents == 0 else 'alert-warn' }}">
+        Saved by {{ r.closed_by }} at {{ r.close.closed_at.strftime("%m/%d %I:%M %p") }}.
+        {% if r.difference_cents is not none %}
+            Cash drawer: {{ 'balanced' if r.difference_cents == 0 else ('over ' ~ (r.difference_cents | peso)) if r.difference_cents > 0 else ('short ' ~ ((-r.difference_cents) | peso)) }}.
+        {% endif %}
+        Totals below update as new transactions come in; save again after a late transaction.
+    </div>
+    {% endif %}
+</section>
+
+<div id="notice" class="alert" hidden></div>
+
+<form id="eodForm" data-day="{{ r.day.isoformat() }}" autocomplete="off">
+<div class="grid2">
+    <section class="panel">
+        <h2>Cash drawer</h2>
+        <table class="list eod" data-change="{{ r.change_cents }}" data-target="cash">
+            <tbody>
+                <tr><td>Starting cash</td><td class="num"><input type="text" class="money" name="opening_cash" inputmode="decimal" value="{{ r.opening_cash_cents | pesos_input }}"></td></tr>
+                {% for label, cents in r.cash_lines %}
+                <tr><td>{{ label }}</td><td class="num {{ 'neg' if cents < 0 }}">{{ cents | peso }}</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr><th>Expected cash in the drawer</th><th class="num" data-expected>{{ r.expected_cash_cents | peso }}</th></tr>
+                <tr><th>Counted cash</th><th class="num"><input type="text" class="money" name="counted_cash" inputmode="decimal" value="{{ r.counted_cash_cents | pesos_input if r.counted_cash_cents is not none else '' }}" placeholder="count it"></th></tr>
+                <tr><th>Over / short</th><th class="num" data-difference></th></tr>
+            </tfoot>
+        </table>
+        {% if r.unsettled_bills[0] %}
+        <p class="muted small">{{ r.unsettled_bills[0] }} bill{{ '' if r.unsettled_bills[0] == 1 else 's' }} collected this day {{ 'is' if r.unsettled_bills[0] == 1 else 'are' }} not yet paid to the billers ({{ r.unsettled_bills[1] | peso }}). That money is still with the shop.</p>
+        {% endif %}
+    </section>
+
+    {% for w in r.wallets %}
+    <section class="panel">
+        <h2>{{ w.wallet.name }} balance</h2>
+        <table class="list eod" data-change="{{ w.change_cents }}" data-wallet="{{ w.wallet.id }}">
+            <tbody>
+                <tr><td>Opening balance <span class="muted small">(from the {{ w.wallet.name }} app)</span></td><td class="num"><input type="text" class="money" name="opening" inputmode="decimal" value="{{ w.opening_cents | pesos_input }}"></td></tr>
+                {% for label, cents in w.lines if cents %}
+                <tr><td>{{ label }}</td><td class="num {{ 'neg' if cents < 0 }}">{{ cents | peso }}</td></tr>
+                {% else %}
+                <tr><td class="muted" colspan="2">No {{ w.wallet.name }} activity.</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr><th>Expected balance</th><th class="num" data-expected>{{ w.expected_cents | peso }}</th></tr>
+                <tr><th>Balance in the app now</th><th class="num"><input type="text" class="money" name="counted" inputmode="decimal" value="{{ w.counted_cents | pesos_input if w.counted_cents is not none else '' }}" placeholder="check app"></th></tr>
+                <tr><th>Difference</th><th class="num" data-difference></th></tr>
+            </tfoot>
+        </table>
+    </section>
+    {% endfor %}
+
+    <section class="panel">
+        <h2>Cash taken out or added</h2>
+        <table class="list">
+            <tbody>
+                {% for m in r.movements %}
+                <tr>
+                    <td class="nowrap">{{ m.created_at.strftime("%I:%M %p") }}</td>
+                    <td>{{ movement_kinds[m.kind] }}{% if m.wallet_name %} {{ m.wallet_name }}{% endif %} · {{ m.reason }}<div class="muted small">{{ movement_users.get(m.user_id, '') }}</div></td>
+                    <td class="num {{ 'neg' if m.drawer_delta_cents < 0 }}">{{ m.drawer_delta_cents | peso }}</td>
+                    <td>{% if user.role == 'admin' %}<button type="button" class="btn btn-ghost btn-small" data-remove-movement="{{ m.id }}" aria-label="Remove">✕</button>{% endif %}</td>
+                </tr>
+                {% else %}
+                <tr><td class="muted" colspan="4">None yet.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="stack movement-form">
+            <div class="row2">
+                <label>What
+                    <select id="mvKind">
+                        {% for kind, label in movement_kinds.items() %}<option value="{{ kind }}">{{ label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label>Amount ₱ <input type="text" id="mvAmount" inputmode="decimal"></label>
+            </div>
+            <label id="mvWalletLabel" hidden>Account
+                <select id="mvWallet">{% for w in wallets %}<option value="{{ w.id }}">{{ w.name }}</option>{% endfor %}</select>
+            </label>
+            <label>Reason <input type="text" id="mvReason" maxlength="160" placeholder="owner pickup, bond paper, bank deposit, coins for change…"></label>
+            <button type="button" class="btn btn-secondary" id="mvAdd">Add</button>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Bills paid to billers through other channels</h2>
+        <p class="muted small">Paid through Bayad, banks and others. This money doesn't come from the drawer or the GCash/Maya accounts above.</p>
+        <table class="list">
+            <tbody>
+                {% for channel, row in r.other_settlements.items() %}
+                <tr><td>{{ channel }}</td><td class="num">{{ row[0] }}</td><td class="num">{{ row[1] | peso }}</td></tr>
+                {% else %}
+                <tr><td class="muted" colspan="3">None this day.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+
+<section class="panel stack">
+    <label>Notes <span class="muted">(optional)</span> <input type="text" name="notes" maxlength="500" value="{{ r.notes }}"></label>
+    <div class="actions"><button type="submit" class="btn btn-primary btn-big" id="eodSave">Save end of day</button></div>
+</section>
+</form>
+{% endblock %}
+{% block scripts %}
+<script src="/pos/static/js/eod.js"></script>
+{% endblock %}

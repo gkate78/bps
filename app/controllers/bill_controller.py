@@ -143,6 +143,19 @@ def _normalize_text_fields(payload: dict) -> dict:
     return payload
 
 
+def _has_text(value) -> bool:
+    return value is not None and str(value).strip() != ""
+
+
+def _stamp_settled(record: BillRecord, had_payment_reference: bool) -> None:
+    """Record when a bill is first paid to the biller; clear it if the payment reference is removed."""
+    has_reference = _has_text(record.payment_reference)
+    if has_reference and not had_payment_reference:
+        record.settled_at = datetime.now()
+    elif not has_reference:
+        record.settled_at = None
+
+
 def _sanitize_payment_fields(payload: dict) -> dict:
     method = str(payload.get("payment_method") or "").strip().upper()
     if method == "CASH":
@@ -514,6 +527,7 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         processed_by_user_id=payload.get("processed_by_user_id"),
         created_by_user_id=payload.get("created_by_user_id"),
     )
+    _stamp_settled(record, had_payment_reference=False)
 
     db.add(record)
     await db.commit()
@@ -613,8 +627,10 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
         updates["amt2"] = record.late_charge
     updates = _sanitize_payment_fields(updates)
 
+    had_payment_reference = _has_text(record.payment_reference)
     for key, value in updates.items():
         setattr(record, key, value)
+    _stamp_settled(record, had_payment_reference)
 
     if not record.reference:
         record.reference = await _generate_reference(db, record.txn_date)
@@ -1419,6 +1435,7 @@ async def batch_mark_cash_and_export(
             row_changed = True
         if row.payment_reference is None or str(row.payment_reference).strip() == "":
             row.payment_reference = row.reference or None
+            _stamp_settled(row, had_payment_reference=False)
             row_changed = True
         if row_changed:
             row.updated_at = now

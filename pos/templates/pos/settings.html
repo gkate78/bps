@@ -1,0 +1,101 @@
+{% extends "pos/base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+<div class="grid2">
+    <section class="panel" id="business">
+        <h2>Register and receipt</h2>
+        <p class="muted small">Business name, address, phone and TIN on shop receipts come from <a href="/admin/settings">BPS Admin Settings</a>. Staff accounts are managed in BPS too.</p>
+        <form method="post" action="/pos/settings/business" class="stack">
+            <label>Receipt footer <input type="text" name="receipt_footer" value="{{ settings.receipt_footer }}" maxlength="255"></label>
+            <label>Usual starting cash ₱ <span class="muted">(filled in on End of day; can be changed per day)</span>
+                <input type="text" name="default_starting_cash" inputmode="decimal" value="{{ settings.default_starting_cash_cents | pesos_input }}">
+            </label>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    </section>
+
+    <section class="panel" id="fees">
+        <h2>Fees (loading and GCash/Maya)</h2>
+        <form method="post" action="/pos/settings/fees" class="stack">
+            <div class="row2">
+                <label>For every full ₱ <input type="text" name="block" inputmode="numeric" value="{{ settings.fee_block_cents | pesos_input }}" required></label>
+                <label>Fee ₱ <input type="text" name="block_fee" inputmode="numeric" value="{{ settings.fee_block_fee_cents | pesos_input }}" required></label>
+            </div>
+            <span class="field-label">Plus a fee on the remainder</span>
+            <table class="list" id="bracketTable">
+                <thead><tr><th>From ₱</th><th>To ₱</th><th>Fee ₱</th></tr></thead>
+                <tbody>
+                    {% for b in brackets %}
+                    <tr>
+                        <td><input type="text" name="b_min" inputmode="numeric" value="{{ b.min_cents | pesos_input }}"></td>
+                        <td><input type="text" name="b_max" inputmode="numeric" value="{{ b.max_cents | pesos_input }}"></td>
+                        <td><input type="text" name="b_fee" inputmode="numeric" value="{{ b.fee_cents | pesos_input }}"></td>
+                    </tr>
+                    {% endfor %}
+                    <tr>
+                        <td><input type="text" name="b_min" inputmode="numeric" placeholder="new"></td>
+                        <td><input type="text" name="b_max" inputmode="numeric"></td>
+                        <td><input type="text" name="b_fee" inputmode="numeric"></td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="muted small">Clear a row to remove it. Brackets must run from ₱1 to one peso below the block, with no gaps.</p>
+            <div class="row2">
+                <label>Small load: up to ₱ <input type="text" name="small_max" inputmode="numeric" value="{{ settings.load_small_max_cents | pesos_input }}" required></label>
+                <label>Small load fee ₱ <input type="text" name="small_fee" inputmode="numeric" value="{{ settings.load_small_fee_cents | pesos_input }}" required></label>
+            </div>
+            <label>Promo price rounds up to the next ₱ <input type="text" name="promo_round" inputmode="numeric" value="{{ settings.promo_round_cents | pesos_input }}" required></label>
+            <button type="submit" class="btn btn-primary">Save fees</button>
+        </form>
+    </section>
+
+    {% for list_name, title, items in [("services", "Services (register buttons)", services), ("networks", "Load networks", networks)] %}
+    <section class="panel" id="{{ list_name }}">
+        <h2>{{ title }}</h2>
+        <ul class="chips">
+            {% for item in items %}
+            <li class="{{ 'off' if not item.is_active }}">
+                {{ item.name }}
+                <form method="post" action="/pos/settings/{{ list_name }}/{{ item.id }}/rename" class="inline" data-rename="{{ item.name }}">
+                    <input type="hidden" name="name">
+                    <button type="submit" class="btn btn-ghost btn-small">Rename</button>
+                </form>
+                <form method="post" action="/pos/settings/{{ list_name }}/{{ item.id }}/toggle" class="inline">
+                    <button type="submit" class="btn btn-ghost btn-small">{{ 'Show' if not item.is_active else 'Hide' }}</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        <form method="post" action="/pos/settings/{{ list_name }}" class="inline-row">
+            <input type="text" name="name" placeholder="Add new" required>
+            <button type="submit" class="btn btn-primary">Add</button>
+        </form>
+    </section>
+    {% endfor %}
+
+    <section class="panel" id="wallets">
+        <h2>GCash / Maya accounts</h2>
+        <ul class="chips">
+            {% for w in wallets %}
+            <li class="{{ 'off' if not w.is_active }}">
+                {{ w.name }} <span class="muted small">{{ w.provider }}</span>
+                <form method="post" action="/pos/settings/wallets/{{ w.id }}/toggle" class="inline">
+                    <button type="submit" class="btn btn-ghost btn-small">{{ 'Show' if not w.is_active else 'Hide' }}</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        <form method="post" action="/pos/settings/wallets" class="inline-row">
+            <input type="text" name="name" placeholder="Account name" required>
+            <select name="provider"><option value="GCASH">GCash</option><option value="MAYA">Maya</option></select>
+            <button type="submit" class="btn btn-primary">Add</button>
+        </form>
+    </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/pos/static/js/settings.js"></script>
+{% endblock %}

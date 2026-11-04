@@ -1,0 +1,169 @@
+{% extends "pos/base.html" %}
+{% block title %}Register{% endblock %}
+{% block content %}
+<div class="tabs" role="tablist">
+    <button type="button" class="tab on" data-tab="shop" role="tab">Shop sale</button>
+    <button type="button" class="tab" data-tab="wallet" role="tab">GCash / Maya cash-in · cash-out</button>
+</div>
+
+<div id="notice" class="alert" hidden></div>
+
+<!-- Shop sale: services and load, paid in cash -->
+<section id="tab-shop" class="register">
+    <div class="panel">
+        <h2>Add to sale</h2>
+        <div class="svc-grid">
+            {% for s in services %}
+            <button type="button" class="svc-btn" data-service-id="{{ s.id }}" data-name="{{ s.name }}">{{ s.name }}</button>
+            {% endfor %}
+            <button type="button" class="svc-btn svc-load" data-load="1">LOAD</button>
+        </div>
+
+        <form id="serviceEditor" class="editor" hidden autocomplete="off">
+            <h3 id="serviceEditorTitle"></h3>
+            <label>Description <span class="muted">(optional, e.g. A4 colored, PDS package)</span>
+                <input type="text" id="svcDesc" maxlength="160">
+            </label>
+            <div class="row3">
+                <label>Qty <input type="number" id="svcQty" min="1" max="10000" step="1" value="1" required></label>
+                <label>Price each ₱ <input type="text" id="svcPrice" inputmode="decimal" required></label>
+                <button type="submit" class="btn btn-primary">Add line</button>
+            </div>
+        </form>
+
+        <form id="loadEditor" class="editor" hidden autocomplete="off">
+            <h3>Load</h3>
+            <div class="field">
+                <span class="field-label">Network</span>
+                <div class="choice" id="loadNetworks">
+                    {% for n in networks %}
+                    <label class="pill"><input type="radio" name="network" value="{{ n.id }}" data-name="{{ n.name }}"> {{ n.name }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="field">
+                <span class="field-label">Send from</span>
+                <div class="choice" id="loadWallets">
+                    {% for w in wallets %}
+                    <label class="pill"><input type="radio" name="load_wallet" value="{{ w.id }}" data-name="{{ w.name }}" {{ 'checked' if loop.first }}> {{ w.name }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="row2">
+                <label>Mobile no. <input type="tel" id="loadMobile" maxlength="11" inputmode="numeric" placeholder="09XXXXXXXXX" required></label>
+                <label>Load amount ₱ <input type="text" id="loadAmount" inputmode="numeric" required></label>
+            </div>
+            <div class="row2">
+                <label class="check"><input type="checkbox" id="loadPromo"> Promo <span class="muted">(price rounds up to the next ₱10)</span></label>
+                <label>Promo name <span class="muted">(optional)</span> <input type="text" id="loadDesc" maxlength="160"></label>
+            </div>
+            <label>Reference no. <span class="muted">(optional)</span> <input type="text" id="loadRef" maxlength="60"></label>
+            <div class="quote" id="loadQuote">Enter the load amount.</div>
+            <button type="submit" class="btn btn-primary">Add load</button>
+        </form>
+    </div>
+
+    <div class="panel cart">
+        <h2>Current sale</h2>
+        <table class="lines">
+            <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Amount</th><th></th></tr></thead>
+            <tbody id="cartBody"><tr class="empty"><td colspan="4">No items yet. Tap a service or LOAD.</td></tr></tbody>
+        </table>
+        <div class="total-row"><span>Total</span><strong id="cartTotal">₱0.00</strong></div>
+
+        <form id="checkoutForm" autocomplete="off" class="stack">
+            <details>
+                <summary>Customer and BIR invoice (optional)</summary>
+                <div class="row2">
+                    <label>Customer name <input type="text" id="custName" maxlength="160"></label>
+                    <label>Customer phone <input type="tel" id="custPhone" maxlength="11" inputmode="numeric"></label>
+                </div>
+                <label>BIR invoice no. <input type="text" id="birNo" maxlength="40"></label>
+            </details>
+            <label class="check"><input type="checkbox" id="isJob"> Down payment only (job order: tarpaulin, invitations, …)</label>
+            <div id="jobBlock" class="stack" hidden>
+                <div class="row2">
+                    <label>Down payment ₱ <input type="text" id="downPayment" inputmode="decimal"></label>
+                    <label>Ready by <span class="muted">(optional)</span> <input type="date" id="promisedDate"></label>
+                </div>
+                <div class="total-row"><span>Balance on pickup</span><strong id="jobBalance">₱0.00</strong></div>
+                <p class="muted small">Customer name is required for a job order (fill it in above). Load can't be in a job order.</p>
+            </div>
+            <div class="field">
+                <span class="field-label">Paid with</span>
+                <div class="choice big" id="payChoice">
+                    <label class="pill"><input type="radio" name="pay" value="cash" checked> Cash</label>
+                    {% for w in wallets %}
+                    <label class="pill"><input type="radio" name="pay" value="{{ w.id }}" data-name="{{ w.name }}"> {{ w.name }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div id="cashBlock" class="stack">
+                <label class="cash">Cash received ₱ <input type="text" id="cashIn" inputmode="decimal"></label>
+                <div class="total-row change"><span>Change</span><strong id="cartChange">₱0.00</strong></div>
+            </div>
+            <div id="walletPayBlock" class="stack" hidden>
+                <div class="quote" id="walletPayHint"></div>
+                <label>Reference no. <input type="text" id="payRef" maxlength="60"></label>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn-secondary" id="clearSale">Clear</button>
+                <button type="submit" class="btn btn-primary btn-big" id="saveSale">Save &amp; Print</button>
+            </div>
+        </form>
+    </div>
+</section>
+
+<!-- GCash / Maya: its own transaction -->
+<section id="tab-wallet" class="register" hidden>
+    <form id="walletForm" class="panel" autocomplete="off">
+        <h2>GCash / Maya</h2>
+        <div class="field">
+            <span class="field-label">Type</span>
+            <div class="choice big">
+                <label class="pill"><input type="radio" name="kind" value="cash_in" checked> Cash-in</label>
+                <label class="pill"><input type="radio" name="kind" value="cash_out"> Cash-out</label>
+            </div>
+        </div>
+        <div class="field">
+            <span class="field-label">Account</span>
+            <div class="choice big">
+                {% for w in wallets %}
+                <label class="pill"><input type="radio" name="wallet" value="{{ w.id }}" {{ 'checked' if loop.first }}> {{ w.name }}</label>
+                {% endfor %}
+            </div>
+        </div>
+        <div class="row2">
+            <label>Amount ₱ <input type="text" id="wAmount" inputmode="numeric" required></label>
+            <label>Customer mobile no. <input type="tel" id="wMobile" maxlength="11" inputmode="numeric" placeholder="09XXXXXXXXX" required></label>
+        </div>
+        <div class="row2">
+            <label>Reference no. <input type="text" id="wRef" maxlength="60" required></label>
+            <label>Customer name <span class="muted">(optional)</span> <input type="text" id="wName" maxlength="160"></label>
+        </div>
+        <div class="field" id="feeModeField" hidden>
+            <span class="field-label">Cash-out fee</span>
+            <div class="choice">
+                <label class="pill"><input type="radio" name="fee_mode" value="deducted" checked> Deduct from payout</label>
+                <label class="pill"><input type="radio" name="fee_mode" value="paid_in_cash"> Fee paid in cash (short on coins)</label>
+            </div>
+        </div>
+    </form>
+
+    <div class="panel cart">
+        <h2>What to do</h2>
+        <div class="quote big" id="walletQuote">Enter the amount.</div>
+        <div id="wCashBlock">
+            <label class="cash">Cash received ₱ <input type="text" id="wTendered" inputmode="decimal" placeholder="exact amount if blank"></label>
+            <div class="total-row change"><span>Change</span><strong id="wChange">₱0.00</strong></div>
+        </div>
+        <div class="actions">
+            <button type="button" class="btn btn-secondary" id="clearWallet">Clear</button>
+            <button type="button" class="btn btn-primary btn-big" id="saveWallet">Save &amp; Print</button>
+        </div>
+    </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script src="/pos/static/js/register.js"></script>
+{% endblock %}

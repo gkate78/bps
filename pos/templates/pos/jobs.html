@@ -1,0 +1,93 @@
+{% extends "pos/base.html" %}
+{% block title %}Job orders{% endblock %}
+{% block content %}
+<section class="panel">
+    <form method="get" action="/pos/jobs" class="filters">
+        <label>Show
+            <select name="show">
+                <option value="open" {{ 'selected' if show == 'open' }}>With balance (not yet completed)</option>
+                <option value="completed" {{ 'selected' if show == 'completed' }}>Completed</option>
+                <option value="all" {{ 'selected' if show == 'all' }}>All</option>
+            </select>
+        </label>
+        <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="No., customer, phone, description"></label>
+        <button type="submit" class="btn btn-primary">Show</button>
+    </form>
+    <p class="muted small">To take a new job order, ring it up on the Register and tick <strong>Down payment only (job order)</strong>.</p>
+</section>
+
+<div id="notice" class="alert" hidden></div>
+
+<section class="panel">
+    <h2>{{ rows | length }} job order{{ '' if rows | length == 1 else 's' }}</h2>
+    <div class="table-wrap">
+        <table class="list">
+            <thead>
+                <tr><th>No.</th><th>Customer</th><th>Order</th><th>Ready by</th><th>Status</th>
+                    <th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}{% set s = r.sale %}
+                <tr>
+                    <td class="nowrap">{{ s.sale_no }}<div class="muted small">{{ s.created_at.strftime("%m/%d/%Y") }}</div></td>
+                    <td>{{ s.customer_name }}{% if s.customer_phone %}<div class="muted small">{{ s.customer_phone }}</div>{% endif %}</td>
+                    <td>{{ r.details }}</td>
+                    <td class="nowrap {{ 'late' if s.promised_date and s.promised_date < today and s.job_status != 'completed' }}">
+                        {{ s.promised_date.strftime("%m/%d/%Y") if s.promised_date else '—' }}
+                    </td>
+                    <td class="nowrap"><span class="status status-{{ s.job_status }}">{{ {'in_progress': 'In progress', 'ready': 'Ready for pickup', 'completed': 'Completed'}[s.job_status] }}</span></td>
+                    <td class="num">{{ s.total_cents | peso }}</td>
+                    <td class="num">{{ s.amount_paid_cents | peso }}</td>
+                    <td class="num"><strong>{{ s.balance_cents | peso }}</strong></td>
+                    <td class="nowrap">
+                        {% if s.job_status != 'completed' %}
+                        <button type="button" class="btn btn-primary btn-small" data-collect="{{ s.id }}" data-no="{{ s.sale_no }}"
+                                data-customer="{{ s.customer_name }}" data-balance="{{ s.balance_cents }}">Collect balance</button>
+                        {% if s.job_status == 'in_progress' %}
+                        <button type="button" class="btn btn-secondary btn-small" data-status="ready" data-id="{{ s.id }}">Mark ready</button>
+                        {% else %}
+                        <button type="button" class="btn btn-ghost btn-small" data-status="in_progress" data-id="{{ s.id }}">Not ready</button>
+                        {% endif %}
+                        {% endif %}
+                        <a class="btn btn-ghost btn-small" target="receipt" href="/pos/receipt/sale/{{ s.id }}">Reprint</a>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" class="muted">No job orders here.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<dialog id="collectDialog" class="dialog">
+    <form id="collectForm" method="dialog" class="stack" autocomplete="off">
+        <h2>Collect balance · <span id="collectNo"></span></h2>
+        <p class="muted" id="collectCustomer"></p>
+        <div class="total-row"><span>Balance</span><strong id="collectBalance"></strong></div>
+        <label>Amount paid now ₱ <input type="text" id="collectAmount" inputmode="decimal"></label>
+        <div class="field">
+            <span class="field-label">Paid with</span>
+            <div class="choice">
+                <label class="pill"><input type="radio" name="cpay" value="cash" checked> Cash</label>
+                {% for w in wallets %}
+                <label class="pill"><input type="radio" name="cpay" value="{{ w.id }}" data-name="{{ w.name }}"> {{ w.name }}</label>
+                {% endfor %}
+            </div>
+        </div>
+        <div id="collectCash" class="stack">
+            <label class="cash">Cash received ₱ <input type="text" id="collectCashIn" inputmode="decimal"></label>
+            <div class="total-row change"><span>Change</span><strong id="collectChange">₱0.00</strong></div>
+        </div>
+        <label id="collectRefLabel" hidden>Reference no. <input type="text" id="collectRef" maxlength="60"></label>
+        <p id="collectError" class="alert alert-error" hidden></p>
+        <div class="actions">
+            <button type="button" class="btn btn-secondary" id="collectCancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="collectSave">Save &amp; Print</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script src="/pos/static/js/jobs.js"></script>
+{% endblock %}

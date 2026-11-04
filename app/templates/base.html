@@ -20,6 +20,9 @@
             <p>{% block topbar_subtitle %}Manage imported billing rows with fast table tools.{% endblock %}</p>
         </div>
         <div class="topbar-actions">
+            {% if pos_enabled and request.session.get("role") in ("admin", "encoder") %}
+            <a href="/pos" class="btn btn-secondary">Shop register →</a>
+            {% endif %}
             {% block topbar_actions %}{% endblock %}
         </div>
     </header>
