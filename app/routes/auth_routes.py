@@ -406,6 +406,7 @@ async def signup_verify_submit(
 
     request.session.pop("pending_signup", None)
     request.session["user_id"] = user.id
+    request.session["role"] = user.role  # lets pages show staff-only links without a lookup
     return RedirectResponse(url="/dashboard", status_code=303)
 
 
@@ -808,6 +809,7 @@ async def admin_signup_submit(
     await db.refresh(user)
 
     request.session["user_id"] = user.id
+    request.session["role"] = user.role  # lets pages show staff-only links without a lookup
     return RedirectResponse(url="/admin/settings?welcome=1", status_code=303)
 
 
@@ -927,6 +929,7 @@ async def signin_submit(
     await _link_customer_accounts_to_user(db, user)
 
     request.session["user_id"] = user.id
+    request.session["role"] = user.role  # lets pages show staff-only links without a lookup
     return RedirectResponse(url="/dashboard", status_code=303)
 
 

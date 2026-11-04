@@ -1,0 +1,29 @@
+{% extends "pos/receipt_base.html" %}
+{% block title %}{{ payment.payment_no }}{% endblock %}
+{% block body %}
+{% if payment.status == 'voided' %}<div class="void">VOIDED</div>{% endif %}
+<div class="info">JOB ORDER PAYMENT</div>
+<div class="info">{{ payment.payment_no }} · FOR {{ sale.sale_no }}</div>
+<div class="info">{{ payment.created_at.strftime("%m/%d/%Y %I:%M %p") }}</div>
+{% if sale.customer_name %}<div class="info">{{ sale.customer_name }}</div>{% endif %}
+<div class="rule"></div>
+{% for line in lines %}
+<div class="line">
+    <span>{{ line.service_name }}{% if line.description %} {{ line.description }}{% endif %}</span>
+    <span>{{ line.line_total_cents | fmt }}</span>
+</div>
+{% if line.qty > 1 %}<div class="sub">{{ line.qty }} × {{ line.unit_price_cents | fmt }}</div>{% endif %}
+{% endfor %}
+<div class="line total"><span>TOTAL</span><span>{{ sale.total_cents | fmt }}</span></div>
+<div class="line"><span>PREVIOUSLY PAID</span><span>{{ previously_paid_cents | fmt }}</span></div>
+<div class="line"><span>THIS PAYMENT</span><span>{{ payment.amount_cents | fmt }}</span></div>
+<div class="line total"><span>{{ 'BALANCE' if payment.balance_after_cents else 'FULLY PAID' }}</span><span>{{ payment.balance_after_cents | fmt }}</span></div>
+{% if payment.payment_method == 'wallet' %}
+<div class="line"><span>PAID VIA {{ payment.pay_wallet_name }}</span><span>{{ payment.amount_cents | fmt }}</span></div>
+<div class="info">REF {{ payment.payment_reference }}</div>
+{% else %}
+<div class="line"><span>CASH</span><span>{{ payment.cash_cents | fmt }}</span></div>
+<div class="line"><span>CHANGE</span><span>{{ payment.change_cents | fmt }}</span></div>
+{% endif %}
+{% if cashier %}<div class="meta">CASHIER: {{ cashier }}</div>{% endif %}
+{% endblock %}

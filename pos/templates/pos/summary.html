@@ -1,0 +1,136 @@
+{% extends "pos/base.html" %}
+{% block title %}Summary{% endblock %}
+{% block content %}
+<section class="panel">
+    <form method="get" action="/pos/summary" class="filters">
+        <label>From <input type="date" name="start" value="{{ start.isoformat() }}"></label>
+        <label>To <input type="date" name="end" value="{{ end.isoformat() }}"></label>
+        <button type="submit" class="btn btn-primary">Show</button>
+    </form>
+</section>
+
+<section class="kpis">
+    <div class="kpi">
+        <span>Shop income</span>
+        <strong>{{ s.income_cents | peso }}</strong>
+        <small>Services + load fees + GCash/Maya fees</small>
+    </div>
+    <div class="kpi">
+        <span>Cash drawer change</span>
+        <strong>{{ s.drawer_cents | peso }}</strong>
+        <small>Cash in minus cash paid out (before starting cash and expenses)</small>
+    </div>
+    <div class="kpi">
+        <span>Shop sales</span>
+        <strong>{{ s.sale_count }}</strong>
+        <small>transactions</small>
+    </div>
+    <div class="kpi">
+        <span>GCash / Maya</span>
+        <strong>{{ s.cash_in_count + s.cash_out_count }}</strong>
+        <small>cash-in and cash-out</small>
+    </div>
+</section>
+
+<div class="grid2">
+    <section class="panel">
+        <h2>Services</h2>
+        <table class="list">
+            <tbody>
+                {% for name, cents in s.service_totals | dictsort %}
+                <tr><td>{{ name }}</td><td class="num">{{ cents | peso }}</td></tr>
+                {% else %}
+                <tr><td class="muted" colspan="2">No service sales.</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot><tr><th>Total services</th><th class="num">{{ s.service_sales_cents | peso }}</th></tr></tfoot>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Loading</h2>
+        <table class="list">
+            <thead><tr><th>Network</th><th class="num">Count</th><th class="num">Load sent</th></tr></thead>
+            <tbody>
+                {% for name, row in s.load_by_network | dictsort %}
+                <tr><td>{{ name }}</td><td class="num">{{ row[0] }}</td><td class="num">{{ row[1] | peso }}</td></tr>
+                {% else %}
+                <tr><td class="muted" colspan="3">No loads.</td></tr>
+                {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr><th>Customers paid</th><th></th><th class="num">{{ s.load_charged_cents | peso }}</th></tr>
+                <tr><th>Load income (fees + promo rounding)</th><th></th><th class="num">{{ s.load_income_cents | peso }}</th></tr>
+            </tfoot>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>GCash / Maya</h2>
+        <table class="list">
+            <thead><tr><th></th><th class="num">Count</th><th class="num">Amount</th><th class="num">Fees</th></tr></thead>
+            <tbody>
+                <tr><td>Cash-in</td><td class="num">{{ s.cash_in_count }}</td><td class="num">{{ s.cash_in_cents | peso }}</td><td class="num">{{ s.cash_in_fees_cents | peso }}</td></tr>
+                <tr><td>Cash-out</td><td class="num">{{ s.cash_out_count }}</td><td class="num">{{ s.cash_out_cents | peso }}</td><td class="num">{{ s.cash_out_fees_cents | peso }}</td></tr>
+                {% for name, row in s.sales_paid_by_wallet | dictsort %}
+                <tr><td>Shop payments received via {{ name }}</td><td class="num">{{ row[0] }}</td><td class="num">{{ row[1] | peso }}</td><td></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Wallet balance change</h2>
+        <p class="muted small">Loads and cash-ins lower the balance; cash-outs and shop sales paid via GCash/Maya raise it. Compare with the change in your GCash/Maya app balance.</p>
+        <table class="list">
+            <tbody>
+                {% for w in wallets %}
+                <tr><td>{{ w.name }}</td><td class="num">{{ s.wallet_deltas.get(w.name, 0) | peso }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>By cashier</h2>
+        <table class="list">
+            <thead><tr><th>Cashier</th><th class="num">Transactions</th><th class="num">Drawer change</th></tr></thead>
+            <tbody>
+                {% for name, row in s.by_cashier | dictsort %}
+                <tr><td>{{ name }}</td><td class="num">{{ row[0] }}</td><td class="num">{{ row[1] | peso }}</td></tr>
+                {% else %}
+                <tr><td class="muted" colspan="3">No transactions.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Job orders</h2>
+        <table class="list">
+            <tbody>
+                <tr><td>New job orders</td><td class="num">{{ s.job_count }}</td><td class="num">{{ s.job_total_cents | peso }}</td></tr>
+                <tr><td>Down payments received</td><td></td><td class="num">{{ s.job_down_payments_cents | peso }}</td></tr>
+                <tr><td>Balances collected</td><td class="num">{{ s.balance_payment_count }}</td><td class="num">{{ s.balance_payments_cents | peso }}</td></tr>
+            </tbody>
+            <tfoot>
+                <tr><th>Still unpaid (all open orders, as of now)</th><th class="num">{{ s.unpaid_job_count }}</th><th class="num">{{ s.unpaid_balance_cents | peso }}</th></tr>
+            </tfoot>
+        </table>
+        <p class="muted small">Services count a job order at its full price on the day it was ordered. The cash drawer and wallets count each payment on the day it was received.</p>
+    </section>
+
+    <section class="panel">
+        <h2>Voids</h2>
+        <table class="list">
+            <tbody>
+                {% for no, cents, reason, approver in s.voids %}
+                <tr><td>{{ no }}</td><td>{{ reason }}<div class="muted small">Approved by {{ approver }}</div></td><td class="num">{{ cents | peso }}</td></tr>
+                {% else %}
+                <tr><td class="muted" colspan="3">No voids.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

@@ -36,6 +36,9 @@ class BillRecord(SQLModel, table=True):
     created_by_user_id: Optional[int] = Field(default=None, index=True)
     # JSON note set on import when the file's amounts differ from the biller rules or don't add up.
     amount_review: Optional[str] = Field(default=None)
+    # When the bill was paid to the biller (payment_reference first set); End of day uses it with
+    # payment_channel to take the money out of the drawer or wallet. Not set by CSV import.
+    settled_at: Optional[datetime] = Field(default=None, index=True)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

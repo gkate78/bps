@@ -366,3 +366,19 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The form counted only digits, so SSS accounts like `AA123456789012` were rejected by hand entry while a letter typo in a numeric account could pass; the API didn't check accounts at all (resolves the DEC-043 follow-up).
 - Alternatives considered: a per-biller regex pattern; numbers-only everywhere a length is set.
 - Follow-up: CSV record imports still don't check account formats; consider flagging mismatches in the review list.
+
+- Date: 2026-11-04
+- ID: DEC-045
+- Related task: BPS-230
+- Decision: Merge the standalone shop register (built separately in `cashreg`) into BPS as the `pos/` package: routes under `/pos`, tables prefixed `pos_` in the same `bills_admin.db`, BPS accounts and session (admin = register admin, encoder = cashier, customers kept out), BPS business profile on shop receipts. Bills and shop sales stay separate transactions (bills keep their 2-copy receipt); a top-bar switch and a "Next: Shop sale" button on the entry form connect them. On only when `POS_ENABLED=1` (set by `run_local.sh`), so the online deployment stays bills-only. Register money is integer centavos; BPS amounts stay decimals and are converted only in End of day. `scripts/import_cashreg.py` moves the standalone register's data in (users matched by phone).
+- Why: The counter has one cash drawer and one set of GCash/Maya accounts, so one login and one end-of-day count must cover both bills and shop.
+- Alternatives considered: keep two apps and add a combined report across two databases; install the register as a separate Python package.
+- Follow-up: The register's own plan and history are in `cashreg/docs/PLAN.md`; SMS when a job order is ready; split payment (part cash, part GCash).
+
+- Date: 2026-11-04
+- ID: DEC-046
+- Related task: BPS-230
+- Decision: Add `bill_records.settled_at`, set when a bill's `payment_reference` is first set (entry with a reference, record edit/processing, Mark Cash + Download) and cleared if it is removed; CSV import doesn't set it and existing records stay empty. The shop register's End of day page (`/pos/eod`) takes bills paid to billers out of the drawer (`payment_channel` CASH) or that GCash/Maya account (GCASH/MAYA) on the day they were settled; other channels (Bayad, banks) are listed for reference only. Bills collected count by `txn_date` and `payment_method` (cash into the drawer, GCASH/MAYA into that account). The page also records starting cash (default in register Settings), cash taken out/added and moves between drawer and wallets, and the counted cash and wallet balances.
+- Why: Bills are settled sometimes in cash but mostly online, often not the same day they're collected, so the count needs when and how each bill was paid out; until now only `updated_at` hinted at it. Existing records were recorded as cash while the app was being tested, so they're left out.
+- Alternatives considered: use `updated_at` as the settlement time; record settlements by hand as cash movements.
+- Follow-up: The older Reconciliation page still compares cash on hand with all bills collected (including GCash); point staff to End of day for the drawer count.

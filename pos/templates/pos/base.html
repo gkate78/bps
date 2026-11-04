@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Register{% endblock %} | Ditto Digital</title>
+    <link rel="stylesheet" href="/pos/static/fonts/fonts.css">
+    <link rel="icon" href="/pos/static/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/pos/static/css/pos.css">
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <strong>Ditto Digital</strong>
+            <span>Shop register</span>
+        </div>
+        {% if user %}
+        <nav class="nav">
+            <a href="/dashboard" class="switch">← Bills</a>
+            <a href="/pos" class="{{ 'on' if active == 'register' }}">Register</a>
+            <a href="/pos/jobs" class="{{ 'on' if active == 'jobs' }}">Job orders</a>
+            <a href="/pos/sales" class="{{ 'on' if active == 'sales' }}">Sales</a>
+            <a href="/pos/summary" class="{{ 'on' if active == 'summary' }}">Summary</a>
+            <a href="/pos/eod" class="{{ 'on' if active == 'eod' }}">End of day</a>
+            {% if user.role == 'admin' %}
+            <a href="/pos/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>
+            {% endif %}
+        </nav>
+        <form method="post" action="/auth/logout" class="who">
+            <span>{{ user.first_name }}{% if user.role == 'admin' %} · admin{% endif %}</span>
+            <button type="submit" class="btn btn-ghost btn-small">Sign out</button>
+        </form>
+        {% endif %}
+    </header>
+
+    <main class="page">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="/pos/static/js/app.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

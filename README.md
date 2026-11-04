@@ -23,6 +23,15 @@ BPS helps teams manage bill records end-to-end: encode customer bills, process s
 - **Works offline**: jQuery, DataTables, and fonts are served from `app/static/vendor/` (see its README), so no internet connection is needed to run the app
 - **Customer dashboard**: phone-scoped bill visibility with account/biller filters and automatic `customer_accounts.user_id` linking on auth success
 
+## Shop Register (`/pos`)
+The print shop's cash register runs inside BPS on the shop computer (on when `POS_ENABLED=1`, which `run_local.sh` sets; off on the online deployment). Use **Shop register →** in the top bar, or **Next: Shop sale** after saving a bill (a separate transaction; only the customer's name and phone carry over). Encoders work it as cashiers; admins also get its Settings.
+- **Register**: shop services with typed prices (suggestions from past sales), loading (fee added automatically; promos rounded up to the next ₱10), paid in cash or to the shop's GCash/Maya; **job orders** with a down payment (tarpaulin, invitations, …)
+- **GCash / Maya cash-in and cash-out** as their own transactions, with step-by-step instructions and the fee rule (₱20 per full ₱1,000 plus ₱10/₱20 on the remainder; loads of ₱50 or less +₱5)
+- **Job orders**: balances collected later, in parts if needed; **Sales** list with reprint and void (admin PIN); **Summary** of shop income
+- **End of day** (`/pos/eod`): one count for the whole counter. Expected cash = starting cash + bills paid in cash + shop cash + GCash/Maya cash-in − cash-out payouts − bills paid to billers in cash − cash taken out (± moves to/from GCash/Maya). Each GCash/Maya account gets an expected balance too. Bills count as paid to the biller when their payment reference is first entered (`settled_at`); Bayad/bank settlements are listed for reference.
+- 58mm receipts, 1 copy, with the BPS business details and the footer "THIS IS NOT AN OFFICIAL RECEIPT" (the BIR invoice booklet is still used). Money is stored as integer centavos.
+- Code in `pos/` (tables `pos_*` in the same database); design notes in DEC-045/DEC-046 and the register's plan (`cashreg/docs/PLAN.md`).
+
 ## Payment Method and Channel Rules
 - Customer payment mode options: `CASH`, `GCASH`, `MAYA`, `BDO`, `BPI`
 - Admin settlement channel options: `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPICC`, `BPI`
@@ -75,6 +84,7 @@ Run from the project root with `venv/bin/python`. Data-changing scripts are dry 
 | `scripts/clean_phone_numbers.py --db <path>` | Normalize stored phone numbers (blank `NA`, restore dropped leading 0) and fill customers' missing phones |
 | `scripts/apply_file_amounts.py --db <path>` | Put the import file's own amounts back on records imported before file amounts were kept, flagging differences for review |
 | `scripts/db_view.py` | Read-only database preview |
+| `scripts/import_cashreg.py --from <cashreg.db> --db <path>` | One-time move of the standalone shop register's data into BPS (users matched by phone; backs up first; refuses if BPS already has register sales) |
 
 ### Windows (PowerShell) quickstart
 ```powershell
@@ -86,6 +96,13 @@ Run from the project root with `venv/bin/python`. Data-changing scripts are dry 
 ```powershell
 ./scripts/dev.ps1 check
 ```
+
+### Tests
+```bash
+venv/bin/pip install -r requirements-dev.txt
+venv/bin/python -m pytest -q
+```
+Each test runs the app against its own temporary database (`tests/conftest.py`); they currently cover the shop register and End of day.
 
 ## Environment Notes
 ### OTP development mode

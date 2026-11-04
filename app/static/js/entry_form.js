@@ -158,6 +158,8 @@ function clearForm() {
     dom.saveStatus.textContent = "";
     dom.printReceiptBtn.disabled = true;
     lastSavedRecordId = null;
+    const nextShopSaleBtn = document.getElementById("nextShopSaleBtn");
+    if (nextShopSaleBtn) nextShopSaleBtn.disabled = true;
     syncConfirmationReferenceState();
     updateCurrentDateTime();
     recomputeFinancials();
@@ -398,6 +400,13 @@ async function saveEntry(event) {
     const saved = await response.json();
     lastSavedRecordId = saved.id;
     dom.printReceiptBtn.disabled = false;
+    const nextShopSaleBtn = document.getElementById("nextShopSaleBtn");
+    if (nextShopSaleBtn) {
+        // A separate shop transaction; only the customer's name and phone carry over.
+        const params = new URLSearchParams({ customer_name: payload.customer_name || "", customer_phone: payload.cp_number || "" });
+        nextShopSaleBtn.dataset.href = `/pos?${params}`;
+        nextShopSaleBtn.disabled = false;
+    }
     dom.saveStatus.textContent = "SAVED SUCCESSFULLY";
     loadMyTransactions();
 }
@@ -739,3 +748,8 @@ if (ruleDialog.dialog) {
         }
     });
 }
+
+document.getElementById("nextShopSaleBtn")?.addEventListener("click", (event) => {
+    const href = event.currentTarget.dataset.href;
+    if (href) window.location.href = href;
+});

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Receipt{% endblock %}</title>
+    <style>
+        /* Same 58mm thermal layout as the BPS receipt. */
+        @page { size: 58mm auto; margin: 0.5mm 1.5mm 2mm 3mm; }
+        body {
+            font-family: Arial, Helvetica, "Liberation Sans", sans-serif;
+            margin: 0;
+            color: #000;
+            background: #fff;
+            width: 58mm;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.15;
+            text-transform: uppercase;
+        }
+        .receipt { width: 100%; margin: 0 auto; padding: 1mm 1mm 0; }
+        .shop { text-align: center; margin-bottom: 1.5mm; }
+        .shop h1 { margin: 0; font-size: 14px; letter-spacing: 0.2px; }
+        .shop p { margin: 0.5mm 0 0; line-height: 1.25; }
+        .info { padding: 0.3mm 0; overflow-wrap: anywhere; }
+        .rule { border-top: 1px dashed #000; margin: 1mm 0; }
+        .line { display: flex; flex-wrap: wrap; justify-content: space-between; column-gap: 2mm; padding: 0.4mm 0; }
+        .line span:first-child { overflow-wrap: anywhere; }
+        .line span:last-child { margin-left: auto; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .sub { font-size: 11px; padding-left: 2mm; overflow-wrap: anywhere; }
+        .total { font-size: 16px; border-top: 1px dashed #000; margin-top: 0.8mm; padding-top: 1mm; }
+        .meta { margin-top: 2mm; text-align: center; }
+        .void { text-align: center; font-size: 16px; border: 2px solid #000; margin: 1mm 0; padding: 0.5mm; }
+        .preview-actions { width: 58mm; margin: 0 auto; padding: 6px 4px 2px; display: flex; gap: 6px; justify-content: center; text-transform: none; }
+        .toolbar-btn { border: 1px solid #c8d3ee; background: #fff; border-radius: 8px; padding: 5px 8px; font-size: 10px; font-weight: 700; cursor: pointer; }
+        .toolbar-btn.primary { border-color: #0e4dff; background: #0e4dff; color: #fff; }
+        @media print {
+            body { width: auto; max-width: 58mm; }
+            .receipt { padding: 0; }
+            .preview-actions { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt">
+        <div class="shop">
+            {% if business.name %}<h1>{{ business.name }}</h1>{% endif %}
+            {% if business.lines %}<p>{{ business.lines | join("<br>" | safe) }}</p>{% endif %}
+        </div>
+        {% block body %}{% endblock %}
+        {% if settings.receipt_footer %}
+        <p class="meta">{{ settings.receipt_footer }}</p>
+        {% endif %}
+    </div>
+    <div class="preview-actions">
+        <button type="button" class="toolbar-btn primary" id="printBtn">Print</button>
+        <button type="button" class="toolbar-btn" id="closeBtn">Close</button>
+    </div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        document.getElementById("printBtn").addEventListener("click", () => window.print());
+        document.getElementById("closeBtn").addEventListener("click", () => window.close());
+        if (params.get("autoprint") === "1") {
+            window.addEventListener("afterprint", () => window.close());
+            window.addEventListener("load", () => setTimeout(() => window.print(), 150));
+        }
+    </script>
+</body>
+</html>
