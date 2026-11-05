@@ -8,15 +8,19 @@
 <div class="info">{{ txn.customer_mobile }}</div>
 {% if txn.customer_name %}<div class="info">{{ txn.customer_name }}</div>{% endif %}
 <div class="info">REF {{ txn.reference }}</div>
+{% if txn.personal %}<div class="info">PERSONAL{{ ' · FROM SHOP FUNDS' if txn.personal == 'shop' }}</div>{% endif %}
 <div class="rule"></div>
 <div class="line"><span>AMOUNT</span><span>{{ txn.amount_cents | fmt }}</span></div>
 {% if txn.kind == 'cash_in' %}
 <div class="line"><span>SERVICE FEE</span><span>{{ txn.fee_cents | fmt }}</span></div>
 <div class="line total"><span>TOTAL</span><span>{{ txn.collect_cents | fmt }}</span></div>
+{% if txn.collect_cents %}
 <div class="line"><span>CASH</span><span>{{ txn.tendered_cents | fmt }}</span></div>
 <div class="line"><span>CHANGE</span><span>{{ txn.change_cents | fmt }}</span></div>
+{% endif %}
 {% else %}
-{% if txn.fee_mode == 'paid_in_cash' %}
+{% if txn.fee_mode == 'none' %}
+{% elif txn.fee_mode == 'paid_in_cash' %}
 <div class="line"><span>FEE PAID IN CASH</span><span>{{ txn.fee_cents | fmt }}</span></div>
 {% else %}
 <div class="line"><span>LESS FEE</span><span>-{{ txn.fee_cents | fmt }}</span></div>

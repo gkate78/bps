@@ -15,7 +15,7 @@
         <span>{{ line.line_total_cents | fmt }}</span>
     </div>
     <div class="sub">{{ line.mobile_no }}{% if line.description %} · {{ line.description }}{% endif %}</div>
-    <div class="sub">₱{{ (line.line_total_cents - line.fee_cents) | fmt }} + ₱{{ line.fee_cents | fmt }} FEE</div>
+    {% if line.fee_cents %}<div class="sub">₱{{ (line.line_total_cents - line.fee_cents) | fmt }} + ₱{{ line.fee_cents | fmt }} FEE</div>{% endif %}
     {% else %}
     <div class="line">
         <span>{{ line.service_name }}{% if line.description %} {{ line.description }}{% endif %}</span>
@@ -31,7 +31,9 @@
 {% if sale.promised_date %}<div class="info">READY ON {{ sale.promised_date.strftime("%m/%d/%Y") }}</div>{% endif %}
 <div class="info">PLEASE BRING THIS RECEIPT WHEN YOU CLAIM YOUR ORDER</div>
 {% endif %}
-{% if sale.payment_method == 'wallet' %}
+{% if sale.personal %}<div class="info">PERSONAL{{ ' · FROM SHOP FUNDS' if sale.personal == 'shop' }}</div>{% endif %}
+{% if sale.payment_method == 'shop' %}
+{% elif sale.payment_method == 'wallet' %}
 <div class="line"><span>PAID VIA {{ sale.pay_wallet_name }}</span><span>{{ sale.checkout_paid_cents | fmt }}</span></div>
 <div class="info">REF {{ sale.payment_reference }}</div>
 {% else %}

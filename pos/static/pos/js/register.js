@@ -44,6 +44,9 @@
     // ---------- Shop sale ----------
     let currentService = null;
 
+    // Admin's own sale: "" (no), "paid" or "shop" (from shop funds). Loads have no fee; no job order.
+    const personal = () => document.querySelector('input[name="personal"]:checked')?.value || "";
+
     function showEditor(which) {
         $("serviceEditor").hidden = which !== "service";
         $("loadEditor").hidden = which !== "load";
@@ -77,7 +80,7 @@
         const qty = Number($("svcQty").value);
         const price = toCents($("svcPrice").value);
         if (!Number.isInteger(qty) || qty < 1 || qty > 10000) return say("Quantity must be a whole number from 1 to 10,000", "error");
-        if (!price) return say("Enter the price", "error");
+        if (price === null || (!price && !personal())) return say("Enter the price", "error");
         hush();
         cart.push({
             kind: "service",
@@ -105,7 +108,8 @@
             const promo = $("loadPromo").checked;
             const wallet = document.querySelector('input[name="load_wallet"]:checked');
             const q = await getJson(
-                `/pos/api/quote/load?amount=${encodeURIComponent(amount)}&promo=${promo}${wallet ? `&wallet_id=${wallet.value}` : ""}`,
+                `/pos/api/quote/load?amount=${encodeURIComponent(amount)}&promo=${promo}&personal=${!!personal()}` +
+                    (wallet ? `&wallet_id=${wallet.value}` : ""),
             );
             const base = q.priced_cents !== q.load_cents ? `${peso(q.load_cents)} promo → ${peso(q.priced_cents)}` : peso(q.load_cents);
             const deducts = wallet && q.cost_cents !== q.load_cents ? ` · ${wallet.dataset.name} deducts about ${peso(q.cost_cents)}` : "";
@@ -153,9 +157,8 @@
             deducted: $("loadDeducted").value.trim(),
             reference: $("loadRef").value.trim(),
             total_cents: q.total_cents,
-            detail:
-                `${mobile} · ${peso(q.load_cents)}${$("loadPromo").checked ? " promo" : ""} + ${peso(q.fee_cents)} fee via ${wallet.dataset.name}` +
-                ` (deducts ${peso(deducted ?? q.cost_cents)})`,
+            load_cents: q.load_cents,
+            cost_cents: deducted ?? q.cost_cents,
         });
         renderCart();
         ["loadMobile", "loadAmount", "loadDesc", "loadRef", "loadDeducted"].forEach((id) => ($(id).value = ""));
@@ -165,8 +168,23 @@
         $("loadMobile").focus();
     });
 
+    // A personal sale's load costs only the load amount; the server prices it the same way.
+    function lineTotal(line) {
+        return line.kind === "load" && personal() && line.load_cents ? line.load_cents : line.total_cents;
+    }
+
+    function loadDetail(line) {
+        if (!line.load_cents) return line.detail || ""; // parked before personal sales existed
+        const fee = lineTotal(line) - line.load_cents;
+        const promo = line.is_promo && !personal() ? " promo" : "";
+        return (
+            `${line.mobile_no} · ${peso(line.load_cents)}${promo}${fee ? ` + ${peso(fee)} fee` : personal() ? ", no fee" : ""}` +
+            ` via ${line.wallet_name} (deducts ${peso(line.cost_cents)})`
+        );
+    }
+
     function cartTotal() {
-        return cart.reduce((sum, line) => sum + line.total_cents, 0);
+        return cart.reduce((sum, line) => sum + lineTotal(line), 0);
     }
 
     function renderCart() {
@@ -176,12 +194,12 @@
         } else {
             body.innerHTML = cart
                 .map((line, i) => {
-                    const sub = line.kind === "load" ? line.detail : line.qty > 1 ? `${peso(toCents(line.unit_price))} each` : "";
+                    const sub = line.kind === "load" ? loadDetail(line) : line.qty > 1 ? `${peso(toCents(line.unit_price))} each` : "";
                     const desc = line.description ? ` · ${line.description}` : "";
                     return `<tr>
                         <td><strong>${escapeHtml(line.name)}</strong>${escapeHtml(desc)}${sub ? `<div class="muted small">${escapeHtml(sub)}</div>` : ""}</td>
                         <td class="num">${line.qty}</td>
-                        <td class="num">${escapeHtml(peso(line.total_cents))}</td>
+                        <td class="num">${escapeHtml(peso(lineTotal(line)))}</td>
                         <td><button type="button" class="btn btn-ghost btn-small" data-remove="${i}" aria-label="Remove">✕</button></td>
                     </tr>`;
                 })
@@ -246,8 +264,11 @@
     function updatePayment() {
         const choice = payChoice();
         const byWallet = choice.value !== "cash";
-        $("cashBlock").hidden = byWallet;
-        $("walletPayBlock").hidden = !byWallet;
+        const fromShop = personal() === "shop";
+        $("payField").hidden = fromShop;
+        $("shopFundsNote").hidden = !fromShop;
+        $("cashBlock").hidden = byWallet || fromShop;
+        $("walletPayBlock").hidden = !byWallet || fromShop;
         if (byWallet) {
             $("walletPayHint").innerHTML =
                 `Check that <strong>${escapeHtml(peso(dueNow()))}</strong> arrived in ${escapeHtml(choice.dataset.name)}, then enter its reference no.`;
@@ -260,8 +281,18 @@
         }),
     );
 
+    function updatePersonal() {
+        if (personal()) $("isJob").checked = false;
+        $("jobField").hidden = !!personal();
+        renderCart();
+        if ($("loadAmount").value.trim()) updateLoadQuote();
+    }
+    document.querySelectorAll('input[name="personal"]').forEach((el) => el.addEventListener("change", updatePersonal));
+
     function clearSale() {
         cart.length = 0;
+        setRadio("personal", "");
+        if ($("jobField")) $("jobField").hidden = false;
         ["cashIn", "payRef", "custName", "custPhone", "birNo", "downPayment", "promisedDate"].forEach((id) => ($(id).value = ""));
         document.querySelector('input[name="pay"][value="cash"]').checked = true;
         $("isJob").checked = false;
@@ -279,14 +310,17 @@
         if (saving) return;
         if (!cart.length) return say("Add at least one item", "error");
         const pay = payChoice();
-        const byWallet = pay.value !== "cash";
+        const fromShop = personal() === "shop";
+        const byWallet = pay.value !== "cash" && !fromShop;
         if (isJob()) {
             if (cart.some((line) => line.kind === "load")) return say("Load can't be in a job order. Ring it up as a separate sale.", "error");
             if (!$("custName").value.trim()) return say("Enter the customer's name for a job order", "error");
             const down = toCents($("downPayment").value);
             if (!down || down >= cartTotal()) return say("Down payment must be more than zero and less than the total", "error");
         }
-        if (byWallet) {
+        if (fromShop) {
+            // Nothing to collect.
+        } else if (byWallet) {
             if (!$("payRef").value.trim()) return say(`Enter the ${pay.dataset.name} reference no.`, "error");
         } else {
             const cash = toCents($("cashIn").value);
@@ -298,11 +332,12 @@
         const win = openReceiptWindow();
         try {
             const result = await postJson("/pos/api/sales", {
-                lines: cart.map(({ total_cents, name, detail, wallet_name, ...line }) => line),
+                lines: cart.map(({ total_cents, name, detail, wallet_name, load_cents, cost_cents, ...line }) => line),
                 payment_method: byWallet ? "wallet" : "cash",
                 pay_wallet_id: byWallet ? Number(pay.value) : null,
                 payment_reference: byWallet ? $("payRef").value : null,
-                cash: byWallet ? null : $("cashIn").value,
+                cash: byWallet || fromShop ? null : $("cashIn").value,
+                personal: personal() || null,
                 customer_name: $("custName").value,
                 customer_phone: $("custPhone").value,
                 bir_invoice_no: $("birNo").value,
@@ -314,9 +349,11 @@
             const opened = showReceipt(win, url);
             say(
                 `Saved ${escapeHtml(result.sale_no)}${result.balance_cents ? ` (job order, balance ${escapeHtml(peso(result.balance_cents))})` : ""}. ` +
-                    (byWallet
-                        ? `Paid via ${escapeHtml(pay.dataset.name)}.`
-                        : `Change: <strong>${escapeHtml(peso(result.change_cents))}</strong>`) +
+                    (fromShop
+                        ? "Personal, from shop funds."
+                        : byWallet
+                          ? `Paid via ${escapeHtml(pay.dataset.name)}.`
+                          : `Change: <strong>${escapeHtml(peso(result.change_cents))}</strong>`) +
                     (opened ? "" : ` · <a href="${url}" target="receipt">Print receipt</a>`),
                 "success",
                 true,
@@ -338,10 +375,11 @@
     const walletKind = () => document.querySelector('input[name="kind"]:checked').value;
     const feeMode = () => document.querySelector('input[name="fee_mode"]:checked').value;
     const walletChoice = () => document.querySelector('input[name="wallet"]:checked');
+    const wPersonal = () => document.querySelector('input[name="w_personal"]:checked')?.value || "";
 
     async function fetchWalletQuote() {
         const kind = walletKind();
-        $("feeModeField").hidden = kind !== "cash_out";
+        $("feeModeField").hidden = kind !== "cash_out" || !!wPersonal();
         const amount = $("wAmount").value.trim();
         walletQuote = null;
         if (!amount) {
@@ -351,13 +389,25 @@
         }
         try {
             const q = await getJson(
-                `/pos/api/quote/wallet?kind=${kind}&amount=${encodeURIComponent(amount)}&fee_mode=${feeMode()}`,
+                `/pos/api/quote/wallet?kind=${kind}&amount=${encodeURIComponent(amount)}&fee_mode=${feeMode()}&personal=${wPersonal()}`,
             );
             walletQuote = q;
             const wallet = walletChoice()?.parentElement.textContent.trim() || "";
             const mobile = $("wMobile").value || "the customer";
             let steps;
-            if (kind === "cash_in") {
+            if (wPersonal() && kind === "cash_in") {
+                steps = [
+                    q.collect_cents
+                        ? `Collect <strong>${peso(q.collect_cents)}</strong> cash (personal, no fee)`
+                        : "Nothing to collect: personal, from shop funds",
+                    `Send <strong>${peso(q.amount_cents)}</strong> from ${escapeHtml(wallet)} to ${escapeHtml(mobile)}`,
+                ];
+            } else if (wPersonal()) {
+                steps = [
+                    `Confirm <strong>${peso(q.amount_cents)}</strong> received in ${escapeHtml(wallet)}`,
+                    `Give <strong>${peso(q.give_cents)}</strong> cash (personal, no fee)`,
+                ];
+            } else if (kind === "cash_in") {
                 steps = [
                     `Collect <strong>${peso(q.collect_cents)}</strong> cash (${peso(q.amount_cents)} + ${peso(q.fee_cents)} fee)`,
                     `Send <strong>${peso(q.amount_cents)}</strong> from ${escapeHtml(wallet)} to ${escapeHtml(mobile)}`,
@@ -384,7 +434,7 @@
     const updateWalletQuote = debounce(fetchWalletQuote);
     $("wAmount").addEventListener("input", updateWalletQuote);
     $("wMobile").addEventListener("input", updateWalletQuote);
-    document.querySelectorAll('input[name="kind"], input[name="fee_mode"], input[name="wallet"]').forEach((el) =>
+    document.querySelectorAll('input[name="kind"], input[name="fee_mode"], input[name="wallet"], input[name="w_personal"]').forEach((el) =>
         el.addEventListener("change", fetchWalletQuote),
     );
 
@@ -405,6 +455,7 @@
 
     function clearWallet() {
         ["wAmount", "wMobile", "wRef", "wName", "wTendered"].forEach((id) => ($(id).value = ""));
+        setRadio("w_personal", "");
         walletQuote = null;
         $("walletQuote").textContent = "Enter the amount.";
         updateWalletChange();
@@ -434,6 +485,7 @@
                 customer_name: $("wName").value,
                 reference: $("wRef").value,
                 tendered: $("wTendered").value,
+                personal: wPersonal() || null,
             });
             const url = `/pos/receipt/wallet/${result.id}?autoprint=1`;
             const opened = showReceipt(win, url);
@@ -479,7 +531,7 @@
             label: $("custName").value.trim(),
             summary: Object.entries(names).map(([name, qty]) => (qty > 1 ? `${name} ×${qty}` : name)).join(", "),
             total_cents: cartTotal(),
-            data: { cart: cart.slice(), fields: readFields(SALE_FIELDS), isJob: isJob(), pay: radio("pay") },
+            data: { cart: cart.slice(), fields: readFields(SALE_FIELDS), isJob: isJob(), pay: radio("pay"), personal: personal() },
         };
     }
 
@@ -491,7 +543,7 @@
             label: $("wName").value.trim() || $("wMobile").value,
             summary: `${wallet} ${kind}${$("wName").value.trim() && $("wMobile").value ? ` · ${$("wMobile").value}` : ""}`,
             total_cents: toCents($("wAmount").value) || 0,
-            data: { fields: readFields(WALLET_FIELDS), kind: walletKind(), wallet: radio("wallet"), fee_mode: feeMode() },
+            data: { fields: readFields(WALLET_FIELDS), kind: walletKind(), wallet: radio("wallet"), fee_mode: feeMode(), personal: wPersonal() },
         };
     }
 
@@ -504,6 +556,10 @@
             fillFields(data.fields);
             $("isJob").checked = !!data.isJob;
             setRadio("pay", data.pay);
+            if (data.personal) {
+                setRadio("personal", data.personal);
+                $("jobField").hidden = true;
+            }
             if (data.fields?.custName || data.fields?.custPhone || data.fields?.birNo || data.isJob) {
                 document.querySelector("#checkoutForm details").open = true;
             }
@@ -514,6 +570,7 @@
             setRadio("kind", data.kind);
             setRadio("wallet", data.wallet);
             setRadio("fee_mode", data.fee_mode);
+            if (data.personal) setRadio("w_personal", data.personal);
             fillFields(data.fields);
             showTab("wallet");
             fetchWalletQuote();

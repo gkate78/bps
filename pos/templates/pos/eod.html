@@ -44,6 +44,9 @@
                 <tr><th>Over / short</th><th class="num" data-difference></th></tr>
             </tfoot>
         </table>
+        {% if r.personal_shop[0] %}
+        <p class="muted small">{{ r.personal_shop[0] }} personal (admin) transaction{{ '' if r.personal_shop[0] == 1 else 's' }} paid from shop funds ({{ r.personal_shop[1] | peso }}) brought no money in, so {{ 'it is' if r.personal_shop[0] == 1 else 'they are' }} not in the cash received above. Loads, cash-ins and bills paid to billers for {{ 'it' if r.personal_shop[0] == 1 else 'them' }} still lower the drawer or GCash/Maya.</p>
+        {% endif %}
         {% if r.unsettled_bills[0] %}
         <p class="muted small">{{ r.unsettled_bills[0] }} bill{{ '' if r.unsettled_bills[0] == 1 else 's' }} collected this day {{ 'is' if r.unsettled_bills[0] == 1 else 'are' }} not yet paid to the billers ({{ r.unsettled_bills[1] | peso }}). That money is still with the shop.</p>
         {% endif %}
@@ -125,5 +128,5 @@
 </form>
 {% endblock %}
 {% block scripts %}
-<script src="/pos/static/js/eod.js"></script>
+<script src="{{ '/pos/static/js/eod.js' | v }}"></script>
 {% endblock %}

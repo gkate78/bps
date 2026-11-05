@@ -3,12 +3,14 @@ from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
 
+from app.static_version import add_version_filter
 from pos.money import fmt, peso
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 templates.env.filters["peso"] = peso
 templates.env.filters["fmt"] = fmt
 templates.env.globals["timedelta"] = timedelta
+add_version_filter(templates)
 
 
 def pesos_input(cents) -> str:

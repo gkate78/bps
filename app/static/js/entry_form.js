@@ -58,7 +58,13 @@ const dom = {
     paymentReference: document.getElementById("paymentReference"),
     confirmationReference: document.getElementById("confirmationReference"),
     paymentMethod: document.getElementById("paymentMethod"),
+    personal: document.getElementById("personal"), // admins only
 };
+
+/** "" (customer), "paid" or "shop" (admin's own bill: no service charge; shop = paid from shop funds). */
+function personalMode() {
+    return dom.personal ? dom.personal.value : "";
+}
 
 function normalizedBillerKey(value) {
     return String(value || "").trim().toUpperCase();
@@ -120,7 +126,7 @@ function recomputeFinancials() {
 
     const billAmt = round2(rawBillAmt);
     const lateCharge = computeLateCharge(dom.biller.value, dom.dueDate.value);
-    const charge = computeCharge(dom.biller.value, billAmt);
+    const charge = personalMode() ? 0 : computeCharge(dom.biller.value, billAmt);
     const total = round2(billAmt + lateCharge + charge);
     const cash = round2(rawCash);
     const change = round2(cash - total);
@@ -129,6 +135,20 @@ function recomputeFinancials() {
     dom.charge.value = rawBillAmt ? charge.toFixed(2) : "";
     dom.total.value = rawBillAmt ? total.toFixed(2) : "";
     dom.changeAmt.value = rawBillAmt && rawCash ? change.toFixed(2) : "";
+}
+
+/** Paid from shop funds: nothing is received, so there's no amount received or mode of payment. */
+function syncPersonalState() {
+    const fromShop = personalMode() === "shop";
+    dom.cash.disabled = fromShop;
+    if (dom.paymentMethod) dom.paymentMethod.disabled = fromShop;
+    if (fromShop) {
+        dom.cash.value = "";
+        if (dom.paymentMethod) dom.paymentMethod.value = "";
+    }
+    if (dom.confirmationReference) dom.confirmationReference.disabled = fromShop;
+    if (!fromShop) syncConfirmationReferenceState();
+    recomputeFinancials();
 }
 
 function updateCurrentDateTime() {
@@ -160,9 +180,8 @@ function clearForm() {
     lastSavedRecordId = null;
     const nextShopSaleBtn = document.getElementById("nextShopSaleBtn");
     if (nextShopSaleBtn) nextShopSaleBtn.disabled = true;
-    syncConfirmationReferenceState();
+    syncPersonalState();
     updateCurrentDateTime();
-    recomputeFinancials();
 }
 
 function renderAccountOptions(items) {
@@ -254,8 +273,7 @@ async function lookupAccountDetails() {
 
 function payloadFromForm() {
     [dom.account, dom.biller, dom.customerName, dom.cpNumber].forEach(setUppercaseInput);
-    syncConfirmationReferenceState();
-    recomputeFinancials();
+    syncPersonalState();
     return {
         txn_datetime: toLocalISOString(),
         account: dom.account.value.trim(),
@@ -281,6 +299,7 @@ function payloadFromForm() {
             dom.paymentMethod && !dom.paymentMethod.disabled
                 ? (dom.paymentMethod.value || null)
                 : null,
+        personal: personalMode() || null,
     };
 }
 
@@ -310,7 +329,7 @@ function validatePayload(payload) {
         alert("BILL AMOUNT IS REQUIRED");
         return false;
     }
-    if (payload.cash < payload.total) {
+    if (payload.personal !== "shop" && payload.cash < payload.total) {
         alert("AMOUNT RECEIVED MUST BE GREATER THAN OR EQUAL TO TOTAL");
         return false;
     }
@@ -332,6 +351,12 @@ function confirmDetails(payload) {
         ["AMOUNT RECEIVED", formatMoney(payload.cash)],
         ["CHANGE", formatMoney(payload.change_amt)],
     ];
+    if (payload.personal) {
+        rows.unshift(["TYPE", payload.personal === "shop" ? "PERSONAL, FROM SHOP FUNDS" : "PERSONAL, NO SERVICE CHARGE"]);
+    }
+    if (payload.personal === "shop") {
+        rows.splice(-2); // nothing received, no change
+    }
 
     dom.confirmSummary.innerHTML = rows
         .map(
@@ -451,6 +476,9 @@ dom.biller.addEventListener("change", () => fetchKnownAccounts({ query: dom.acco
 if (dom.paymentMethod) {
     dom.paymentMethod.addEventListener("input", syncConfirmationReferenceState);
     dom.paymentMethod.addEventListener("change", syncConfirmationReferenceState);
+}
+if (dom.personal) {
+    dom.personal.addEventListener("change", syncPersonalState);
 }
 
 [dom.biller, dom.billAmt, dom.cash, dom.dueDate].forEach((el) => {

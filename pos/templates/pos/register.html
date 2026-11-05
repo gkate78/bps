@@ -89,6 +89,17 @@
                 </div>
                 <label>BIR invoice no. <input type="text" id="birNo" maxlength="40"></label>
             </details>
+            {% if user.role == 'admin' %}
+            <div class="field">
+                <span class="field-label">Personal <span class="muted">(admin, no load fees)</span></span>
+                <div class="choice" id="personalChoice">
+                    <label class="pill"><input type="radio" name="personal" value="" checked> No</label>
+                    <label class="pill"><input type="radio" name="personal" value="paid"> I pay</label>
+                    <label class="pill"><input type="radio" name="personal" value="shop"> From shop funds</label>
+                </div>
+            </div>
+            {% endif %}
+            <div id="jobField" class="stack">
             <label class="check"><input type="checkbox" id="isJob"> Down payment only (job order: tarpaulin, invitations, …)</label>
             <div id="jobBlock" class="stack" hidden>
                 <div class="row2">
@@ -98,7 +109,9 @@
                 <div class="total-row"><span>Balance on pickup</span><strong id="jobBalance">₱0.00</strong></div>
                 <p class="muted small">Customer name is required for a job order (fill it in above). Load can't be in a job order.</p>
             </div>
-            <div class="field">
+            </div>
+            <p id="shopFundsNote" class="quote" hidden>Paid from shop funds: nothing to collect. Loads are still sent from the GCash/Maya chosen for each load.</p>
+            <div class="field" id="payField">
                 <span class="field-label">Paid with</span>
                 <div class="choice big" id="payChoice">
                     <label class="pill"><input type="radio" name="pay" value="cash" checked> Cash</label>
@@ -151,6 +164,16 @@
             <label>Reference no. <input type="text" id="wRef" maxlength="60" required></label>
             <label>Customer name <span class="muted">(optional)</span> <input type="text" id="wName" maxlength="160"></label>
         </div>
+        {% if user.role == 'admin' %}
+        <div class="field">
+            <span class="field-label">Personal <span class="muted">(admin, no fee)</span></span>
+            <div class="choice">
+                <label class="pill"><input type="radio" name="w_personal" value="" checked> No</label>
+                <label class="pill"><input type="radio" name="w_personal" value="paid"> I pay</label>
+                <label class="pill"><input type="radio" name="w_personal" value="shop"> Cash-in from shop funds</label>
+            </div>
+        </div>
+        {% endif %}
         <div class="field" id="feeModeField" hidden>
             <span class="field-label">Cash-out fee</span>
             <div class="choice">
@@ -176,5 +199,5 @@
 </section>
 {% endblock %}
 {% block scripts %}
-<script src="/pos/static/js/register.js"></script>
+<script src="{{ '/pos/static/js/register.js' | v }}"></script>
 {% endblock %}

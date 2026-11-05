@@ -42,6 +42,18 @@
         </div>
         <datalist id="accountOptions"></datalist>
 
+        {% if show_admin_records_link %}
+        <div class="form-grid form-grid-pro">
+            <label>Transaction Type <span class="muted">(admin)</span>
+                <select id="personal">
+                    <option value="">Customer payment</option>
+                    <option value="paid">Personal: I pay (no service charge)</option>
+                    <option value="shop">Personal: from shop funds (no service charge, nothing received)</option>
+                </select>
+            </label>
+        </div>
+        {% endif %}
+
         <div class="form-grid form-grid-pro entry-grid-amounts">
             <label>Bill Amount<input type="number" step="0.01" id="billAmt" min="0"></label>
             <label>Service Charge<input type="number" step="0.01" id="charge" readonly></label>
@@ -166,5 +178,5 @@ window.BILLER_ACCOUNT_DIGITS = {{ biller_account_digits | tojson }};
 window.BILLER_ACCOUNT_FORMATS = {{ biller_account_formats | tojson }};
 window.ROUTING_URGENT_WINDOW_DAYS = {{ routing_urgent_window_days | tojson }};
 </script>
-<script src="/static/js/entry_form.js"></script>
+<script src="{{ '/static/js/entry_form.js' | v }}"></script>
 {% endblock %}
