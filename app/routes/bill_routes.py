@@ -1,7 +1,7 @@
 import csv
 import io
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.static_version import add_version_filter
 from app.auth import (
     get_current_user_optional,
     hash_pin,
@@ -62,6 +63,7 @@ from app.services import get_confirmation_service
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
+add_version_filter(templates)
 CUSTOMER_PAYMENT_METHODS = {"CASH", "GCASH", "MAYA", "BDO", "BPI"}
 PROCESSING_PAYMENT_METHODS = {"CASH", "GCASH", "MAYA", "BAYAD", "BPI_CC", "BPI"}
 
@@ -184,6 +186,8 @@ class RecordCreate(BaseModel):
     payment_reference: Optional[str] = None
     payment_method: Optional[str] = None
     payment_channel: Optional[str] = None
+    # Admin only: own bill without a service charge; "shop" = paid from shop funds.
+    personal: Optional[Literal["paid", "shop"]] = None
 
 
 class RecordUpdate(BaseModel):
@@ -1412,6 +1416,13 @@ async def create_record_endpoint(
     current_user: UserAccount = Depends(require_data_entry_access),
 ):
     payload.payment_method = _validate_payment_method(payload.payment_method, CUSTOMER_PAYMENT_METHODS)
+    if payload.personal:
+        if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
+            raise HTTPException(status_code=403, detail="Only an admin can enter a personal bill.")
+        if payload.personal == "shop":
+            # Nothing is received from anyone.
+            payload.payment_method = None
+            payload.confirmation_reference = None
 
     if payload.txn_datetime is None:
         payload.txn_datetime = datetime.now()

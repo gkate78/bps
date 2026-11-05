@@ -18,7 +18,10 @@ class PosSale(SQLModel, table=True):
 
     total_cents: int = Field(default=0, nullable=False)
     # cash: cash_cents/change_cents are used. wallet: the customer sent the total to pay_wallet_id.
-    payment_method: str = Field(default="cash", max_length=10, index=True)  # cash | wallet
+    # shop: an admin's personal sale paid from shop funds; nothing is received.
+    payment_method: str = Field(default="cash", max_length=10, index=True)  # cash | wallet | shop
+    # Admin's own sale, loads without fees: "paid" (cash or GCash/Maya) or "shop" (from shop funds).
+    personal: Optional[str] = Field(default=None, max_length=8)
     pay_wallet_id: Optional[int] = Field(default=None, index=True)
     pay_wallet_name: Optional[str] = Field(default=None, max_length=60)
     payment_reference: Optional[str] = Field(default=None, max_length=60, index=True)

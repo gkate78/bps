@@ -31,7 +31,7 @@ TABLES = (
         "SELECT id, txn_datetime, txn_date, account, biller, customer_name, cp_number, bill_amt,"
         " COALESCE(amt2, late_charge) AS late_charge, charge, total, cash, change_amt, due_date, notes, reference,"
         " confirmation_reference, payment_method, payment_channel, payment_reference, settled_at, processed_by_user_id,"
-        " created_by_user_id, amount_review, created_at, updated_at FROM bill_records ORDER BY id",
+        " created_by_user_id, amount_review, personal, created_at, updated_at FROM bill_records ORDER BY id",
     ),
     ("CUSTOMERS", "SELECT * FROM customer_accounts ORDER BY id"),
     ("BILLERS", "SELECT * FROM biller_rules ORDER BY id"),

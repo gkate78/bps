@@ -13,7 +13,7 @@ from pos.controllers import sale_controller as sales
 from pos.controllers import suggest_controller as suggest
 from pos.controllers.settings_controller import get_fee_schedule, get_settings, receipt_business, list_networks, list_services, list_wallets
 from pos.database import get_db
-from pos.fees import FeeError, load_cost, quote_load, quote_wallet
+from pos.fees import FeeError, load_cost, quote_load, quote_personal_load, quote_personal_wallet, quote_wallet
 from pos.models import PosWallet
 from pos.money import MoneyError, to_cents
 from pos.schemas import BalancePaymentIn, JobStatusIn, ParkIn, SaleIn, VoidIn, WalletTxnIn
@@ -51,11 +51,13 @@ async def load_quote(
     amount: str = Query(""),
     promo: bool = Query(False),
     wallet_id: Optional[int] = Query(None),
+    personal: bool = Query(False),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        q = quote_load(to_cents(amount, field="Load amount"), promo, await get_fee_schedule(db))
+        cents = to_cents(amount, field="Load amount")
+        q = quote_personal_load(cents) if personal else quote_load(cents, promo, await get_fee_schedule(db))
     except (MoneyError, FeeError) as exc:
         raise _bad_request(exc)
     wallet = await db.get(PosWallet, wallet_id) if wallet_id else None
@@ -73,11 +75,15 @@ async def wallet_quote(
     kind: str = Query("cash_in"),
     amount: str = Query(""),
     fee_mode: str = Query("deducted"),
+    personal: str = Query(""),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        q = quote_wallet(kind, to_cents(amount), fee_mode, await get_fee_schedule(db))
+        if personal in ("paid", "shop"):
+            q = quote_personal_wallet(kind, to_cents(amount), from_shop=personal == "shop")
+        else:
+            q = quote_wallet(kind, to_cents(amount), fee_mode, await get_fee_schedule(db))
     except (MoneyError, FeeError) as exc:
         raise _bad_request(exc)
     return {

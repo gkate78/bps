@@ -94,5 +94,5 @@ window.CUSTOMER_DASHBOARD_FILTERS = {
     accountBillerMap: {{ account_biller_map | tojson }},
 };
 </script>
-<script src="/static/js/customer_dashboard.js"></script>
+<script src="{{ '/static/js/customer_dashboard.js' | v }}"></script>
 {% endblock %}

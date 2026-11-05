@@ -406,3 +406,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The expected Maya balance at closing was short by the discount on every load, and the discount is shop income.
 - Alternatives considered: a discount per network or per promo (no evidence it varies); typing the deducted amount for every load.
 - Follow-up: Confirm GCash's load discount and set it in Settings.
+
+- Date: 2026-11-05
+- ID: DEC-050
+- Related task: BPS-234
+- Decision: Admins can mark a bill (entry form "Transaction Type"), a shop sale or a GCash/Maya transaction (register "Personal") as their own. A `personal` column on `bill_records`, `pos_sales` and `pos_wallet_txns` holds `paid` (the admin pays like a customer) or `shop` (paid from shop funds). Personal means no service charge on bills (the late charge stays, it goes to the biller), loads at the load amount (no fee, no promo rounding) and GCash/Maya with no fee. From shop funds: bills store no cash or mode of payment, sales use `payment_method = shop`, cash-ins collect nothing; End of day leaves them out of money received and lists them in a note, and the Summary leaves them out of shop income. Paying the bill to the biller, sending the load and sending the cash-in still lower the drawer or GCash/Maya. Personal cash-outs can't be from shop funds; personal sales can't be job orders. Only admins (and the business owner for bills) can set it, checked on the server.
+- Why: The owner pays their own bills and loads through the counter and either pays in cash or takes it from the shop's money; without a marker the charges were wrong and End of day expected money that never came in.
+- Alternatives considered: a new payment method value on bills (the records edit and "Mark Cash" both rewrite `payment_method`, which would lose it); recording shop-funded ones as cash taken out (separate step, easy to forget, and the fee would still be charged).
+- Follow-up: The older Reconciliation page still counts shop-funded bills as collected; End of day is the count to use. Personal can't be changed after saving: re-enter the bill, or void and redo the register transaction.

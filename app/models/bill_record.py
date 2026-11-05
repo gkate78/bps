@@ -39,6 +39,9 @@ class BillRecord(SQLModel, table=True):
     # When the bill was paid to the biller (payment_reference first set); End of day uses it with
     # payment_channel to take the money out of the drawer or wallet. Not set by CSV import.
     settled_at: Optional[datetime] = Field(default=None, index=True)
+    # Admin's own bill, no service charge: "paid" (paid like a customer) or "shop" (from shop funds,
+    # nothing collected, so End of day leaves it out of the money received).
+    personal: Optional[str] = Field(default=None, max_length=8)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

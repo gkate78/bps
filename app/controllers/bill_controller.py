@@ -364,9 +364,14 @@ def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: d
     cash = round(float(payload.get("cash", 0) or 0), 2)
     biller = str(payload.get("biller", "") or "").strip()
 
-    charge = _compute_charge(biller, bill_amt, charge_map)
+    # The admin's own bill has no service charge; the late charge still goes to the biller.
+    charge = 0.0 if payload.get("personal") else _compute_charge(biller, bill_amt, charge_map)
     total = round(bill_amt + late_charge + charge, 2)
-    change_amt = round(cash - total, 2)
+    if payload.get("personal") == "shop":
+        cash = 0.0  # paid from shop funds: nothing received
+        change_amt = 0.0
+    else:
+        change_amt = round(cash - total, 2)
 
     payload["bill_amt"] = bill_amt
     payload["amt2"] = late_charge
@@ -526,6 +531,7 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         payment_channel=payload.get("payment_channel"),
         processed_by_user_id=payload.get("processed_by_user_id"),
         created_by_user_id=payload.get("created_by_user_id"),
+        personal=payload.get("personal"),
     )
     _stamp_settled(record, had_payment_reference=False)
 
@@ -616,6 +622,8 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
             "processed_by_user_id": updates.get("processed_by_user_id", record.processed_by_user_id),
         }
     )
+    # Set only at entry; kept so recomputed amounts stay without a service charge.
+    updates["personal"] = record.personal
     if _amount_inputs_changed(record, updates):
         updates = _apply_computations(updates, charge_map, late_map)
         # Amounts now follow the biller rules, so any import review note no longer applies.
@@ -1034,7 +1042,7 @@ async def my_transactions(db: AsyncSession, *, user_id: int, from_date: date, to
             "total": r.total,
             "cash": r.cash,
             "change_amt": r.change_amt,
-            "payment_method": r.payment_method,
+            "payment_method": "SHOP FUNDS" if r.personal == "shop" else r.payment_method,
             "reference": r.reference,
         }
         for r in records[:MY_TRANSACTIONS_LIMIT]
@@ -1042,7 +1050,8 @@ async def my_transactions(db: AsyncSession, *, user_id: int, from_date: date, to
     return {
         "range": {"from": from_date.isoformat(), "to": to_date.isoformat()},
         "count": len(records),
-        "total": round(sum(float(r.total or 0) for r in records), 2),
+        # Personal bills paid from shop funds weren't collected from anyone.
+        "total": round(sum(float(r.total or 0) for r in records if r.personal != "shop"), 2),
         "cash": round(sum(float(r.cash or 0) for r in records), 2),
         "service_charges": round(sum(float(r.charge or 0) for r in records), 2),
         "items": items,

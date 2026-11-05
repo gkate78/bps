@@ -103,6 +103,12 @@ def quote_load(amount_cents: int, is_promo: bool, s: FeeSchedule = DEFAULT_SCHED
     return LoadQuote(load_cents=amount_cents, priced_cents=priced, fee_cents=fee, total_cents=priced + fee)
 
 
+def quote_personal_load(amount_cents: int) -> LoadQuote:
+    """Admin's own load: no fee and no promo rounding, just the load amount."""
+    _check_amount(amount_cents)
+    return LoadQuote(load_cents=amount_cents, priced_cents=amount_cents, fee_cents=0, total_cents=amount_cents)
+
+
 def load_cost(load_cents: int, discount_bp: int) -> int:
     """What the wallet app actually deducts for a load after its discount (basis points: 300 = 3%), to the centavo."""
     return (load_cents * (10_000 - discount_bp) + 5_000) // 10_000
@@ -144,3 +150,18 @@ def quote_wallet(
     if amount_cents <= fee:
         raise FeeError("Cash-out amount must be more than the fee")
     return WalletQuote(kind, fee_mode, amount_cents, fee, collect_cents=0, give_cents=amount_cents - fee)
+
+
+def quote_personal_wallet(kind: WalletKind, amount_cents: int, from_shop: bool) -> WalletQuote:
+    """
+    Admin's own cash-in/cash-out, no fee. Cash-in from shop funds collects nothing: the shop's
+    GCash/Maya just goes down. A cash-out always hands over the cash, so it can't be from shop funds.
+    """
+    _check_amount(amount_cents)
+    if kind == "cash_in":
+        return WalletQuote(kind, "none", amount_cents, 0, collect_cents=0 if from_shop else amount_cents, give_cents=0)
+    if kind != "cash_out":
+        raise FeeError("Choose cash-in or cash-out")
+    if from_shop:
+        raise FeeError("A cash-out can't be from shop funds. To take cash from the drawer, record it in End of day.")
+    return WalletQuote(kind, "none", amount_cents, 0, collect_cents=0, give_cents=amount_cents)

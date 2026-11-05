@@ -44,3 +44,4 @@
 - [x] BPS-231 | Shipped on: 2026-11-04 | Notes: Park an unpaid shop sale or GCash/Maya transaction to serve the next customer, then resume or discard it; End of day warns while any are parked (DEC-047).
 - [x] BPS-232 | Shipped on: 2026-11-04 | Notes: Shop register tables in Admin → Database (amounts in pesos); backup to Google Sheets through an Apps Script link, by button and after End of day (DEC-048).
 - [x] BPS-233 | Shipped on: 2026-11-04 | Notes: Load discount per GCash/Maya account (Maya 3%) with an optional "Deducted by the app" amount per load; wallet balances and load income use what was deducted (DEC-049).
+- [x] BPS-234 | Shipped on: 2026-11-05 | Notes: Personal transactions for admins (bills, shop sales, loads, GCash/Maya): no service charge or fees, paid by the admin or from shop funds; shop-funded ones bring no money in and are listed separately in Summary and End of day (DEC-050).

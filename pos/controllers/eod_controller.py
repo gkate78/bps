@@ -74,6 +74,7 @@ class EodReport:
     other_settlements: dict = field(default_factory=dict)  # channel -> [count, cents]
     unsettled_bills: tuple = (0, 0)  # (count, cents) collected that day, not yet paid to billers
     parked: tuple = (0, 0)  # (count, cents) parked by the end of the day and still not paid
+    personal_shop: tuple = (0, 0)  # (count, cents) admin's personal transactions paid from shop funds
     movements: list = field(default_factory=list)
     close: Optional[PosDayClose] = None
     closed_by: str = ""
@@ -124,9 +125,12 @@ async def eod_report(db: AsyncSession, day: date) -> EodReport:
 
     # Bills (BPS): collected by transaction date, settled by settled_at.
     bills_in = (await db.execute(select(BillRecord).where(BillRecord.txn_date == day))).scalars().all()
-    bills_cash = sum(bill_cents(b.total) for b in bills_in if _method(b.payment_method) in ("", "CASH"))
+    # Personal bills paid from shop funds bring nothing in; paying them to the biller still takes money out.
+    personal_bills = [b for b in bills_in if b.personal == "shop"]
+    received_bills = [b for b in bills_in if b.personal != "shop"]
+    bills_cash = sum(bill_cents(b.total) for b in received_bills if _method(b.payment_method) in ("", "CASH"))
     bills_by_method = defaultdict(int)
-    for bill in bills_in:
+    for bill in received_bills:
         bills_by_method[_method(bill.payment_method)] += bill_cents(bill.total)
     unsettled = [b for b in bills_in if not b.settled_at and not (b.payment_reference or "").strip()]
     report.unsettled_bills = (len(unsettled), sum(bill_cents(b.total) - bill_cents(b.charge) for b in unsettled))
@@ -143,6 +147,10 @@ async def eod_report(db: AsyncSession, day: date) -> EodReport:
         settled_by_channel[_method(bill.payment_channel) or "NOT SET"][1] += bill_cents(bill.total) - bill_cents(bill.charge)
 
     shop = await day_summary(db, day, day)
+    report.personal_shop = (
+        len(personal_bills) + shop.personal_shop_count,
+        sum(bill_cents(b.total) for b in personal_bills) + shop.personal_shop_cents,
+    )
     movements = (
         await db.execute(
             select(PosCashMovement)

@@ -31,6 +31,9 @@
         <small>cash-in and cash-out</small>
     </div>
 </section>
+{% if s.personal_shop_count %}
+<p class="alert alert-warn">Personal (admin) from shop funds: {{ s.personal_shop_count }} transaction{{ '' if s.personal_shop_count == 1 else 's' }}, {{ s.personal_shop_cents | peso }}. Not counted as income or cash received; loads and cash-ins still lower the GCash/Maya balances.</p>
+{% endif %}
 
 <div class="grid2">
     <section class="panel">

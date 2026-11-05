@@ -65,6 +65,8 @@ async def init_db() -> None:
         if "checkout_paid_cents" in added:
             await conn.execute(text("UPDATE pos_sales SET checkout_paid_cents = total_cents, amount_paid_cents = total_cents"))
         await _add_missing_columns(conn, "pos_sale_lines", (("wallet_cost_cents", "INTEGER"),))
+        await _add_missing_columns(conn, "pos_sales", (("personal", "VARCHAR(8)"),))
+        await _add_missing_columns(conn, "pos_wallet_txns", (("personal", "VARCHAR(8)"),))
         added = await _add_missing_columns(conn, "pos_wallets", (("load_discount_bp", "INTEGER NOT NULL DEFAULT 0"),))
         if "load_discount_bp" in added:
             await conn.execute(text(f"UPDATE pos_wallets SET load_discount_bp = {MAYA_LOAD_DISCOUNT_BP} WHERE provider = 'MAYA'"))

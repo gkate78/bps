@@ -34,6 +34,8 @@ class SaleIn(BaseModel):
     is_job_order: bool = False
     down_payment: Optional[str] = None
     promised_date: Optional[date] = None
+    # Admin only: own sale, loads without fees; "shop" = paid from shop funds.
+    personal: Optional[Literal["paid", "shop"]] = None
 
 
 class BalancePaymentIn(BaseModel):
@@ -53,6 +55,8 @@ class WalletTxnIn(BaseModel):
     customer_name: Optional[str] = None
     reference: Optional[str] = None
     tendered: Optional[str] = None
+    # Admin only: no fee; "shop" = cash-in sent from shop funds.
+    personal: Optional[Literal["paid", "shop"]] = None
 
 
 class JobStatusIn(BaseModel):

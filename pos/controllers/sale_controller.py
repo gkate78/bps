@@ -8,12 +8,13 @@ from sqlmodel import select
 
 from pos.auth_adapter import User, display_name, normalize_phone, validate_mobile, validate_phone
 from pos.controllers.settings_controller import add_audit, get_fee_schedule
-from pos.fees import FeeError, load_cost, quote_load, quote_wallet
+from pos.fees import FeeError, load_cost, quote_load, quote_personal_load, quote_personal_wallet, quote_wallet
 from pos.money import MoneyError, to_cents, to_cents_optional
 from pos.models import PosNetwork, PosSale, PosSaleLine, PosSalePayment, PosService, PosWallet, PosWalletTxn
 from pos.schemas import BalancePaymentIn, SaleIn, WalletTxnIn
 
 MAX_QTY = 10_000
+PERSONAL_LABELS = {"paid": "personal, no fees", "shop": "personal, from shop funds"}
 
 
 class PosError(ValueError):
@@ -70,9 +71,17 @@ async def _take_payment(db: AsyncSession, method: str, wallet_id, reference, cas
     return {"payment_method": "cash", "cash_cents": cash, "change_cents": cash - due_cents}
 
 
+def _check_personal(personal: Optional[str], user: User) -> None:
+    if personal and user.role != "admin":
+        raise PosError("Only an admin can ring up a personal transaction")
+
+
 async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
     if not data.lines:
         raise PosError("Add at least one item")
+    _check_personal(data.personal, user)
+    if data.personal and data.is_job_order:
+        raise PosError("A personal sale can't be a job order")
     schedule = await get_fee_schedule(db)
     lines: list[PosSaleLine] = []
     for line in data.lines:
@@ -81,7 +90,7 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
             if not (1 <= line.qty <= MAX_QTY):
                 raise PosError(f"Quantity must be from 1 to {MAX_QTY:,}")
             price = _money(line.unit_price, f"{service.name} price")
-            if price <= 0:
+            if price < 0 or (price == 0 and not data.personal):
                 raise PosError(f"{service.name} price must be more than zero")
             lines.append(
                 PosSaleLine(
@@ -99,7 +108,8 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
             wallet = await _get_active(db, PosWallet, line.wallet_id, "wallet to send the load from")
             mobile = _mobile(line.mobile_no, "Load mobile number")
             try:
-                quote = quote_load(_money(line.amount, "Load amount"), line.is_promo, schedule)
+                amount = _money(line.amount, "Load amount")
+                quote = quote_personal_load(amount) if data.personal else quote_load(amount, line.is_promo, schedule)
             except (MoneyError, FeeError) as exc:
                 raise PosError(f"Load: {exc}") from exc
             if (line.deducted or "").strip():
@@ -140,7 +150,10 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
         due = _money(data.down_payment, "Down payment")
         if not 0 < due < total:
             raise PosError("Down payment must be more than zero and less than the total")
-    payment = await _take_payment(db, data.payment_method, data.pay_wallet_id, data.payment_reference, data.cash, due)
+    if data.personal == "shop":
+        payment = {"payment_method": "shop", "cash_cents": 0, "change_cents": 0}
+    else:
+        payment = await _take_payment(db, data.payment_method, data.pay_wallet_id, data.payment_reference, data.cash, due)
     customer_phone = normalize_phone(data.customer_phone or "") or None
     if customer_phone and not validate_phone(customer_phone):
         raise PosError("Customer phone must be 11 digits")
@@ -156,6 +169,7 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
         is_job_order=data.is_job_order,
         job_status="in_progress" if data.is_job_order else None,
         promised_date=data.promised_date if data.is_job_order else None,
+        personal=data.personal,
         **payment,
     )
     db.add(sale)
@@ -166,7 +180,7 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
         db.add(line)
     add_audit(
         db, "sale", sale.id, "create", user.id,
-        {"sale_no": sale.sale_no, "total_cents": total, "paid_cents": due, "job_order": data.is_job_order},
+        {"sale_no": sale.sale_no, "total_cents": total, "paid_cents": due, "job_order": data.is_job_order, "personal": data.personal},
     )
     await db.commit()
     await db.refresh(sale)
@@ -174,10 +188,14 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
 
 
 async def create_wallet_txn(db: AsyncSession, data: WalletTxnIn, user: User) -> PosWalletTxn:
+    _check_personal(data.personal, user)
     wallet = await _get_active(db, PosWallet, data.wallet_id, "GCash/Maya account")
     amount = _money(data.amount, "Amount")
     try:
-        quote = quote_wallet(data.kind, amount, data.fee_mode, await get_fee_schedule(db))
+        if data.personal:
+            quote = quote_personal_wallet(data.kind, amount, from_shop=data.personal == "shop")
+        else:
+            quote = quote_wallet(data.kind, amount, data.fee_mode, await get_fee_schedule(db))
     except (MoneyError, FeeError) as exc:
         raise PosError(str(exc)) from exc
     mobile = _mobile(data.customer_mobile, "Customer mobile number")
@@ -210,11 +228,12 @@ async def create_wallet_txn(db: AsyncSession, data: WalletTxnIn, user: User) -> 
         customer_mobile=mobile,
         customer_name=clean_text(data.customer_name, 160),
         reference=reference,
+        personal=data.personal,
     )
     db.add(txn)
     await db.flush()
     txn.txn_no = f"W-{txn.id:06d}"
-    add_audit(db, "wallet_txn", txn.id, "create", user.id, {"txn_no": txn.txn_no, "kind": txn.kind})
+    add_audit(db, "wallet_txn", txn.id, "create", user.id, {"txn_no": txn.txn_no, "kind": txn.kind, "personal": txn.personal})
     await db.commit()
     await db.refresh(txn)
     return txn
@@ -396,6 +415,8 @@ async def list_transactions(
                 details += f" · job order, down payment ₱{sale.checkout_paid_cents / 100:,.2f}"
             if sale.payment_method == "wallet":
                 details += f" · paid via {sale.pay_wallet_name} ref {sale.payment_reference}"
+            if sale.personal:
+                details += f" · {PERSONAL_LABELS[sale.personal]}"
             haystack = " ".join(filter(None, [sale.sale_no, details, sale.customer_name, sale.customer_phone, sale.bir_invoice_no]))
             if needle and needle not in haystack.upper():
                 continue
@@ -461,7 +482,9 @@ async def list_transactions(
         for txn in txns:
             label = f"{txn.wallet_name} {'cash-in' if txn.kind == 'cash_in' else 'cash-out'}"
             details = f"{txn.customer_mobile} ref {txn.reference}"
-            if txn.kind == "cash_out":
+            if txn.personal:
+                details += f" · {PERSONAL_LABELS[txn.personal]}"
+            elif txn.kind == "cash_out":
                 details += " (fee paid in cash)" if txn.fee_mode == "paid_in_cash" else " (fee deducted)"
             haystack = " ".join(filter(None, [txn.txn_no, label, details, txn.customer_name]))
             if needle and needle not in haystack.upper():
@@ -520,6 +543,9 @@ class DaySummary:
     balance_payments_cents: int = 0
     unpaid_job_count: int = 0  # all open job orders right now, not just these dates
     unpaid_balance_cents: int = 0
+    # Admin's personal transactions paid from shop funds: nothing received, not income.
+    personal_shop_count: int = 0
+    personal_shop_cents: int = 0  # services at their price, loads at what the wallet deducted, cash-ins sent
 
     @property
     def load_income_cents(self) -> int:
@@ -547,6 +573,13 @@ async def day_summary(db: AsyncSession, start: date, end: date) -> DaySummary:
     if completed:
         lines = (await db.execute(select(PosSaleLine).where(PosSaleLine.sale_id.in_(list(completed))))).scalars().all()
         for line in lines:
+            if completed[line.sale_id].payment_method == "shop":
+                # Paid from shop funds: loads still leave the wallet, but nothing is earned.
+                out.personal_shop_cents += line.cost_cents if line.kind == "load" else line.line_total_cents
+                if line.kind == "load":
+                    out.wallet_deltas[line.wallet_name] -= line.cost_cents
+                    out.wallet_parts[line.wallet_name]["loads"] -= line.cost_cents
+                continue
             if line.kind == "load":
                 out.load_count += 1
                 out.load_sent_cents += line.load_cents
@@ -562,6 +595,8 @@ async def day_summary(db: AsyncSession, start: date, end: date) -> DaySummary:
     # Money is counted on the day it's received: what was paid at checkout (the total, or a
     # job order's down payment) here, and later balance payments on their own dates below.
     def received(user_id: int, cents: int, method: str, wallet_name: Optional[str]) -> None:
+        if method == "shop":
+            return  # personal, from shop funds: nothing received
         if method == "wallet":
             # Paid into the shop's GCash/Maya: raises that wallet, not the drawer.
             out.wallet_deltas[wallet_name] += cents
@@ -574,6 +609,8 @@ async def day_summary(db: AsyncSession, start: date, end: date) -> DaySummary:
             out.by_cashier[who(user_id)][1] += cents
 
     for sale in completed.values():
+        if sale.payment_method == "shop":
+            out.personal_shop_count += 1
         out.sale_count += 1
         out.by_cashier[who(sale.cashier_user_id)][0] += 1
         received(sale.cashier_user_id, sale.checkout_paid_cents, sale.payment_method, sale.pay_wallet_name)
@@ -608,6 +645,9 @@ async def day_summary(db: AsyncSession, start: date, end: date) -> DaySummary:
             out.voids.append((txn.txn_no, txn.amount_cents, txn.void_reason, who(txn.voided_by_user_id)))
             continue
         drawer = txn.collect_cents - txn.give_cents
+        if txn.personal == "shop":
+            out.personal_shop_count += 1
+            out.personal_shop_cents += txn.amount_cents
         if txn.kind == "cash_in":
             out.cash_in_count += 1
             out.cash_in_cents += txn.amount_cents

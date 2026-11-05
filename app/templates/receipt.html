@@ -151,6 +151,9 @@
         {% if receipt_settings.show_customer_name %}
         <div class="info">{{ record.customer_name }}</div>
         {% endif %}
+        {% if record.personal %}
+        <div class="info">PERSONAL{{ " · FROM SHOP FUNDS" if record.personal == "shop" }}</div>
+        {% endif %}
         {% if receipt_settings.show_bill_amt %}
         <div class="line">
             <span>{% if receipt_settings.show_headings %}BILL AMOUNT{% endif %}</span>
@@ -175,13 +178,13 @@
             <span>{{ "{:,.2f}".format(record.total) }}</span>
         </div>
         {% endif %}
-        {% if receipt_settings.show_cash %}
+        {% if receipt_settings.show_cash and record.personal != "shop" %}
         <div class="line">
             <span>{% if receipt_settings.show_headings %}CASH{% endif %}</span>
             <span>{{ "{:,.2f}".format(record.cash) }}</span>
         </div>
         {% endif %}
-        {% if receipt_settings.show_change_amt %}
+        {% if receipt_settings.show_change_amt and record.personal != "shop" %}
         <div class="line">
             <span>{% if receipt_settings.show_headings %}CHANGE{% endif %}</span>
             <span>{{ "{:,.2f}".format(record.change_amt) }}</span>
