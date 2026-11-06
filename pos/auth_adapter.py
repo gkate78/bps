@@ -5,8 +5,6 @@ BPS `admin` = register admin; BPS `encoder` = cashier. Customers can't use the r
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
 from app.auth import get_current_user_optional as bps_current_user
 from app.auth import normalize_phone as _digits_only
@@ -39,13 +37,9 @@ def display_name(user: Optional[User]) -> str:
     return f"{user.first_name} {user.last_name}".strip()
 
 
-async def find_admin_by_pin(db: AsyncSession, pin: str) -> Optional[User]:
-    """Admin approval at the counter (voids): any admin's PIN."""
-    admins = (await db.execute(select(User).where(User.role == "admin"))).scalars().all()
-    for admin in admins:
-        if verify_pin(pin, admin.pin_hash, admin.pin_salt):
-            return admin
-    return None
+def pin_matches(user: User, pin: str) -> bool:
+    """Re-check the signed-in user's own PIN before a sensitive action (voids)."""
+    return bool(pin) and verify_pin(pin, user.pin_hash, user.pin_salt)
 
 
 async def get_current_user(user: Optional[User] = Depends(bps_current_user)) -> User:
