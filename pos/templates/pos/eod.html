@@ -13,6 +13,10 @@
     {% else %}
     <h2>Closing count for {{ r.day.strftime("%B %d, %Y") }}</h2>
     <p class="muted small">At closing, count the cash in the drawer and enter it, then check each GCash/Maya balance in its app. The admin checks your count against the day's totals.</p>
+    <p class="muted small"><strong>Turning the drawer over to another cashier?</strong> First encode every transaction from your shift (and finish or discard parked ones), then count the drawer the same way and press <strong>Hand over drawer</strong>. Your shift closes with your count, and the next cashier starts from it. Anything entered after that counts in the next shift.</p>
+    {% if r.current_shift %}
+    <div class="alert alert-success">Shift {{ r.current_shift.number }} started at {{ r.current_shift.started_at.strftime("%I:%M %p") }} with {{ r.current_shift.opening_cash_cents | peso }} counted by {{ r.current_shift.started_from }}.</div>
+    {% endif %}
     {% endif %}
     {% if r.close and r.close.closed_at %}
     <div class="alert {{ 'alert-success' if not is_admin or r.difference_cents == 0 else 'alert-warn' }}">
@@ -30,6 +34,35 @@
     </div>
     {% endif %}
 </section>
+
+{% if is_admin and r.shifts %}
+<section class="panel">
+    <h2>Shifts</h2>
+    <p class="muted small">The drawer was handed over during the day. Each shift starts from the count at the previous handover, so the shifts' over/short add up to the day's.</p>
+    <div class="table-wrap">
+        <table class="list">
+            <thead><tr><th>Shift</th><th>Time</th><th>Counted by</th><th class="num">Started with</th><th class="num">Expected</th><th class="num">Counted</th><th class="num">Over / short</th><th></th></tr></thead>
+            <tbody>
+                {% for s in r.shifts %}
+                <tr>
+                    <td>{{ s.number }}</td>
+                    <td class="nowrap">{{ s.started_at.strftime("%I:%M %p") if s.number > 1 else 'Opening' }} – {{ s.ended_at.strftime("%I:%M %p") if s.ended_at else 'Closing' }}</td>
+                    <td>{{ s.closed_by or '—' }}{% if s.handover and s.handover.notes %}<div class="muted small">{{ s.handover.notes }}</div>{% endif %}</td>
+                    <td class="num">{{ s.opening_cash_cents | peso }}</td>
+                    <td class="num">{{ s.expected_cash_cents | peso }}{% if s.handover and s.handover.expected_cash_cents != s.expected_cash_cents %}<div class="muted small">was {{ s.handover.expected_cash_cents | peso }} at the handover: a transaction in this shift was entered or voided later</div>{% endif %}</td>
+                    <td class="num">{{ (s.counted_cash_cents | peso) if s.counted_cash_cents is not none else 'not counted yet' }}</td>
+                    <td class="num {{ 'neg' if s.difference_cents and s.difference_cents < 0 }}">
+                        {% if s.difference_cents is none %}—{% elif s.difference_cents == 0 %}Balanced{% elif s.difference_cents > 0 %}Over {{ s.difference_cents | peso }}{% else %}Short {{ (-s.difference_cents) | peso }}{% endif %}
+                        {% for sw in s.wallets if sw.difference_cents %}<div class="muted small">{{ sw.wallet.name }} {{ 'over' if sw.difference_cents > 0 else 'short' }} {{ (sw.difference_cents | abs) | peso }}</div>{% endfor %}
+                    </td>
+                    <td>{% if s.handover %}<button type="button" class="btn btn-ghost btn-small" data-remove-handover="{{ s.handover.id }}" aria-label="Remove handover">✕</button>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
 
 <div id="notice" class="alert" hidden></div>
 
@@ -67,9 +100,11 @@
     </section>
 
     {% for w in r.wallets %}
+    {# Encoders check the balance against their own shift; admins see the whole day. #}
+    {% set sw = (r.current_shift.wallets | selectattr('wallet.id', 'equalto', w.wallet.id) | first) if (r.current_shift and not is_admin) else none %}
     <section class="panel">
         <h2>{{ w.wallet.name }} balance</h2>
-        <table class="list eod" data-change="{{ w.change_cents }}" data-wallet="{{ w.wallet.id }}" data-opening="{{ w.opening_cents }}">
+        <table class="list eod" data-change="{{ sw.change_cents if sw else w.change_cents }}" data-wallet="{{ w.wallet.id }}" data-opening="{{ sw.opening_cents if sw else w.opening_cents }}">
             {% if is_admin %}
             <tbody>
                 <tr><td>Opening balance <span class="muted small">(from the {{ w.wallet.name }} app)</span></td><td class="num"><input type="text" class="money" name="opening" inputmode="decimal" value="{{ w.opening_cents | pesos_input }}"></td></tr>
@@ -81,7 +116,7 @@
             </tbody>
             {% endif %}
             <tfoot>
-                <tr><th>Expected balance</th><th class="num" data-expected>{{ w.expected_cents | peso }}</th></tr>
+                <tr><th>Expected balance</th><th class="num" data-expected>{{ (sw.expected_cents if sw else w.expected_cents) | peso }}</th></tr>
                 <tr><th>Balance in the app now</th><th class="num"><input type="text" class="money" name="counted" inputmode="decimal" value="{{ w.counted_cents | pesos_input if w.counted_cents is not none else '' }}" placeholder="check app"></th></tr>
                 <tr><th>Difference</th><th class="num" data-difference></th></tr>
             </tfoot>
@@ -141,7 +176,10 @@
 
 <section class="panel stack">
     <label>Notes <span class="muted">(optional)</span> <input type="text" name="notes" maxlength="500" value="{{ r.notes }}"></label>
-    <div class="actions"><button type="submit" class="btn btn-primary btn-big" id="eodSave">{{ 'Save end of day' if is_admin else 'Save count' }}</button></div>
+    <div class="actions">
+        {% if is_today %}<button type="button" class="btn btn-secondary btn-big" id="handOver" title="Close your shift with this count; the next cashier starts from it">Hand over drawer</button>{% endif %}
+        <button type="submit" class="btn btn-primary btn-big" id="eodSave">{{ 'Save end of day' if is_admin else 'Save closing count' }}</button>
+    </div>
 </section>
 </form>
 {% endblock %}

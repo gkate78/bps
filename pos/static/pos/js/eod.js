@@ -38,10 +38,9 @@
         table.querySelectorAll("input").forEach((input) => input.addEventListener("input", () => recompute(table)));
     });
 
-    form.addEventListener("submit", async (event) => {
-        event.preventDefault();
+    function readCounts() {
         const cash = document.querySelector('table.eod[data-target="cash"]');
-        const body = {
+        return {
             opening_cash: cash.querySelector('input[name="opening_cash"]')?.value,
             counted_cash: cash.querySelector('input[name="counted_cash"]').value,
             notes: form.querySelector('input[name="notes"]').value,
@@ -51,12 +50,44 @@
                 counted: t.querySelector('input[name="counted"]').value,
             })),
         };
+    }
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
         try {
-            await postJson(`/pos/api/eod/${day}`, body);
+            await postJson(`/pos/api/eod/${day}`, readCounts());
             window.location.reload();
         } catch (err) {
             say(err.message, "error");
         }
+    });
+
+    const handOver = document.getElementById("handOver");
+    if (handOver) {
+        handOver.addEventListener("click", async () => {
+            const body = readCounts();
+            const counted = toCents(body.counted_cash || "");
+            if (counted === null) return say("Count the cash in the drawer before handing it over", "error");
+            if (!confirm(`Hand over the drawer with ${peso(counted)} counted? The next cashier starts from this amount.`)) return;
+            try {
+                await postJson(`/pos/api/eod/${day}/handover`, body);
+                window.location.reload();
+            } catch (err) {
+                say(err.message, "error");
+            }
+        });
+    }
+
+    document.querySelectorAll("[data-remove-handover]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+            if (!confirm("Remove this handover? Its two shifts become one again.")) return;
+            try {
+                await postJson(`/pos/api/handovers/${btn.dataset.removeHandover}/void`, {});
+                window.location.reload();
+            } catch (err) {
+                say(err.message, "error");
+            }
+        });
     });
 
     const kind = document.getElementById("mvKind");

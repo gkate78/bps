@@ -44,6 +44,7 @@ async def eod_page(
             "movement_users": users,
             "movement_kinds": eod.MOVEMENT_KINDS,
             "wallets": await list_wallets(db, active_only=True),
+            "is_today": report.day == date.today(),
         },
     )
 
@@ -80,6 +81,35 @@ async def add_movement(
     except PosError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     return {"id": movement.id}
+
+
+@router.post("/api/eod/{day}/handover")
+async def hand_over_drawer(
+    day: str, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """The outgoing cashier counts the drawer; the reliever's shift starts from that count."""
+    try:
+        handover = await eod.add_handover(db, _day(day), await request.json(), user)
+    except PosError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if user.role != "admin":
+        return {"ok": True}  # a blind count, as at closing
+    return {
+        "ok": True,
+        "expected_cash_cents": handover.expected_cash_cents,
+        "difference_cents": handover.counted_cash_cents - handover.expected_cash_cents,
+    }
+
+
+@router.post("/api/handovers/{handover_id}/void")
+async def remove_handover(handover_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can remove a handover")
+    try:
+        await eod.remove_handover(db, handover_id, user)
+    except PosError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True}
 
 
 @router.post("/api/cash-movements/{movement_id}/void")

@@ -58,3 +58,24 @@ class PosCashMovement(SQLModel, table=True):
     @property
     def drawer_delta_cents(self) -> int:
         return self.amount_cents if self.kind in ("add", "from_wallet") else -self.amount_cents
+
+
+class PosDrawerHandover(SQLModel, table=True):
+    """
+    A mid-day turnover of the one cash drawer. The outgoing cashier closes their shift with a count
+    (cash, and each GCash/Maya balance in its app); the reliever's shift starts from that count.
+    Handovers split a day into shifts; the day's own count (PosDayClose) closes the last shift.
+    """
+
+    __tablename__ = "pos_drawer_handovers"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    day: date = Field(index=True)
+    handed_at: datetime = Field(default_factory=datetime.now, nullable=False)
+    user_id: int = Field(index=True)  # the outgoing cashier
+    counted_cash_cents: int = Field(nullable=False)
+    expected_cash_cents: int = Field(default=0, nullable=False)  # as computed when saved
+    wallet_counts: str = Field(default="{}", max_length=1000)  # JSON {wallet_id: counted cents}
+    notes: Optional[str] = Field(default=None, max_length=500)
+    status: str = Field(default="completed", max_length=12)  # completed | voided
+    voided_by_user_id: Optional[int] = Field(default=None)
