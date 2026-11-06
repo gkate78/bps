@@ -153,3 +153,26 @@ function showReceipt(win, url) {
     }
     return false;
 }
+
+// Check a GCash/Maya reference no. while it's typed: warn(message) when it was used before,
+// ok() when it's free or blank. The server refuses a used one again on save.
+function warnIfReferenceUsed(input, warn, ok = () => {}) {
+    let timer;
+    async function check() {
+        const reference = input.value.trim();
+        if (!reference) return ok();
+        try {
+            const r = await getJson(`/pos/api/wallet-txns/claimed?reference=${encodeURIComponent(reference)}`);
+            if (input.value.trim() !== reference) return; // typed on since; the next check decides
+            if (r.claimed) warn(r.message);
+            else ok();
+        } catch (err) {
+            /* checked again when saving */
+        }
+    }
+    input.addEventListener("input", () => {
+        clearTimeout(timer);
+        timer = setTimeout(check, 400);
+    });
+    input.addEventListener("change", check);
+}

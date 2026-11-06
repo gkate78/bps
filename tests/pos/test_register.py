@@ -193,6 +193,41 @@ def test_cash_in_and_cash_out(shop):
     assert "₱80.00" in s
 
 
+def test_a_gcash_maya_reference_is_accepted_only_once(shop):
+    client = shop.client
+    i = ids()
+    out = {"kind": "cash_out", "wallet_id": i["GCASH"], "amount": "1000", "customer_mobile": "09181112222"}
+    assert client.post("/pos/api/wallet-txns", json={**out, "reference": "5012 345 678"}).status_code == 200
+    assert client.get("/pos/api/wallet-txns/claimed", params={"reference": "5012345678"}).json()["claimed"] is True
+    # the same receipt again, typed differently, on the other account, for another amount or as a cash-in
+    for changes in ({"reference": "5012345678"}, {"reference": "5012 345 678", "wallet_id": i["MAYA"]},
+                    {"reference": "5012345678", "amount": "500"}, {"reference": "5012345678", "kind": "cash_in"}):
+        r = client.post("/pos/api/wallet-txns", json={**out, **changes})
+        assert r.status_code == 400 and "already used" in r.json()["detail"] and "W-000001" in r.json()["detail"], changes
+    # nor to pay for a shop sale
+    line = {"kind": "service", "service_id": i["PRINTING"], "qty": 1, "unit_price": "50"}
+    paid = {"lines": [line], "payment_method": "wallet", "pay_wallet_id": i["GCASH"]}
+    r = client.post("/pos/api/sales", json={**paid, "payment_reference": "5012345678"})
+    assert r.status_code == 400 and "already used" in r.json()["detail"]
+    # a sale's reference can't then be claimed as a cash-out either
+    sale = client.post("/pos/api/sales", json={**paid, "payment_reference": "MY-777"}).json()
+    r = client.post("/pos/api/wallet-txns", json={**out, "reference": "my-777"})
+    assert r.status_code == 400 and sale["sale_no"] in r.json()["detail"]
+    # a voided transaction frees its reference
+    r = client.post("/pos/api/wallet-txns/1/void", json={"reason": "wrong amount", "admin_pin": ADMIN_PIN})
+    assert r.status_code == 200, r.text
+    assert client.get("/pos/api/wallet-txns/claimed", params={"reference": "5012345678"}).json()["claimed"] is False
+    assert client.post("/pos/api/wallet-txns", json={**out, "reference": "5012345678"}).status_code == 200
+
+
+def test_mobile_suggestions_include_bill_customers(shop):
+    from app.models import Customer
+
+    shop.add(Customer(account="1234567890", biller="MERALCO", customer_name="JUAN DELA CRUZ", phone="09175556666"))
+    found = shop.client.get("/pos/api/suggest/mobile?q=09175556666").json()
+    assert found == [{"mobile": "09175556666", "name": "JUAN DELA CRUZ", "network_id": None}]
+
+
 def test_cash_out_with_fee_included(shop):
     """Customer sends ₱6,120 to receive exactly ₱6,000: the fee is ₱120, not ₱130 on ₱6,120."""
     client = shop.client

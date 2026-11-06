@@ -3,6 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.models import Customer
 from pos.models import PosSale, PosSaleLine, PosWalletTxn
 
 LIMIT = 8
@@ -79,6 +80,16 @@ async def mobiles(db: AsyncSession, q: str) -> list[dict]:
         .limit(50)
     )
     for mobile, name, at in sales.all():
+        note(mobile, name, None, at)
+
+    # BPS bill customers last, so a name from the register (newer, typed at the counter) wins.
+    customers = await db.execute(
+        select(Customer.phone, Customer.customer_name, Customer.updated_at)
+        .where(Customer.phone.startswith(digits))
+        .order_by(Customer.updated_at.desc())
+        .limit(50)
+    )
+    for mobile, name, at in customers.all():
         note(mobile, name, None, at)
 
     ranked = sorted(found.values(), key=lambda e: e["at"], reverse=True)[:LIMIT]
