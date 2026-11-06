@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from pos.auth_adapter import User, display_name, find_admin_by_pin, get_current_user, page_user
+from pos.auth_adapter import User, display_name, get_current_user, pin_matches, page_user
 from pos.controllers import parked_controller as parked
 from pos.controllers import sale_controller as sales
 from pos.controllers import suggest_controller as suggest
@@ -21,7 +21,8 @@ from pos.templating import templates
 
 router = APIRouter(prefix="/pos")
 
-# Wrong admin PINs on void, per signed-in user: (failures, blocked_until). Stops PIN guessing at the counter.
+# Only a signed-in admin can void, confirming with their own PIN.
+# Wrong PINs on void, per signed-in user: (failures, blocked_until). Stops PIN guessing at the counter.
 VOID_PIN_MAX_FAILURES = 5
 VOID_PIN_BLOCK_SECONDS = 15 * 60
 _void_pin_failures: dict[int, tuple[int, float]] = {}
@@ -158,17 +159,18 @@ async def discard_parked(parked_id: int, _: User = Depends(get_current_user), db
 
 
 async def _approve_void(db: AsyncSession, user: User, pin: str) -> User:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only an admin can void")
     failures, blocked_until = _void_pin_failures.get(user.id, (0, 0.0))
     if blocked_until > time.time():
-        raise HTTPException(status_code=429, detail="Too many wrong admin PINs. Try again in 15 minutes.")
-    admin = await find_admin_by_pin(db, pin)
-    if not admin:
+        raise HTTPException(status_code=429, detail="Too many wrong PINs. Try again in 15 minutes.")
+    if not pin_matches(user, pin):
         failures += 1
         block = time.time() + VOID_PIN_BLOCK_SECONDS if failures >= VOID_PIN_MAX_FAILURES else 0.0
         _void_pin_failures[user.id] = (0 if block else failures, block)
-        raise HTTPException(status_code=400, detail="Admin PIN is not correct")
+        raise HTTPException(status_code=400, detail="PIN is not correct")
     _void_pin_failures.pop(user.id, None)
-    return admin
+    return user
 
 
 @router.post("/api/sales/{sale_id}/void")

@@ -43,7 +43,7 @@
                     <td class="nowrap">{{ r.cashier }}</td>
                     <td class="nowrap">
                         <a class="btn btn-secondary btn-small" target="receipt" href="/pos/receipt/{{ r.type }}/{{ r.id }}">Reprint</a>
-                        {% if r.status != 'voided' %}
+                        {% if r.status != 'voided' and user.role == 'admin' %}
                         <button type="button" class="btn btn-danger btn-small" data-void-type="{{ r.type }}" data-void-id="{{ r.id }}" data-void-no="{{ r.no }}">Void</button>
                         {% endif %}
                     </td>
@@ -62,7 +62,7 @@
         <p class="muted">The transaction stays on record, marked VOIDED, and is left out of totals. An admin must approve with their PIN.
             Voiding a job order also voids its balance payments; voiding a balance payment puts that amount back on the order's balance.</p>
         <label>Reason <input type="text" id="voidReason" required minlength="3" maxlength="255"></label>
-        <label>Admin PIN <input type="password" id="voidPin" required maxlength="4" inputmode="numeric" pattern="\d{4}"></label>
+        <label>Your PIN <input type="password" id="voidPin" required maxlength="4" inputmode="numeric" pattern="\d{4}"></label>
         <p id="voidError" class="alert alert-error" hidden></p>
         <div class="actions">
             <button type="button" class="btn btn-secondary" id="voidCancel">Cancel</button>

@@ -1,5 +1,5 @@
 """The shop register inside BPS: sales, loading, GCash/Maya, job orders, voids, summary, settings."""
-from tests.conftest import ADMIN_PIN, CUSTOMER_PHONE, CUSTOMER_PIN, ENCODER_PHONE, ENCODER_PIN
+from tests.conftest import ADMIN_PHONE, ADMIN_PIN, CUSTOMER_PHONE, CUSTOMER_PIN, ENCODER_PHONE, ENCODER_PIN
 
 
 def test_signed_out_and_customers_are_kept_out(shop):
@@ -213,7 +213,7 @@ def test_cash_out_with_fee_included(shop):
     assert "FEE (INCLUDED)" in receipt and "6,120.00" in receipt and "-120.00" in receipt and "6,000.00" in receipt
 
 
-def test_void_needs_admin_pin_and_drops_from_totals(shop):
+def test_only_admins_void_and_voids_drop_from_totals(shop):
     client = shop.client
     i = ids()
     # a BPS encoder works the register as a cashier
@@ -226,8 +226,15 @@ def test_void_needs_admin_pin_and_drops_from_totals(shop):
         "/pos/api/sales",
         json={"lines": [{"kind": "service", "service_id": i["PRINTING"], "qty": 2, "unit_price": "5"}], "cash": "10"},
     ).json()
+    # an encoder can't void, even with the admin's PIN, and sees no Void button
+    r = client.post(f"/pos/api/sales/{sale['id']}/void", json={"reason": "wrong item", "admin_pin": ADMIN_PIN})
+    assert r.status_code == 403
+    assert "data-void-id" not in client.get("/pos/sales").text
+
+    shop.sign_in(ADMIN_PHONE, ADMIN_PIN)
+    assert "data-void-id" in client.get("/pos/sales").text
     r = client.post(f"/pos/api/sales/{sale['id']}/void", json={"reason": "wrong item", "admin_pin": ENCODER_PIN})
-    assert r.status_code == 400
+    assert r.status_code == 400  # must be the signed-in admin's own PIN
     r = client.post(f"/pos/api/sales/{sale['id']}/void", json={"reason": "wrong item", "admin_pin": ADMIN_PIN})
     assert r.status_code == 200
     r = client.post(f"/pos/api/sales/{sale['id']}/void", json={"reason": "again", "admin_pin": ADMIN_PIN})
