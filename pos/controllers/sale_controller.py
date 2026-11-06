@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -58,6 +59,7 @@ async def _take_payment(db: AsyncSession, method: str, wallet_id, reference, cas
         ref = clean_text(reference, 60)
         if not ref:
             raise PosError(f"Enter the {wallet.name} reference no.")
+        await _check_reference(db, ref)
         return {
             "payment_method": "wallet",
             "pay_wallet_id": wallet.id,
@@ -188,6 +190,73 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
     return sale
 
 
+@dataclass(frozen=True)
+class UsedReference:
+    no: str
+    label: str
+    amount_cents: int
+    at: datetime
+
+
+async def used_reference(db: AsyncSession, reference: Optional[str]) -> Optional[UsedReference]:
+    """
+    The completed transaction that already used this GCash/Maya reference no. (ignoring case and
+    spaces): a cash-in, a cash-out, or a shop sale or job order payment paid by GCash/Maya. A
+    reference no. belongs to one transaction, so the same receipt can't be claimed or paid with twice.
+    Voided transactions don't count.
+    """
+    key = "".join(str(reference or "").split()).upper()
+    if not key:
+        return None
+
+    def same(column):
+        return func.upper(func.replace(column, " ", "")) == key
+
+    txn = (
+        await db.execute(select(PosWalletTxn).where(PosWalletTxn.status == "completed", same(PosWalletTxn.reference)).limit(1))
+    ).scalar_one_or_none()
+    if txn:
+        kind = "cash-in" if txn.kind == "cash_in" else "cash-out"
+        return UsedReference(txn.txn_no, f"{txn.wallet_name} {kind}", txn.amount_cents, txn.created_at)
+    sale = (
+        await db.execute(
+            select(PosSale)
+            .where(PosSale.status == "completed", PosSale.payment_method == "wallet", same(PosSale.payment_reference))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if sale:
+        what = "job order down payment" if sale.is_job_order else "shop sale paid"
+        return UsedReference(sale.sale_no, f"{sale.pay_wallet_name} {what}", sale.checkout_paid_cents, sale.created_at)
+    payment = (
+        await db.execute(
+            select(PosSalePayment)
+            .where(
+                PosSalePayment.status == "completed",
+                PosSalePayment.payment_method == "wallet",
+                same(PosSalePayment.payment_reference),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if payment:
+        return UsedReference(payment.payment_no, f"{payment.pay_wallet_name} job order payment", payment.amount_cents, payment.created_at)
+    return None
+
+
+def used_message(reference: str, used: UsedReference) -> str:
+    return (
+        f"Reference no. {reference} was already used: {used.no}, {used.label} of "
+        f"₱{used.amount_cents / 100:,.2f} on {used.at:%m/%d/%Y %I:%M %p}. Check the customer's receipt; don't accept it again."
+    )
+
+
+async def _check_reference(db: AsyncSession, reference: str) -> None:
+    used = await used_reference(db, reference)
+    if used:
+        raise PosError(used_message(reference, used))
+
+
 async def create_wallet_txn(db: AsyncSession, data: WalletTxnIn, user: User) -> PosWalletTxn:
     _check_personal(data.personal, user)
     wallet = await _get_active(db, PosWallet, data.wallet_id, "GCash/Maya account")
@@ -203,6 +272,7 @@ async def create_wallet_txn(db: AsyncSession, data: WalletTxnIn, user: User) -> 
     reference = clean_text(data.reference, 60)
     if not reference:
         raise PosError("Reference no. is required")
+    await _check_reference(db, reference)
 
     tendered = quote.collect_cents
     if quote.collect_cents:

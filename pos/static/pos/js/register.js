@@ -377,9 +377,35 @@
     const walletChoice = () => document.querySelector('input[name="wallet"]:checked');
     const wPersonal = () => document.querySelector('input[name="w_personal"]:checked')?.value || "";
 
+    // A reference no. used before blocks the transaction: the steps (and any "Give ₱… cash") are
+    // replaced by a warning and Save is off until the reference is changed.
+    let usedRefMessage = "";
+    function showUsedReference() {
+        walletQuote = null;
+        $("walletQuote").innerHTML =
+            `<p class="alert alert-error"><strong>Don't give or collect any cash.</strong> ${escapeHtml(usedRefMessage)}</p>`;
+        $("wCashBlock").hidden = true;
+        $("saveWallet").disabled = true;
+    }
+    function referenceUsed(message) {
+        usedRefMessage = message;
+        showUsedReference();
+    }
+    function referenceFree() {
+        if (!usedRefMessage) return;
+        usedRefMessage = "";
+        $("saveWallet").disabled = false;
+        hush(); // the warning about the old reference
+        fetchWalletQuote();
+    }
+
     async function fetchWalletQuote() {
         const kind = walletKind();
         $("feeModeField").hidden = kind !== "cash_out" || !!wPersonal();
+        if (usedRefMessage) {
+            showUsedReference();
+            return null;
+        }
         const amount = $("wAmount").value.trim();
         walletQuote = null;
         if (!amount) {
@@ -461,6 +487,8 @@
     function clearWallet() {
         ["wAmount", "wMobile", "wRef", "wName", "wTendered"].forEach((id) => ($(id).value = ""));
         setRadio("w_personal", "");
+        usedRefMessage = "";
+        $("saveWallet").disabled = false;
         walletQuote = null;
         $("walletQuote").textContent = "Enter the amount.";
         updateWalletChange();
@@ -473,6 +501,7 @@
     let savingWallet = false;
     $("saveWallet").addEventListener("click", async () => {
         if (savingWallet) return;
+        if (usedRefMessage) return say(usedRefMessage, "error");
         const q = await fetchWalletQuote();
         if (!q) return say($("walletQuote").textContent || "Check the amount", "error");
         if (!/^09\d{9}$/.test($("wMobile").value)) return say("Customer mobile no. must be 11 digits starting with 09", "error");
@@ -503,9 +532,10 @@
         } catch (err) {
             if (win) win.close();
             say(err.message, "error");
+            if (err.message.includes("was already used")) referenceUsed(err.message);
         } finally {
             savingWallet = false;
-            $("saveWallet").disabled = false;
+            $("saveWallet").disabled = !!usedRefMessage;
         }
     });
 
@@ -579,6 +609,7 @@
             fillFields(data.fields);
             showTab("wallet");
             fetchWalletQuote();
+            $("wRef").dispatchEvent(new Event("change")); // a resumed transaction's reference is checked too
         }
     }
 
@@ -714,17 +745,42 @@
         },
     });
 
+    // A name filled in from a past record is replaced when the number changes; one the cashier typed is kept.
+    let autoName = "";
+    const fillName = (name) => {
+        if (!name || ($("wName").value && $("wName").value !== autoName)) return;
+        $("wName").value = autoName = name;
+    };
+    $("wName").addEventListener("input", () => (autoName = ""));
+    $("wMobile").addEventListener("input", async () => {
+        const mobile = $("wMobile").value.trim();
+        if ($("wName").value === autoName && autoName) $("wName").value = autoName = "";
+        if (!/^09\d{9}$/.test(mobile)) return;
+        try {
+            const match = (await mobileFetch(mobile)).find((m) => m.mobile === mobile);
+            if (match && $("wMobile").value.trim() === mobile) fillName(match.name);
+        } catch (err) {
+            /* no suggestion: the cashier types the name */
+        }
+    });
     attachSuggest($("wMobile"), {
         minChars: 3,
         fetchItems: mobileFetch,
         render: mobileRender,
         onPick: (m) => {
             $("wMobile").value = m.mobile;
-            if (m.name && !$("wName").value) $("wName").value = m.name;
+            fillName(m.name);
             fetchWalletQuote();
             $("wRef").focus();
         },
     });
+
+    // Warn as soon as a reference no. has been used before, before any cash is handed over.
+    warnIfReferenceUsed($("wRef"), (message) => {
+        referenceUsed(message);
+        say(message, "error");
+    }, referenceFree);
+    warnIfReferenceUsed($("payRef"), (message) => say(message, "error"));
 
     attachSuggest($("custPhone"), {
         minChars: 3,

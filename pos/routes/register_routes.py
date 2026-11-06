@@ -105,6 +105,15 @@ async def suggest_service(
     return await suggest.service_descriptions(db, service_id, q)
 
 
+@router.get("/api/wallet-txns/claimed")
+async def cash_out_claimed(
+    reference: str = Query(""), _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """Checked while the cashier types a GCash/Maya reference no., before any cash is handed over."""
+    used = await sales.used_reference(db, reference)
+    return {"claimed": bool(used), "message": sales.used_message(sales.clean_text(reference, 60) or "", used) if used else ""}
+
+
 @router.get("/api/suggest/mobile")
 async def suggest_mobile(q: str = Query(""), _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     return await suggest.mobiles(db, q)

@@ -13,6 +13,7 @@
         $("collectError").textContent = message;
         $("collectError").hidden = !message;
     }
+    warnIfReferenceUsed($("collectRef"), showError);
 
     function updateForm() {
         const byWallet = payChoice().value !== "cash";
