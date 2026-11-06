@@ -22,7 +22,7 @@ class PosWalletTxn(SQLModel, table=True):
     wallet_name: str = Field(max_length=60)
     amount_cents: int = Field(nullable=False)
     fee_cents: int = Field(nullable=False)
-    fee_mode: str = Field(max_length=14)  # added | deducted | paid_in_cash | none (personal)
+    fee_mode: str = Field(max_length=14)  # added | deducted | paid_in_cash | included | none (personal)
     # Admin's own, no fee: "paid" (cash handed over) or "shop" (cash-in sent from shop funds, nothing collected).
     personal: Optional[str] = Field(default=None, max_length=8)
     collect_cents: int = Field(default=0, nullable=False)

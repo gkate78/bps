@@ -22,6 +22,8 @@
 {% if txn.fee_mode == 'none' %}
 {% elif txn.fee_mode == 'paid_in_cash' %}
 <div class="line"><span>FEE PAID IN CASH</span><span>{{ txn.fee_cents | fmt }}</span></div>
+{% elif txn.fee_mode == 'included' %}
+<div class="line"><span>FEE (INCLUDED)</span><span>-{{ txn.fee_cents | fmt }}</span></div>
 {% else %}
 <div class="line"><span>LESS FEE</span><span>-{{ txn.fee_cents | fmt }}</span></div>
 {% endif %}

@@ -15,6 +15,7 @@ from pos.schemas import BalancePaymentIn, SaleIn, WalletTxnIn
 
 MAX_QTY = 10_000
 PERSONAL_LABELS = {"paid": "personal, no fees", "shop": "personal, from shop funds"}
+CASH_OUT_FEE_LABELS = {"paid_in_cash": " (fee paid in cash)", "included": " (fee included in amount sent)"}
 
 
 class PosError(ValueError):
@@ -485,7 +486,7 @@ async def list_transactions(
             if txn.personal:
                 details += f" · {PERSONAL_LABELS[txn.personal]}"
             elif txn.kind == "cash_out":
-                details += " (fee paid in cash)" if txn.fee_mode == "paid_in_cash" else " (fee deducted)"
+                details += CASH_OUT_FEE_LABELS.get(txn.fee_mode, " (fee deducted)")
             haystack = " ".join(filter(None, [txn.txn_no, label, details, txn.customer_name]))
             if needle and needle not in haystack.upper():
                 continue

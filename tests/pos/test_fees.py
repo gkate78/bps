@@ -122,3 +122,20 @@ def test_load_cost_after_wallet_discount():
     assert load_cost(5_000, 300) == 4_850
     assert load_cost(9_900, 0) == 9_900
     assert load_cost(3_300, 250) == 3_218  # ₱32.175 rounds to ₱32.18
+
+
+@pytest.mark.parametrize(
+    "sent, payout, fee",
+    [(6_120, 6_000, 120), (1_020, 1_000, 20), (1_540, 1_500, 40), (520, 500, 20), (6_131, 6_001, 130)],
+)
+def test_cash_out_fee_included_in_amount_sent(sent, payout, fee):
+    q = quote_wallet("cash_out", P(sent), "included")
+    assert (q.fee_cents, q.collect_cents, q.give_cents) == (P(fee), 0, P(payout))
+    assert q.wallet_delta_cents == P(sent)
+    assert q.drawer_delta_cents == -P(payout)
+
+
+@pytest.mark.parametrize("sent", [6_125, 510, 10, 1])
+def test_cash_out_fee_included_rejects_amounts_that_dont_fit(sent):
+    with pytest.raises(FeeError):
+        quote_wallet("cash_out", P(sent), "included")

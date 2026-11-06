@@ -50,7 +50,7 @@ class WalletTxnIn(BaseModel):
     kind: Literal["cash_in", "cash_out"]
     wallet_id: int
     amount: Optional[str] = None
-    fee_mode: Literal["deducted", "paid_in_cash"] = "deducted"
+    fee_mode: Literal["deducted", "paid_in_cash", "included"] = "deducted"
     customer_mobile: Optional[str] = None
     customer_name: Optional[str] = None
     reference: Optional[str] = None
