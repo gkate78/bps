@@ -27,7 +27,8 @@ def _day(value: Optional[str]) -> date:
 async def eod_page(
     request: Request, day: Optional[str] = None, user: User = Depends(page_user), db: AsyncSession = Depends(get_db)
 ):
-    report = await eod.eod_report(db, _day(day))
+    # Encoders do today's closing count only; admins can open any day.
+    report = await eod.eod_report(db, _day(day) if user.role == "admin" else date.today())
     users = {}
     for m in report.movements:
         if m.user_id not in users:
@@ -55,11 +56,16 @@ async def save_eod(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    is_admin = user.role == "admin"
+    if not is_admin and _day(day) != date.today():
+        raise HTTPException(status_code=403, detail="Only an admin can change another day's count")
     try:
-        report = await eod.save_close(db, _day(day), await request.json(), user)
+        report = await eod.save_close(db, _day(day), await request.json(), user, counts_only=not is_admin)
     except PosError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     background.add_task(gsheets.backup_after_eod, user.id)
+    if not is_admin:
+        return {"ok": True}  # a blind count: encoders don't see the expected cash
     return {"expected_cash_cents": report.expected_cash_cents, "difference_cents": report.difference_cents}
 
 
@@ -67,6 +73,8 @@ async def save_eod(
 async def add_movement(
     day: str, request: Request, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
+    if user.role != "admin" and _day(day) != date.today():
+        raise HTTPException(status_code=403, detail="Only an admin can change another day's count")
     try:
         movement = await eod.add_movement(db, _day(day), await request.json(), user)
     except PosError as exc:

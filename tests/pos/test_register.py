@@ -213,6 +213,30 @@ def test_cash_out_with_fee_included(shop):
     assert "FEE (INCLUDED)" in receipt and "6,120.00" in receipt and "-120.00" in receipt and "6,000.00" in receipt
 
 
+def test_encoders_see_only_their_own_sales(shop):
+    client = shop.client
+    i = ids()
+    line = {"kind": "service", "service_id": i["PRINTING"], "qty": 1, "unit_price": "5"}
+    admin_sale = client.post("/pos/api/sales", json={"lines": [line], "cash": "5"}).json()
+
+    shop.add_user(ENCODER_PHONE, ENCODER_PIN, "encoder", "ANA")
+    shop.sign_in(ENCODER_PHONE, ENCODER_PIN)
+    own_sale = client.post("/pos/api/sales", json={"lines": [line], "cash": "5"}).json()
+    own_txn = client.post(
+        "/pos/api/wallet-txns",
+        json={"kind": "cash_in", "wallet_id": i["GCASH"], "amount": "100", "customer_mobile": "09181112222", "reference": "enc1"},
+    ).json()
+
+    listing = client.get("/pos/sales").text
+    assert own_sale["sale_no"] in listing and own_txn["txn_no"] in listing
+    assert admin_sale["sale_no"] not in listing
+    assert "2 transactions" in listing
+
+    shop.sign_in(ADMIN_PHONE, ADMIN_PIN)
+    listing = client.get("/pos/sales").text
+    assert admin_sale["sale_no"] in listing and own_sale["sale_no"] in listing and "3 transactions" in listing
+
+
 def test_only_admins_void_and_voids_drop_from_totals(shop):
     client = shop.client
     i = ids()

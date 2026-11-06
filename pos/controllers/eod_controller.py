@@ -203,8 +203,12 @@ async def eod_report(db: AsyncSession, day: date) -> EodReport:
     return report
 
 
-async def save_close(db: AsyncSession, day: date, form: dict, user: User) -> EodReport:
-    """Save the starting cash, the counts and notes for a day. Saving again updates it (audit-logged)."""
+async def save_close(db: AsyncSession, day: date, form: dict, user: User, counts_only: bool = False) -> EodReport:
+    """
+    Save the starting cash, the counts and notes for a day. Saving again updates it (audit-logged).
+    counts_only (encoders): only the counted cash, the GCash/Maya balances in the apps and notes change;
+    the starting cash and opening balances stay as the admin set them.
+    """
     try:
         opening = to_cents(form.get("opening_cash") or "0", field="Starting cash")
         counted = to_cents_optional(form.get("counted_cash"), field="Counted cash")
@@ -219,7 +223,8 @@ async def save_close(db: AsyncSession, day: date, form: dict, user: User) -> Eod
 
     close = (await db.execute(select(PosDayClose).where(PosDayClose.day == day))).scalar_one_or_none()
     close = close or PosDayClose(day=day)
-    close.opening_cash_cents = opening
+    if not counts_only:
+        close.opening_cash_cents = opening
     close.counted_cash_cents = counted
     close.notes = clean_text(form.get("notes"), 500)
     db.add(close)
@@ -228,7 +233,9 @@ async def save_close(db: AsyncSession, day: date, form: dict, user: User) -> Eod
             await db.execute(select(PosDayWallet).where(PosDayWallet.day == day, PosDayWallet.wallet_id == wallet_id))
         ).scalar_one_or_none()
         row = row or PosDayWallet(day=day, wallet_id=wallet_id)
-        row.opening_cents, row.counted_cents = w_opening, w_counted
+        if not counts_only:
+            row.opening_cents = w_opening
+        row.counted_cents = w_counted
         db.add(row)
     await db.flush()
 

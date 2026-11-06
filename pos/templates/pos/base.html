@@ -20,7 +20,7 @@
             <a href="/pos" class="{{ 'on' if active == 'register' }}">Register</a>
             <a href="/pos/jobs" class="{{ 'on' if active == 'jobs' }}">Job orders</a>
             <a href="/pos/sales" class="{{ 'on' if active == 'sales' }}">Sales</a>
-            <a href="/pos/summary" class="{{ 'on' if active == 'summary' }}">Summary</a>
+            {% if user.role == 'admin' %}<a href="/pos/summary" class="{{ 'on' if active == 'summary' }}">Summary</a>{% endif %}
             <a href="/pos/eod" class="{{ 'on' if active == 'eod' }}">End of day</a>
             {% if user.role == 'admin' %}
             <a href="/pos/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>

@@ -392,17 +392,21 @@ async def _users_by_id(db: AsyncSession) -> dict[int, User]:
     return {u.id: u for u in (await db.execute(select(User))).scalars().all()}
 
 
+def _mine(query, model, cashier_id: Optional[int]):
+    return query if cashier_id is None else query.where(model.cashier_user_id == cashier_id)
+
+
 async def list_transactions(
-    db: AsyncSession, start: date, end: date, kind: str = "all", search: str = ""
+    db: AsyncSession, start: date, end: date, kind: str = "all", search: str = "", cashier_id: Optional[int] = None
 ) -> list[dict]:
-    """Shop sales and GCash/Maya transactions in one list, newest first."""
+    """Shop sales and GCash/Maya transactions in one list, newest first. cashier_id limits it to one cashier's."""
     lo, hi = day_range(start, end)
     users = await _users_by_id(db)
     needle = search.strip().upper()
     rows: list[dict] = []
 
     if kind in ("all", "shop"):
-        sales = (await db.execute(select(PosSale).where(PosSale.created_at >= lo, PosSale.created_at < hi))).scalars().all()
+        sales = (await db.execute(_mine(select(PosSale).where(PosSale.created_at >= lo, PosSale.created_at < hi), PosSale, cashier_id))).scalars().all()
         lines_by_sale: dict[int, list[PosSaleLine]] = defaultdict(list)
         if sales:
             all_lines = (
@@ -442,7 +446,9 @@ async def list_transactions(
 
     if kind in ("all", "shop"):
         payments = (
-            await db.execute(select(PosSalePayment).where(PosSalePayment.created_at >= lo, PosSalePayment.created_at < hi))
+            await db.execute(
+                _mine(select(PosSalePayment).where(PosSalePayment.created_at >= lo, PosSalePayment.created_at < hi), PosSalePayment, cashier_id)
+            )
         ).scalars().all()
         sale_info = {}
         if payments:
@@ -478,7 +484,9 @@ async def list_transactions(
 
     if kind in ("all", "wallet"):
         txns = (
-            await db.execute(select(PosWalletTxn).where(PosWalletTxn.created_at >= lo, PosWalletTxn.created_at < hi))
+            await db.execute(
+                _mine(select(PosWalletTxn).where(PosWalletTxn.created_at >= lo, PosWalletTxn.created_at < hi), PosWalletTxn, cashier_id)
+            )
         ).scalars().all()
         for txn in txns:
             label = f"{txn.wallet_name} {'cash-in' if txn.kind == 'cash_in' else 'cash-out'}"

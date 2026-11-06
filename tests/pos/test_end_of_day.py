@@ -2,6 +2,7 @@
 from datetime import date, datetime, timedelta
 
 from app.models import BillRecord
+from tests.conftest import ADMIN_PHONE, ADMIN_PIN, ENCODER_PHONE, ENCODER_PIN
 
 TODAY = date.today()
 
@@ -112,3 +113,38 @@ def test_end_of_day_one_count_for_bills_and_shop(shop):
     # Only an admin can remove a cash movement.
     assert client.post("/pos/api/cash-movements/1/void").status_code == 200
     assert "-₱300.00" not in client.get("/pos/eod").text
+
+
+def test_encoder_does_a_blind_closing_count(shop):
+    client = shop.client
+    day = TODAY.isoformat()
+    # the admin sets the starting cash and the GCash opening balance
+    client.post(f"/pos/api/eod/{day}", json={"opening_cash": "1000", "wallets": [{"wallet_id": 1, "opening": "2000"}]})
+
+    shop.add_user(ENCODER_PHONE, ENCODER_PIN, "encoder", "ANA")
+    shop.sign_in(ENCODER_PHONE, ENCODER_PIN)
+    assert client.get("/pos/summary", follow_redirects=False).status_code == 403
+    page = client.get("/pos/eod").text
+    assert 'href="/pos/summary"' not in page
+    assert "Closing count" in page and "Cash counted in the drawer" in page
+    assert "Expected cash in the drawer" not in page and 'name="opening_cash"' not in page
+    assert "GCASH balance" in page and "₱2,000.00" in page  # expected wallet balance is shown
+    # other days are the admin's
+    assert "Closing count for" in client.get(f"/pos/eod?day={(TODAY - timedelta(days=1)).isoformat()}").text
+    yesterday = (TODAY - timedelta(days=1)).isoformat()
+    assert client.post(f"/pos/api/eod/{yesterday}", json={"counted_cash": "1"}).status_code == 403
+
+    # saving changes only the counts, and doesn't reveal the expected cash
+    r = client.post(
+        f"/pos/api/eod/{day}",
+        json={"opening_cash": "5", "counted_cash": "990", "wallets": [{"wallet_id": 1, "opening": "5", "counted": "1990"}]},
+    )
+    assert r.status_code == 200 and r.json() == {"ok": True}
+    page = client.get("/pos/eod").text
+    assert "short" not in page and "over " not in page
+
+    shop.sign_in(ADMIN_PHONE, ADMIN_PIN)
+    page = client.get("/pos/eod").text
+    assert 'name="opening_cash" inputmode="decimal" value="1000"' in page
+    assert 'name="counted_cash" inputmode="decimal" value="990"' in page
+    assert "short ₱10.00" in page and "Saved by ANA" in page

@@ -1,17 +1,23 @@
 {% extends "pos/base.html" %}
 {% block title %}End of day{% endblock %}
 {% block content %}
+{% set is_admin = user.role == 'admin' %}
 <section class="panel">
+    {% if is_admin %}
     <form method="get" action="/pos/eod" class="filters">
         <label>Day <input type="date" name="day" value="{{ r.day.isoformat() }}" onchange="this.form.submit()"></label>
         <a class="btn btn-secondary" href="/pos/eod?day={{ (r.day - timedelta(days=1)).isoformat() }}">← Previous day</a>
         <a class="btn btn-secondary" href="/pos/eod?day={{ (r.day + timedelta(days=1)).isoformat() }}">Next day →</a>
     </form>
     <p class="muted small">One count for the whole counter: bills and shop together. Enter the starting cash, record any cash taken out or added during the day, then count the drawer and check each GCash/Maya balance at closing.</p>
+    {% else %}
+    <h2>Closing count for {{ r.day.strftime("%B %d, %Y") }}</h2>
+    <p class="muted small">At closing, count the cash in the drawer and enter it, then check each GCash/Maya balance in its app. The admin checks your count against the day's totals.</p>
+    {% endif %}
     {% if r.close and r.close.closed_at %}
-    <div class="alert {{ 'alert-success' if r.difference_cents == 0 else 'alert-warn' }}">
+    <div class="alert {{ 'alert-success' if not is_admin or r.difference_cents == 0 else 'alert-warn' }}">
         Saved by {{ r.closed_by }} at {{ r.close.closed_at.strftime("%m/%d %I:%M %p") }}.
-        {% if r.difference_cents is not none %}
+        {% if is_admin and r.difference_cents is not none %}
             Cash drawer: {{ 'balanced' if r.difference_cents == 0 else ('over ' ~ (r.difference_cents | peso)) if r.difference_cents > 0 else ('short ' ~ ((-r.difference_cents) | peso)) }}.
         {% endif %}
         Totals below update as new transactions come in; save again after a late transaction.
@@ -31,6 +37,13 @@
 <div class="grid2">
     <section class="panel">
         <h2>Cash drawer</h2>
+        {% if not is_admin %}
+        <table class="list eod" data-target="cash">
+            <tfoot>
+                <tr><th>Cash counted in the drawer</th><th class="num"><input type="text" class="money" name="counted_cash" inputmode="decimal" value="{{ r.counted_cash_cents | pesos_input if r.counted_cash_cents is not none else '' }}" placeholder="count it"></th></tr>
+            </tfoot>
+        </table>
+        {% else %}
         <table class="list eod" data-change="{{ r.change_cents }}" data-target="cash">
             <tbody>
                 <tr><td>Starting cash</td><td class="num"><input type="text" class="money" name="opening_cash" inputmode="decimal" value="{{ r.opening_cash_cents | pesos_input }}"></td></tr>
@@ -50,12 +63,14 @@
         {% if r.unsettled_bills[0] %}
         <p class="muted small">{{ r.unsettled_bills[0] }} bill{{ '' if r.unsettled_bills[0] == 1 else 's' }} collected this day {{ 'is' if r.unsettled_bills[0] == 1 else 'are' }} not yet paid to the billers ({{ r.unsettled_bills[1] | peso }}). That money is still with the shop.</p>
         {% endif %}
+        {% endif %}
     </section>
 
     {% for w in r.wallets %}
     <section class="panel">
         <h2>{{ w.wallet.name }} balance</h2>
-        <table class="list eod" data-change="{{ w.change_cents }}" data-wallet="{{ w.wallet.id }}">
+        <table class="list eod" data-change="{{ w.change_cents }}" data-wallet="{{ w.wallet.id }}" data-opening="{{ w.opening_cents }}">
+            {% if is_admin %}
             <tbody>
                 <tr><td>Opening balance <span class="muted small">(from the {{ w.wallet.name }} app)</span></td><td class="num"><input type="text" class="money" name="opening" inputmode="decimal" value="{{ w.opening_cents | pesos_input }}"></td></tr>
                 {% for label, cents in w.lines if cents %}
@@ -64,6 +79,7 @@
                 <tr><td class="muted" colspan="2">No {{ w.wallet.name }} activity.</td></tr>
                 {% endfor %}
             </tbody>
+            {% endif %}
             <tfoot>
                 <tr><th>Expected balance</th><th class="num" data-expected>{{ w.expected_cents | peso }}</th></tr>
                 <tr><th>Balance in the app now</th><th class="num"><input type="text" class="money" name="counted" inputmode="decimal" value="{{ w.counted_cents | pesos_input if w.counted_cents is not none else '' }}" placeholder="check app"></th></tr>
@@ -106,6 +122,7 @@
         </div>
     </section>
 
+    {% if is_admin %}
     <section class="panel">
         <h2>Bills paid to billers through other channels</h2>
         <p class="muted small">Paid through Bayad, banks and others. This money doesn't come from the drawer or the GCash/Maya accounts above.</p>
@@ -119,11 +136,12 @@
             </tbody>
         </table>
     </section>
+    {% endif %}
 </div>
 
 <section class="panel stack">
     <label>Notes <span class="muted">(optional)</span> <input type="text" name="notes" maxlength="500" value="{{ r.notes }}"></label>
-    <div class="actions"><button type="submit" class="btn btn-primary btn-big" id="eodSave">Save end of day</button></div>
+    <div class="actions"><button type="submit" class="btn btn-primary btn-big" id="eodSave">{{ 'Save end of day' if is_admin else 'Save count' }}</button></div>
 </section>
 </form>
 {% endblock %}
