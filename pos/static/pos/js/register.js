@@ -412,6 +412,11 @@
                     `Collect <strong>${peso(q.collect_cents)}</strong> cash (${peso(q.amount_cents)} + ${peso(q.fee_cents)} fee)`,
                     `Send <strong>${peso(q.amount_cents)}</strong> from ${escapeHtml(wallet)} to ${escapeHtml(mobile)}`,
                 ];
+            } else if (feeMode() === "included") {
+                steps = [
+                    `Confirm <strong>${peso(q.amount_cents)}</strong> received in ${escapeHtml(wallet)}`,
+                    `Give <strong>${peso(q.give_cents)}</strong> cash (fee ${peso(q.fee_cents)} included in what was sent)`,
+                ];
             } else if (feeMode() === "paid_in_cash") {
                 steps = [
                     `Confirm <strong>${peso(q.amount_cents)}</strong> received in ${escapeHtml(wallet)}`,

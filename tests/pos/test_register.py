@@ -193,6 +193,26 @@ def test_cash_in_and_cash_out(shop):
     assert "₱80.00" in s
 
 
+def test_cash_out_with_fee_included(shop):
+    """Customer sends ₱6,120 to receive exactly ₱6,000: the fee is ₱120, not ₱130 on ₱6,120."""
+    client = shop.client
+    i = ids()
+    q = client.get("/pos/api/quote/wallet", params={"kind": "cash_out", "amount": "6120", "fee_mode": "included"}).json()
+    assert (q["fee_cents"], q["give_cents"]) == (12_000, 600_000)
+    bad = client.get("/pos/api/quote/wallet", params={"kind": "cash_out", "amount": "6125", "fee_mode": "included"})
+    assert bad.status_code == 400 and "Deduct from payout" in bad.json()["detail"]
+
+    r = client.post(
+        "/pos/api/wallet-txns",
+        json={"kind": "cash_out", "wallet_id": i["GCASH"], "amount": "6120", "fee_mode": "included", "customer_mobile": "09181112222", "reference": "inc1"},
+    )
+    assert r.status_code == 200, r.text
+    txn = r.json()
+    assert txn["give_cents"] == 600_000
+    receipt = client.get(f"/pos/receipt/wallet/{txn['id']}").text
+    assert "FEE (INCLUDED)" in receipt and "6,120.00" in receipt and "-120.00" in receipt and "6,000.00" in receipt
+
+
 def test_void_needs_admin_pin_and_drops_from_totals(shop):
     client = shop.client
     i = ids()

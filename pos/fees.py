@@ -12,7 +12,7 @@ from typing import Literal
 from pos.money import MoneyError
 
 WalletKind = Literal["cash_in", "cash_out"]
-CashOutFeeMode = Literal["deducted", "paid_in_cash"]
+CashOutFeeMode = Literal["deducted", "paid_in_cash", "included"]
 
 
 class FeeError(ValueError):
@@ -117,7 +117,7 @@ def load_cost(load_cents: int, discount_bp: int) -> int:
 @dataclass(frozen=True)
 class WalletQuote:
     kind: WalletKind
-    fee_mode: str  # added | deducted | paid_in_cash
+    fee_mode: str  # added | deducted | paid_in_cash | included
     amount_cents: int
     fee_cents: int
     collect_cents: int  # cash the customer hands over
@@ -145,11 +145,39 @@ def quote_wallet(
         raise FeeError("Choose cash-in or cash-out")
     if fee_mode == "paid_in_cash":
         return WalletQuote(kind, fee_mode, amount_cents, fee, collect_cents=fee, give_cents=amount_cents)
+    if fee_mode == "included":
+        payout = payout_with_fee_included(amount_cents, s)
+        return WalletQuote(kind, fee_mode, amount_cents, amount_cents - payout, collect_cents=0, give_cents=payout)
     if fee_mode != "deducted":
         raise FeeError("Choose how the cash-out fee is paid")
     if amount_cents <= fee:
         raise FeeError("Cash-out amount must be more than the fee")
     return WalletQuote(kind, fee_mode, amount_cents, fee, collect_cents=0, give_cents=amount_cents - fee)
+
+
+def payout_with_fee_included(sent_cents: int, s: FeeSchedule = DEFAULT_SCHEDULE) -> int:
+    """
+    The customer sent the payout plus its fee (₱6,120 = ₱6,000 + ₱120) to get an exact amount.
+    payout + fee(payout) rises with every peso, so at most one payout fits.
+    """
+    _check_amount(sent_cents)
+    low, high = 1, sent_cents // 100  # in pesos
+    while low < high:
+        mid = (low + high + 1) // 2
+        if mid * 100 + ewallet_fee(mid * 100, s) <= sent_cents:
+            low = mid
+        else:
+            high = mid - 1
+    payout = low * 100
+    total = payout + ewallet_fee(payout, s)
+    if total != sent_cents:
+        if total > sent_cents:
+            raise FeeError("Cash-out amount must be more than the fee")
+        raise FeeError(
+            f"₱{sent_cents // 100:,} isn't an amount plus its fee "
+            f"(₱{payout // 100:,} + ₱{(total - payout) // 100:,} fee = ₱{total // 100:,}). Use Deduct from payout instead."
+        )
+    return payout
 
 
 def quote_personal_wallet(kind: WalletKind, amount_cents: int, from_shop: bool) -> WalletQuote:
