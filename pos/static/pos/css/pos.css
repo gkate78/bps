@@ -177,6 +177,8 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .lines th { text-align: left; color: var(--muted); font-size: 0.85rem; padding: 0.3rem 0.2rem; border-bottom: 1px solid var(--border); }
 .lines td { padding: 0.45rem 0.2rem; border-bottom: 1px solid #eef2fa; vertical-align: top; }
 .lines .empty td { color: var(--muted); text-align: center; padding: 1.2rem; }
+.lines tr.editing td { background: #fff6e0; }
+.lines .line-actions { white-space: nowrap; text-align: right; }
 .total-row { display: flex; justify-content: space-between; align-items: baseline; padding: 0.6rem 0.2rem; font-size: 1.2rem; }
 .total-row strong { font-size: 1.6rem; font-variant-numeric: tabular-nums; }
 .total-row.change strong { color: var(--success-fg); }
