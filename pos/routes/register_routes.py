@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from pos.auth_adapter import User, display_name, get_current_user, pin_matches, page_user
+from pos.auth_adapter import User, display_name, get_current_user, page_admin, page_user, pin_matches
 from pos.controllers import parked_controller as parked
 from pos.controllers import sale_controller as sales
 from pos.controllers import suggest_controller as suggest
@@ -359,7 +359,9 @@ async def sales_page(
 ):
     start_d, end_d = _parse_range(start, end)
     kind = kind if kind in ("all", "shop", "wallet") else "all"
-    rows = await sales.list_transactions(db, start_d, end_d, kind, q)
+    # Encoders see only the transactions they rang up; admins see everyone's.
+    cashier_id = None if user.role == "admin" else user.id
+    rows = await sales.list_transactions(db, start_d, end_d, kind, q, cashier_id)
     return templates.TemplateResponse(
         request,
         "pos/sales.html",
@@ -372,7 +374,7 @@ async def summary_page(
     request: Request,
     start: Optional[str] = None,
     end: Optional[str] = None,
-    user: User = Depends(page_user),
+    user: User = Depends(page_admin),
     db: AsyncSession = Depends(get_db),
 ):
     start_d, end_d = _parse_range(start, end)

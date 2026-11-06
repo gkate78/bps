@@ -11,8 +11,11 @@
     }
 
     // Expected = opening + the day's change; difference = counted - expected.
+    // Encoders' tables have no opening input (data-opening holds it) and the cash table has no expected cell.
     function recompute(table) {
-        const opening = toCents(table.querySelector('input[name="opening_cash"], input[name="opening"]').value) || 0;
+        if (!table.querySelector("[data-expected]")) return;
+        const openingInput = table.querySelector('input[name="opening_cash"], input[name="opening"]');
+        const opening = openingInput ? toCents(openingInput.value) || 0 : Number(table.dataset.opening || 0);
         const expected = opening + Number(table.dataset.change);
         table.querySelector("[data-expected]").textContent = peso(expected);
         const countedText = table.querySelector('input[name="counted_cash"], input[name="counted"]').value;
@@ -39,12 +42,12 @@
         event.preventDefault();
         const cash = document.querySelector('table.eod[data-target="cash"]');
         const body = {
-            opening_cash: cash.querySelector('input[name="opening_cash"]').value,
+            opening_cash: cash.querySelector('input[name="opening_cash"]')?.value,
             counted_cash: cash.querySelector('input[name="counted_cash"]').value,
             notes: form.querySelector('input[name="notes"]').value,
             wallets: [...document.querySelectorAll("table.eod[data-wallet]")].map((t) => ({
                 wallet_id: Number(t.dataset.wallet),
-                opening: t.querySelector('input[name="opening"]').value,
+                opening: t.querySelector('input[name="opening"]')?.value,
                 counted: t.querySelector('input[name="counted"]').value,
             })),
         };
