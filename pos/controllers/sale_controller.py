@@ -566,8 +566,11 @@ class DaySummary:
         return self.service_sales_cents + self.load_income_cents + self.cash_in_fees_cents + self.cash_out_fees_cents
 
 
-async def day_summary(db: AsyncSession, start: date, end: date) -> DaySummary:
-    lo, hi = day_range(start, end)
+async def day_summary(
+    db: AsyncSession, start: date, end: date, window: Optional[tuple[datetime, datetime]] = None
+) -> DaySummary:
+    """window (lo, hi) narrows it to part of a day, e.g. one cashier's shift."""
+    lo, hi = window or day_range(start, end)
     users = await _users_by_id(db)
     out = DaySummary()
 

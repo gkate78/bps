@@ -141,10 +141,63 @@ def test_encoder_does_a_blind_closing_count(shop):
     )
     assert r.status_code == 200 and r.json() == {"ok": True}
     page = client.get("/pos/eod").text
-    assert "short" not in page and "over " not in page
+    assert "Cash drawer: short" not in page and "Cash drawer: over" not in page and "Cash drawer: balanced" not in page
 
     shop.sign_in(ADMIN_PHONE, ADMIN_PIN)
     page = client.get("/pos/eod").text
     assert 'name="opening_cash" inputmode="decimal" value="1000"' in page
     assert 'name="counted_cash" inputmode="decimal" value="990"' in page
     assert "short ₱10.00" in page and "Saved by ANA" in page
+
+
+def test_drawer_handover_splits_the_day_into_shifts(shop):
+    client = shop.client
+    day = TODAY.isoformat()
+    printing = {"kind": "service", "service_id": 1, "qty": 1}
+    client.post(f"/pos/api/eod/{day}", json={"opening_cash": "1000", "wallets": [{"wallet_id": 1, "opening": "2000"}]})
+
+    # ANA's shift: a ₱100 sale, then she hands over ₱10 short and GCash ₱10 short
+    shop.add_user(ENCODER_PHONE, ENCODER_PIN, "encoder", "ANA")
+    shop.sign_in(ENCODER_PHONE, ENCODER_PIN)
+    client.post("/pos/api/sales", json={"lines": [{**printing, "unit_price": "100"}], "cash": "100"})
+    assert client.post(f"/pos/api/eod/{day}/handover", json={"counted_cash": ""}).status_code == 400
+    # a parked transaction must be finished first
+    parked = client.post("/pos/api/parked", json={"kind": "sale", "label": "X", "summary": "PRINTING", "total_cents": 500, "data": {}})
+    assert parked.status_code == 200, parked.text
+    r = client.post(f"/pos/api/eod/{day}/handover", json={"counted_cash": "1090"})
+    assert r.status_code == 400 and "parked" in r.json()["detail"]
+    assert client.post(f"/pos/api/parked/{parked.json()['id']}/discard").status_code == 200
+    r = client.post(
+        f"/pos/api/eod/{day}/handover",
+        json={"counted_cash": "1090", "wallets": [{"wallet_id": 1, "counted": "1990"}], "notes": "lunch turnover"},
+    )
+    assert r.status_code == 200 and r.json() == {"ok": True}  # blind: no expected cash for encoders
+    assert client.post("/pos/api/handovers/1/void").status_code == 403
+
+    # the reliever's shift starts from ANA's count
+    shop.add_user("09170000003", ENCODER_PIN, "encoder", "BEN")
+    shop.sign_in("09170000003", ENCODER_PIN)
+    page = client.get("/pos/eod").text
+    assert "Shift 2 started" in page and "with ₱1,090.00 counted by ANA" in page
+    assert "₱1,990.00" in page  # GCash expected for BEN's shift starts from ANA's check
+    client.post("/pos/api/sales", json={"lines": [{**printing, "unit_price": "50"}], "cash": "50"})
+    assert client.post(f"/pos/api/eod/{day}", json={"counted_cash": "1140"}).json() == {"ok": True}
+    # the day is closed, so no more handovers
+    assert client.post(f"/pos/api/eod/{day}/handover", json={"counted_cash": "1140"}).status_code == 400
+
+    shop.sign_in(ADMIN_PHONE, ADMIN_PIN)
+    page = client.get("/pos/eod").text
+    # shift 1: 1,000 + 100 = 1,100 expected, 1,090 counted; shift 2: 1,090 + 50 = 1,140, balanced
+    assert "Shifts" in page and "LUNCH TURNOVER" in page
+    assert "₱1,100.00" in page and "Short ₱10.00" in page and "GCASH short ₱10.00" in page
+    assert "Balanced" in page
+    # the day as a whole: 1,150 expected, 1,140 counted
+    assert "short ₱10.00" in page
+
+    # a bill dated in ANA's shift but encoded after the handover shows up as a late entry
+    shop.add(bill(100, 10, txn_datetime=datetime.combine(TODAY, datetime.min.time())))
+    assert "was ₱1,100.00 at the handover" in client.get("/pos/eod").text
+
+    # removing the handover makes it one shift again
+    assert client.post("/pos/api/handovers/1/void").status_code == 200
+    assert "Shifts" not in client.get("/pos/eod").text
