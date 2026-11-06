@@ -33,8 +33,9 @@
             <div class="row3">
                 <label>Qty <input type="number" id="svcQty" min="1" max="10000" step="1" value="1" required></label>
                 <label>Price each ₱ <input type="text" id="svcPrice" inputmode="decimal" required></label>
-                <button type="submit" class="btn btn-primary">Add line</button>
+                <button type="submit" class="btn btn-primary" id="svcSubmit">Add line</button>
             </div>
+            <button type="button" class="btn btn-secondary btn-small" id="svcCancel" hidden>Cancel edit</button>
         </form>
 
         <form id="loadEditor" class="editor" hidden autocomplete="off">
@@ -68,7 +69,10 @@
                 <label>Reference no. <span class="muted">(optional)</span> <input type="text" id="loadRef" maxlength="60"></label>
             </div>
             <div class="quote" id="loadQuote">Enter the load amount.</div>
-            <button type="submit" class="btn btn-primary">Add load</button>
+            <div class="actions">
+                <button type="button" class="btn btn-secondary" id="loadCancel" hidden>Cancel edit</button>
+                <button type="submit" class="btn btn-primary" id="loadSubmit">Add load</button>
+            </div>
         </form>
     </div>
 
@@ -129,7 +133,6 @@
                 <label>Reference no. <input type="text" id="payRef" maxlength="60"></label>
             </div>
             <div class="actions">
-                <button type="button" class="btn btn-secondary" id="clearSale">Clear</button>
                 <button type="button" class="btn btn-secondary" id="parkSale" title="Put this sale on hold and serve the next customer">Park</button>
                 <button type="submit" class="btn btn-primary btn-big" id="saveSale">Save &amp; Print</button>
             </div>

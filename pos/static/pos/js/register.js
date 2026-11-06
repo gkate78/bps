@@ -53,9 +53,70 @@
         document.querySelectorAll(".svc-btn").forEach((b) => b.classList.remove("on"));
     }
 
+    // Editing an item not saved yet (✎): it stays in the sale, highlighted, until Update replaces it.
+    let editingIndex = null;
+    function setEditing(index) {
+        editingIndex = index;
+        const editing = index !== null;
+        $("svcSubmit").textContent = editing ? "Update line" : "Add line";
+        $("loadSubmit").textContent = editing ? "Update load" : "Add load";
+        $("svcCancel").hidden = $("loadCancel").hidden = !editing;
+    }
+    function resetServiceForm() {
+        $("svcDesc").value = "";
+        $("svcQty").value = "1";
+        $("svcPrice").value = "";
+    }
+    function resetLoadForm() {
+        ["loadMobile", "loadAmount", "loadDesc", "loadRef", "loadDeducted"].forEach((id) => ($(id).value = ""));
+        $("loadDeducted").placeholder = "";
+        $("loadPromo").checked = false;
+        $("loadQuote").textContent = "Enter the load amount.";
+    }
+    function cancelEdit() {
+        if (editingIndex === null) return;
+        setEditing(null);
+        resetServiceForm();
+        resetLoadForm();
+        renderCart();
+    }
+    // Put the item back in its form; Add becomes Update.
+    function editLine(index) {
+        const line = cart[index];
+        hush();
+        setEditing(index);
+        if (line.kind === "service") {
+            currentService = { id: line.service_id, name: line.name };
+            showEditor("service");
+            document.querySelector(`.svc-btn[data-service-id="${line.service_id}"]`)?.classList.add("on");
+            $("serviceEditorTitle").textContent = line.name;
+            $("svcDesc").value = line.description || "";
+            $("svcQty").value = String(line.qty);
+            $("svcPrice").value = line.unit_price;
+            $("svcPrice").focus();
+        } else {
+            showEditor("load");
+            document.querySelector(".svc-btn[data-load]")?.classList.add("on");
+            setRadio("network", String(line.network_id));
+            setRadio("load_wallet", String(line.wallet_id));
+            $("loadMobile").value = line.mobile_no || "";
+            $("loadAmount").value = line.amount || "";
+            $("loadPromo").checked = !!line.is_promo;
+            $("loadDesc").value = line.description || "";
+            $("loadDeducted").value = line.deducted || "";
+            $("loadRef").value = line.reference || "";
+            fetchLoadQuote();
+            $("loadAmount").focus();
+        }
+        renderCart();
+    }
+    $("svcCancel").addEventListener("click", cancelEdit);
+    $("loadCancel").addEventListener("click", cancelEdit);
+
     document.querySelectorAll(".svc-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
             hush();
+            cancelEdit();
             if (btn.dataset.load) {
                 showEditor("load");
                 btn.classList.add("on");
@@ -82,7 +143,7 @@
         if (!Number.isInteger(qty) || qty < 1 || qty > 10000) return say("Quantity must be a whole number from 1 to 10,000", "error");
         if (price === null || (!price && !personal())) return say("Enter the price", "error");
         hush();
-        cart.push({
+        const line = {
             kind: "service",
             service_id: currentService.id,
             name: currentService.name,
@@ -90,11 +151,12 @@
             qty,
             unit_price: $("svcPrice").value,
             total_cents: price * qty,
-        });
+        };
+        if (editingIndex !== null) cart.splice(editingIndex, 1, line);
+        else cart.push(line);
+        setEditing(null);
         renderCart();
-        $("svcDesc").value = "";
-        $("svcQty").value = "1";
-        $("svcPrice").value = "";
+        resetServiceForm();
         $("svcDesc").focus();
     });
 
@@ -143,7 +205,7 @@
             return say(`Amount ${wallet.dataset.name} deducted must be more than zero and not more than the load`, "error");
         }
         hush();
-        cart.push({
+        const line = {
             kind: "load",
             name: `LOAD ${network.dataset.name}`,
             description: $("loadDesc").value.trim(),
@@ -159,12 +221,12 @@
             total_cents: q.total_cents,
             load_cents: q.load_cents,
             cost_cents: deducted ?? q.cost_cents,
-        });
+        };
+        if (editingIndex !== null) cart.splice(editingIndex, 1, line);
+        else cart.push(line);
+        setEditing(null);
         renderCart();
-        ["loadMobile", "loadAmount", "loadDesc", "loadRef", "loadDeducted"].forEach((id) => ($(id).value = ""));
-        $("loadDeducted").placeholder = "";
-        $("loadPromo").checked = false;
-        $("loadQuote").textContent = "Enter the load amount.";
+        resetLoadForm();
         $("loadMobile").focus();
     });
 
@@ -196,11 +258,12 @@
                 .map((line, i) => {
                     const sub = line.kind === "load" ? loadDetail(line) : line.qty > 1 ? `${peso(toCents(line.unit_price))} each` : "";
                     const desc = line.description ? ` · ${line.description}` : "";
-                    return `<tr>
-                        <td><strong>${escapeHtml(line.name)}</strong>${escapeHtml(desc)}${sub ? `<div class="muted small">${escapeHtml(sub)}</div>` : ""}</td>
+                    const editing = i === editingIndex;
+                    return `<tr class="${editing ? "editing" : ""}">
+                        <td><strong>${escapeHtml(line.name)}</strong>${escapeHtml(desc)}${sub ? `<div class="muted small">${escapeHtml(sub)}</div>` : ""}${editing ? '<div class="muted small">Editing…</div>' : ""}</td>
                         <td class="num">${line.qty}</td>
                         <td class="num">${escapeHtml(peso(lineTotal(line)))}</td>
-                        <td><button type="button" class="btn btn-ghost btn-small" data-remove="${i}" aria-label="Remove">✕</button></td>
+                        <td class="line-actions"><button type="button" class="btn btn-ghost btn-small" data-edit="${i}" aria-label="Edit ${escapeHtml(line.name)}" title="Edit">✎</button><button type="button" class="btn btn-ghost btn-small" data-remove="${i}" aria-label="Remove ${escapeHtml(line.name)}" title="Remove">✕</button></td>
                     </tr>`;
                 })
                 .join("");
@@ -212,9 +275,14 @@
     }
 
     $("cartBody").addEventListener("click", (event) => {
+        const edit = event.target.closest("[data-edit]");
+        if (edit) return editLine(Number(edit.dataset.edit));
         const btn = event.target.closest("[data-remove]");
         if (!btn) return;
-        cart.splice(Number(btn.dataset.remove), 1);
+        const index = Number(btn.dataset.remove);
+        if (index === editingIndex) cancelEdit();
+        else if (editingIndex !== null && index < editingIndex) editingIndex -= 1;
+        cart.splice(index, 1);
         renderCart();
     });
 
@@ -290,6 +358,9 @@
     document.querySelectorAll('input[name="personal"]').forEach((el) => el.addEventListener("change", updatePersonal));
 
     function clearSale() {
+        setEditing(null);
+        resetServiceForm();
+        resetLoadForm();
         cart.length = 0;
         setRadio("personal", "");
         if ($("jobField")) $("jobField").hidden = false;
@@ -298,11 +369,6 @@
         $("isJob").checked = false;
         renderCart();
     }
-    $("clearSale").addEventListener("click", () => {
-        if (cart.length && !confirm("Clear this sale?")) return;
-        clearSale();
-        hush();
-    });
 
     let saving = false;
     $("checkoutForm").addEventListener("submit", async (event) => {
