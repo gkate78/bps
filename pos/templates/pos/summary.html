@@ -102,6 +102,9 @@
             </tbody>
             <tfoot><tr><th>Total services</th><th class="num">{{ s.service_sales_cents | peso }}</th></tr></tfoot>
         </table>
+        {% for name, row in s.sales_paid_by_bank | dictsort %}
+        <p class="muted small">Shop payments received via {{ name }}: {{ row[0] }}, {{ row[1] | peso }} (not in the drawer or GCash/Maya).</p>
+        {% endfor %}
     </section>
 
     <section class="panel">

@@ -28,6 +28,10 @@
         .line span:first-child { overflow-wrap: anywhere; }
         .line span:last-child { margin-left: auto; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
         .sub { font-size: 11px; padding-left: 2mm; overflow-wrap: anywhere; }
+        /* Bills paid with a sale print their own receipts after it (the printer cuts between them). */
+        .receipt + .receipt { break-before: page; page-break-before: always; }
+        .sign { margin-top: 10mm; text-align: center; }
+        .sign-line { border-top: 1px solid #111; margin: 0 auto 1.2mm; width: 70%; }
         .total { font-size: 16px; border-top: 1px dashed #000; margin-top: 0.8mm; padding-top: 1mm; }
         .meta { margin-top: 2mm; text-align: center; }
         .void { text-align: center; font-size: 16px; border: 2px solid #000; margin: 1mm 0; padding: 0.5mm; }
@@ -52,6 +56,7 @@
         <p class="meta">{{ settings.receipt_footer }}</p>
         {% endif %}
     </div>
+    {% block after %}{% endblock %}
     <div class="preview-actions">
         <button type="button" class="toolbar-btn primary" id="printBtn">Print</button>
         <button type="button" class="toolbar-btn" id="closeBtn">Close</button>

@@ -21,7 +21,7 @@ from pos.fees import (
     quote_wallet,
 )
 from pos.money import MoneyError, cash_due_cents, to_cents, to_cents_optional
-from pos.models import PosNetwork, PosSale, PosSaleLine, PosSalePayment, PosService, PosWallet, PosWalletTxn
+from pos.models import PosNetwork, PosSale, PosSaleBill, PosSaleLine, PosSalePayment, PosService, PosWallet, PosWalletTxn
 from pos.schemas import BalancePaymentIn, SaleIn, WalletTxnIn
 
 MAX_QTY = 10_000
@@ -117,15 +117,76 @@ async def linked_cash_out(db: AsyncSession, sale_id: int) -> Optional[PosWalletT
     ).scalar_one_or_none()
 
 
+async def linked_wallet_txns(db: AsyncSession, sale_id: int) -> list[PosWalletTxn]:
+    """GCash/Maya cash-ins and cash-outs linked to the sale, in the order they were entered."""
+    query = select(PosWalletTxn).where(PosWalletTxn.sale_id == sale_id).order_by(PosWalletTxn.id)
+    return list((await db.execute(query)).scalars().all())
+
+
+EXTRA_KINDS = ("cash_in", "cash_out", "bill")  # paid together with the sale, saved in their own records
+BANKS = ("BDO", "BPI")
+MAX_SALE_BILLS = 20
+
+
+async def _quote_wallet_lines(db: AsyncSession, data: SaleIn, schedule) -> list[tuple[str, PosWallet, str, str, WalletQuote]]:
+    """Check the sale's cash-ins and cash-outs: (kind, wallet, mobile, reference, quote) for each."""
+    wallet_lines = [line for line in data.lines if line.kind in ("cash_in", "cash_out")]
+    if not wallet_lines:
+        return []
+    if data.personal:
+        raise PosError("A personal sale can't include a cash-in or cash-out. Use the GCash / Maya tab.")
+    if data.payment_method != "cash":
+        raise PosError("A sale with a cash-in or cash-out is paid in cash")
+    out = []
+    seen: set[str] = set()
+    for line in wallet_lines:
+        what = "cash-in" if line.kind == "cash_in" else "cash-out"
+        wallet = await _get_active(db, PosWallet, line.wallet_id, f"GCash/Maya account for the {what}")
+        mobile = _mobile(line.mobile_no, f"{what.capitalize()} mobile no.")
+        try:
+            fee_mode = line.fee_mode if line.kind == "cash_out" else "deducted"
+            quote = quote_wallet(line.kind, _money(line.amount, f"{what.capitalize()} amount"), fee_mode, schedule)
+        except (MoneyError, FeeError) as exc:
+            raise PosError(f"{what.capitalize()}: {exc}") from exc
+        reference = clean_text(line.reference, 60)
+        if not reference:
+            direction = "to" if line.kind == "cash_in" else "from"
+            raise PosError(f"Enter the reference no. of the {wallet.name} {what} {direction} {mobile}")
+        key = "".join(reference.split()).upper()
+        if key in seen:
+            raise PosError(f"Reference no. {reference} is entered twice")
+        seen.add(key)
+        await _check_reference(db, reference)
+        out.append((line.kind, wallet, mobile, reference, quote))
+    return out
+
+
 async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
+    """
+    A shop sale: services and loads (its own lines), plus anything paid together with it: cash-ins,
+    cash-outs (pos_wallet_txns) and bills (BPS bill_records), each saved in its own records and linked
+    to the sale. One payment covers it all; a cash-out pays toward the rest (the shop may give cash back).
+    """
+    # Imported here: the bills controller loads BPS's web layer.
+    from pos.controllers.bill_checkout_controller import add_bills, finish_bills, prepare_bills
+
     if not data.lines:
         raise PosError("Add at least one item")
     _check_personal(data.personal, user)
     if data.personal and data.is_job_order:
         raise PosError("A personal sale can't be a job order")
+    if data.is_job_order and any(line.kind in EXTRA_KINDS for line in data.lines):
+        raise PosError("A job order can't include a cash-in, cash-out or bill. Ring them up separately.")
+    bill_lines = [line.bill for line in data.lines if line.kind == "bill"]
+    if any(bill is None for bill in bill_lines):
+        raise PosError("Enter the bill's details")
+    if len(bill_lines) > MAX_SALE_BILLS:
+        raise PosError(f"At most {MAX_SALE_BILLS} bills in one sale")
     schedule = await get_fee_schedule(db)
     lines: list[PosSaleLine] = []
     for line in data.lines:
+        if line.kind in EXTRA_KINDS:
+            continue  # checked below; saved in their own records
         if line.kind == "service":
             service = await _get_active(db, PosService, line.service_id, "service")
             if not (1 <= line.qty <= MAX_QTY):
@@ -191,10 +252,53 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
         due = _money(data.down_payment, "Down payment")
         if not 0 < due < total:
             raise PosError("Down payment must be more than zero and less than the total")
+    wallet_txns = await _quote_wallet_lines(db, data, schedule)
+
+    # How it's paid, and so how its bills are recorded (bill_records payment_method and reference).
+    bill_method: Optional[str] = "CASH"
+    bill_reference: Optional[str] = None
     if data.personal == "shop":
         payment = {"payment_method": "shop", "cash_cents": 0, "change_cents": 0}
+        bill_method = None
+    elif data.payment_method == "wallet":
+        payment = await _take_payment(db, "wallet", data.pay_wallet_id, data.payment_reference, None, 0)
+        pay_wallet = await _get_active(db, PosWallet, payment["pay_wallet_id"], "GCash/Maya account")
+        bill_method, bill_reference = pay_wallet.provider, payment["payment_reference"]
+    elif data.payment_method == "bank":
+        if data.bank not in BANKS:
+            raise PosError("Choose the bank the customer paid to")
+        reference = clean_text(data.payment_reference, 60)
+        payment = {"payment_method": "bank", "pay_wallet_name": data.bank, "payment_reference": reference,
+                   "cash_cents": 0, "change_cents": 0}
+        bill_method, bill_reference = data.bank, reference
     else:
-        payment = await _take_payment(db, data.payment_method, data.pay_wallet_id, data.payment_reference, data.cash, due)
+        payment = None  # cash: checked below, once everything to collect is known
+
+    prepared_bills = (
+        await prepare_bills(db, bill_lines, method=bill_method, reference=bill_reference, personal=data.personal,
+                            user=user, now=datetime.now())
+        if bill_lines else []
+    )
+    bill_totals = [total for *_, total in prepared_bills]
+    if payment is None:
+        # Each part is collected as it would be on its own (the sale and each bill to the whole peso,
+        # cash-ins with their fee); a cash-out pays toward it (the shop gives back what's left).
+        bill_cash = [cash_due_cents(total) for total in bill_totals]
+        wallet_net = sum(quote.collect_cents - quote.give_cents for *_, quote in wallet_txns)
+        need = cash_due_cents(due) + sum(bill_cash) + wallet_net
+        if (data.cash or "").strip():
+            cash = _money(data.cash, "Cash received")
+        elif need <= 0:
+            cash = 0  # nothing to collect: the shop gives cash
+        else:
+            raise PosError("Enter the cash received")
+        if cash < need:
+            raise PosError(f"Cash received is less than the amount due (₱{need / 100:,.2f})")
+        payment = {"payment_method": "cash", "cash_cents": cash, "change_cents": cash - need}
+    elif payment["payment_method"] == "shop":
+        bill_cash = [0] * len(bill_totals)
+    else:
+        bill_cash = list(bill_totals)  # GCash, Maya and bank: exact
     customer_phone = normalize_phone(data.customer_phone or "") or None
     if customer_phone and not validate_phone(customer_phone):
         raise PosError("Customer phone must be 11 digits")
@@ -204,7 +308,7 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
             raise PosError("Amount sent is only for a sale paid by GCash/Maya")
         if data.personal:
             raise PosError("A personal sale can't include a cash-out")
-        cash_out = quote_sale_cash_out(due, _money(data.amount_sent, "Amount sent"), schedule)
+        cash_out = quote_sale_cash_out(due + sum(bill_totals), _money(data.amount_sent, "Amount sent"), schedule)
         if cash_out:
             customer_phone = _mobile(data.customer_phone, "Customer mobile no. (needed for the cash-out)")
 
@@ -248,13 +352,53 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
         await db.flush()
         txn.txn_no = f"W-{txn.id:06d}"
         add_audit(db, "wallet_txn", txn.id, "create", user.id, {"txn_no": txn.txn_no, "kind": "cash_out", "sale_no": sale.sale_no})
+    for kind, wallet, mobile, reference, quote in wallet_txns:
+        txn = PosWalletTxn(
+            cashier_user_id=user.id,
+            kind=kind,
+            wallet_id=wallet.id,
+            wallet_name=wallet.name,
+            amount_cents=quote.amount_cents,
+            fee_cents=quote.fee_cents,
+            fee_mode=quote.fee_mode,
+            collect_cents=quote.collect_cents,
+            give_cents=quote.give_cents,
+            tendered_cents=quote.collect_cents,  # the cash and change are on the sale
+            change_cents=0,
+            customer_mobile=mobile,
+            customer_name=customer_name,
+            reference=reference,
+            sale_id=sale.id,
+        )
+        db.add(txn)
+        await db.flush()
+        txn.txn_no = f"W-{txn.id:06d}"
+        add_audit(db, "wallet_txn", txn.id, "create", user.id, {"txn_no": txn.txn_no, "kind": kind, "sale_no": sale.sale_no})
+    try:
+        records = await add_bills(db, prepared_bills, bill_cash)
+    except Exception:
+        await db.rollback()
+        raise
+    for record in records:
+        db.add(PosSaleBill(sale_id=sale.id, bill_record_id=record.id))
     add_audit(
         db, "sale", sale.id, "create", user.id,
         {"sale_no": sale.sale_no, "total_cents": total, "paid_cents": due, "job_order": data.is_job_order, "personal": data.personal},
     )
     await db.commit()
+    if records:
+        await finish_bills(db, records, user)
     await db.refresh(sale)
     return sale
+
+
+async def linked_bills(db: AsyncSession, sale_id: int) -> list[BillRecord]:
+    """Bills paid together with the sale, in the order they were entered."""
+    ids = (await db.execute(select(PosSaleBill.bill_record_id).where(PosSaleBill.sale_id == sale_id).order_by(PosSaleBill.id))).scalars().all()
+    if not ids:
+        return []
+    found = {b.id: b for b in (await db.execute(select(BillRecord).where(BillRecord.id.in_(ids)))).scalars().all()}
+    return [found[i] for i in ids if i in found]
 
 
 @dataclass(frozen=True)
@@ -416,6 +560,27 @@ async def sale_payments(db: AsyncSession, sale_id: int) -> list[PosSalePayment]:
     return list((await db.execute(query)).scalars().all())
 
 
+async def _describe_extras(db: AsyncSession, sale_ids: list[int]) -> dict[int, str]:
+    """What was paid together with each sale: its bills, cash-ins and cash-outs (with their own numbers)."""
+    if not sale_ids:
+        return {}
+    parts: dict[int, list[str]] = defaultdict(list)
+    links = (await db.execute(select(PosSaleBill).where(PosSaleBill.sale_id.in_(sale_ids)).order_by(PosSaleBill.id))).scalars().all()
+    if links:
+        bills = {b.id: b for b in (await db.execute(select(BillRecord).where(BillRecord.id.in_([l.bill_record_id for l in links])))).scalars().all()}
+        for link in links:
+            bill = bills.get(link.bill_record_id)
+            if bill:
+                parts[link.sale_id].append(f"BILL {bill.biller} {bill.account} ₱{float(bill.total or 0):,.2f} ({bill.reference})")
+            else:
+                parts[link.sale_id].append("BILL (deleted from Bills records)")
+    txns = (await db.execute(select(PosWalletTxn).where(PosWalletTxn.sale_id.in_(sale_ids)).order_by(PosWalletTxn.id))).scalars().all()
+    for txn in txns:
+        what = "CASH-IN" if txn.kind == "cash_in" else "CASH-OUT"
+        parts[txn.sale_id].append(f"{txn.wallet_name} {what} {txn.customer_mobile} ₱{txn.amount_cents / 100:,.2f} ({txn.txn_no})")
+    return {sale_id: "; ".join(items) for sale_id, items in parts.items()}
+
+
 def describe_lines(lines: list[PosSaleLine]) -> str:
     parts = []
     for line in lines:
@@ -520,10 +685,18 @@ async def void_record(db: AsyncSession, record, entity: str, reason: str, admin:
         db.add(item)
 
     if entity == "sale":
-        # The cash-out sent in the same transfer goes with the sale.
-        linked = await linked_cash_out(db, record.id)
-        if linked and linked.status != "voided":
-            mark(linked)
+        bills = await linked_bills(db, record.id)
+        if bills:
+            refs = ", ".join(b.reference or f"#{b.id}" for b in bills)
+            raise PosError(
+                f"This sale includes {len(bills)} bill{'s' if len(bills) > 1 else ''} ({refs}). "
+                "Delete or correct them in Bills records first, then void the sale."
+            )
+        # Cash-ins and cash-outs paid with the sale go with it.
+        linked = (await db.execute(select(PosWalletTxn).where(PosWalletTxn.sale_id == record.id))).scalars().all()
+        for txn in linked:
+            if txn.status != "voided":
+                mark(txn)
     if entity == "sale" and record.is_job_order:
         # Voiding a job order voids its balance payments too.
         for payment in await sale_payments(db, record.id):
@@ -574,12 +747,13 @@ async def list_transactions(
             ).scalars().all()
             for line in all_lines:
                 lines_by_sale[line.sale_id].append(line)
+        extras_by_sale = await _describe_extras(db, [s.id for s in sales])
         for sale in sales:
-            details = describe_lines(lines_by_sale[sale.id])
+            details = "; ".join(filter(None, [describe_lines(lines_by_sale[sale.id]), extras_by_sale.get(sale.id)]))
             if sale.is_job_order:
                 details += f" · job order, down payment ₱{sale.checkout_paid_cents / 100:,.2f}"
-            if sale.payment_method == "wallet":
-                details += f" · paid via {sale.pay_wallet_name} ref {sale.payment_reference}"
+            if sale.payment_method in ("wallet", "bank"):
+                details += f" · paid via {sale.pay_wallet_name}" + (f" ref {sale.payment_reference}" if sale.payment_reference else "")
             if sale.personal:
                 details += f" · {PERSONAL_LABELS[sale.personal]}"
             haystack = " ".join(filter(None, [sale.sale_no, details, sale.customer_name, sale.customer_phone, sale.bir_invoice_no]))
@@ -592,7 +766,7 @@ async def list_transactions(
                     "no": sale.sale_no,
                     "at": sale.created_at,
                     "label": ("Job order" if sale.is_job_order else "Shop sale")
-                    + (f" · {sale.pay_wallet_name}" if sale.payment_method == "wallet" else ""),
+                    + (f" · {sale.pay_wallet_name}" if sale.payment_method in ("wallet", "bank") else ""),
                     "details": details,
                     "customer": sale.customer_name,
                     "bir_invoice_no": sale.bir_invoice_no,
@@ -704,6 +878,7 @@ class DaySummary:
     # wallet name -> {"loads", "cash_ins", "cash_outs", "payments"} (signed, as they move the wallet)
     wallet_parts: dict = field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))
     sales_paid_by_wallet: dict = field(default_factory=lambda: defaultdict(lambda: [0, 0]))  # name -> [count, cents]
+    sales_paid_by_bank: dict = field(default_factory=lambda: defaultdict(lambda: [0, 0]))  # bank -> [count, cents]
     wallet_deltas: dict = field(default_factory=lambda: defaultdict(int))  # wallet name -> cents
     by_cashier: dict = field(default_factory=lambda: defaultdict(lambda: [0, 0]))  # name -> [count, drawer cents]
     voids: list = field(default_factory=list)
@@ -788,9 +963,13 @@ async def day_summary(
     # Money is counted on the day it's received: what was paid at checkout (the total, or a
     # job order's down payment) here, and later balance payments on their own dates below.
     def received(user_id: int, cents: int, method: str, wallet_name: Optional[str]) -> None:
-        if method == "shop":
-            return  # personal, from shop funds: nothing received
-        if method == "wallet":
+        if method == "shop" or not cents:
+            return  # personal, from shop funds (or a sale of only bills, cash-ins and cash-outs): nothing here
+        if method == "bank":
+            # Paid into the shop's bank account: neither the drawer nor GCash/Maya.
+            out.sales_paid_by_bank[wallet_name][0] += 1
+            out.sales_paid_by_bank[wallet_name][1] += cents
+        elif method == "wallet":
             # Paid into the shop's GCash/Maya: raises that wallet, not the drawer.
             out.wallet_deltas[wallet_name] += cents
             out.wallet_parts[wallet_name]["payments"] += cents
@@ -802,7 +981,11 @@ async def day_summary(
             out.shop_cash_cents += cents
             out.by_cashier[who(user_id)][1] += cents
 
+    with_lines = {line.sale_id for line in lines} if completed else set()
     for sale in completed.values():
+        # A sale of only bills, cash-ins or cash-outs isn't a shop sale; those count in their own records.
+        if sale.id not in with_lines:
+            continue
         if sale.payment_method == "shop":
             out.personal_shop_count += 1
         out.sale_count += 1

@@ -2,11 +2,16 @@ from datetime import timedelta
 from pathlib import Path
 
 from fastapi.templating import Jinja2Templates
+from jinja2 import ChoiceLoader, FileSystemLoader
 
 from app.static_version import add_version_filter
 from pos.money import fmt, peso
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+# BPS's templates too, for the bill receipt (_bill_receipt.html) printed with a sale.
+templates.env.loader = ChoiceLoader(
+    [templates.env.loader, FileSystemLoader(str(Path(__file__).parent.parent / "app" / "templates"))]
+)
 templates.env.filters["peso"] = peso
 templates.env.filters["fmt"] = fmt
 templates.env.globals["timedelta"] = timedelta
