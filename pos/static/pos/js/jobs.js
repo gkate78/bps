@@ -20,7 +20,7 @@
         $("collectCash").hidden = byWallet;
         $("collectRefLabel").hidden = !byWallet;
         const cash = toCents($("collectCashIn").value);
-        const due = amountDue();
+        const due = cashDue(amountDue());
         const el = $("collectChange");
         if (cash === null) {
             el.textContent = "₱0.00";
@@ -65,7 +65,7 @@
         if (!byWallet) {
             const cash = toCents($("collectCashIn").value);
             if (cash === null) return showError("Enter the cash received");
-            if (cash < due) return showError("Cash received is less than the amount");
+            if (cash < cashDue(due)) return showError(`Cash received is less than the amount (${peso(cashDue(due))})`);
         }
         saving = true;
         $("collectSave").disabled = true;

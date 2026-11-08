@@ -30,6 +30,12 @@ function toCents(text) {
     return Number(whole) * 100 + Number((frac + "00").slice(0, 2));
 }
 
+// Cash is collected to the whole peso: under 50 centavos rounds down, 50 and up rounds up
+// (₱1,025.45 → ₱1,025, ₱1,025.50 → ₱1,026).
+function cashDue(cents) {
+    return Math.floor((cents + 50) / 100) * 100;
+}
+
 function peso(cents) {
     const sign = cents < 0 ? "-" : "";
     const value = Math.abs(cents) / 100;

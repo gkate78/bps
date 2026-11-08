@@ -8,6 +8,7 @@
 <div class="info">{{ txn.customer_mobile }}</div>
 {% if txn.customer_name %}<div class="info">{{ txn.customer_name }}</div>{% endif %}
 <div class="info">REF {{ txn.reference }}</div>
+{% if txn.sale_id %}<div class="info">SENT WITH SALE S-{{ '%06d' % txn.sale_id }}</div>{% endif %}
 {% if txn.personal %}<div class="info">PERSONAL{{ ' · FROM SHOP FUNDS' if txn.personal == 'shop' }}</div>{% endif %}
 <div class="rule"></div>
 <div class="line"><span>AMOUNT</span><span>{{ txn.amount_cents | fmt }}</span></div>

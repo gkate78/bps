@@ -131,6 +131,9 @@
             <div id="walletPayBlock" class="stack" hidden>
                 <div class="quote" id="walletPayHint"></div>
                 <label>Reference no. <input type="text" id="payRef" maxlength="60"></label>
+                <label>Amount sent ₱ <span class="muted">(only if the customer also cashes out)</span> <input type="text" id="paySent" inputmode="decimal"></label>
+                <label id="payMobileField" hidden>Customer mobile no. <span class="muted">(for the cash-out)</span> <input type="tel" id="payMobile" maxlength="11" inputmode="numeric" placeholder="09XXXXXXXXX"></label>
+                <div class="quote big" id="payCashOut" hidden></div>
             </div>
             <div class="actions">
                 <button type="button" class="btn btn-secondary" id="parkSale" title="Put this sale on hold and serve the next customer">Park</button>

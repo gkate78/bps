@@ -35,6 +35,14 @@
 {% if sale.payment_method == 'shop' %}
 {% elif sale.payment_method == 'wallet' %}
 <div class="line"><span>PAID VIA {{ sale.pay_wallet_name }}</span><span>{{ sale.checkout_paid_cents | fmt }}</span></div>
+{% if cash_out %}
+<div class="rule"></div>
+<div class="info">CASH-OUT {{ cash_out.txn_no }}{% if cash_out.status == 'voided' %} (VOIDED){% endif %}</div>
+<div class="line"><span>AMOUNT</span><span>{{ cash_out.amount_cents | fmt }}</span></div>
+<div class="line"><span>FEE (INCLUDED)</span><span>-{{ cash_out.fee_cents | fmt }}</span></div>
+<div class="line total"><span>CASH GIVEN</span><span>{{ cash_out.give_cents | fmt }}</span></div>
+<div class="line"><span>TOTAL SENT VIA {{ sale.pay_wallet_name }}</span><span>{{ (sale.checkout_paid_cents + cash_out.amount_cents) | fmt }}</span></div>
+{% endif %}
 <div class="info">REF {{ sale.payment_reference }}</div>
 {% else %}
 <div class="line"><span>CASH</span><span>{{ sale.cash_cents | fmt }}</span></div>

@@ -26,6 +26,8 @@ class SaleIn(BaseModel):
     payment_method: Literal["cash", "wallet"] = "cash"
     pay_wallet_id: Optional[int] = None
     payment_reference: Optional[str] = None
+    # Paid by GCash/Maya and the customer sent more: the extra is a cash-out with its fee included.
+    amount_sent: Optional[str] = None
     cash: Optional[str] = None
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
