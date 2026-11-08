@@ -46,7 +46,11 @@ def test_several_bills_paid_together_in_cash(shop):
 
     page = shop.client.get(f"/api/receipts/bills?ids={meralco.id},{pldt.id}")
     assert page.status_code == 200
-    assert page.text.count('<div class="receipt">') == 2 and meralco.reference in page.text and pldt.reference in page.text
+    # Each bill's two copies together (MERALCO, MERALCO, PLDT, PLDT), printed as one job.
+    assert page.text.count('<div class="receipt">') == 4 and meralco.reference in page.text and pldt.reference in page.text
+    assert page.text.index(pldt.reference) > page.text.rindex(meralco.reference)
+    assert shop.client.get(f"/api/receipts/bills?ids={meralco.id},{pldt.id}&copies=1").text.count('<div class="receipt">') == 2
+    assert shop.client.get(f"/api/records/{pldt.id}/receipt?copies=1").text.count('<div class="receipt">') == 1
 
     mine = shop.client.get("/api/records/mine").json()
     assert mine["count"] == 2
@@ -178,3 +182,16 @@ def test_same_account_and_amount_once_a_month(shop):
     # A different amount, or an account only paid last month, is fine.
     assert client.post("/pos/api/bills", json={"bills": [bill(amount="1000.50")], "cash": "1016"}).status_code == 200
     assert client.post("/pos/api/bills", json={"bills": [bill(account="5555555555")], "cash": "1015"}).status_code == 200
+
+
+def test_entry_form_needs_the_mode_of_payment(shop):
+    rules(shop)
+    record = {"account": "1234567890", "biller": "MERALCO", "customer_name": "KATE TEST", "cp_number": "09171234567",
+              "bill_amt": 1000, "cash": 1015, "due_date": DUE}
+    r = shop.client.post("/api/records", json=record)
+    assert r.status_code == 400 and "mode of payment" in r.json()["detail"]
+    assert saved(shop) == []
+    # From shop funds nothing is received, so there's no mode of payment.
+    r = shop.client.post("/api/records", json={**record, "cash": 0, "personal": "shop"})
+    assert r.status_code == 201, r.text
+    assert shop.client.post("/api/records", json={**record, "account": "1111111111", "payment_method": "CASH"}).status_code == 201

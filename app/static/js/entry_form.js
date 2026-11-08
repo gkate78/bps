@@ -337,6 +337,11 @@ function validatePayload(payload) {
         alert("BILL AMOUNT IS REQUIRED");
         return false;
     }
+    if (payload.personal !== "shop" && !payload.payment_method) {
+        alert("MODE OF PAYMENT IS REQUIRED");
+        dom.paymentMethod?.focus();
+        return false;
+    }
     const toCollect = cashToCollect(payload.total, payload.payment_method);
     if (payload.personal !== "shop" && payload.cash < toCollect) {
         alert(`AMOUNT RECEIVED MUST BE AT LEAST ${formatMoney(toCollect)}`);
