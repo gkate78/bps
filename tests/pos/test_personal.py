@@ -108,7 +108,8 @@ def test_personal_from_shop_funds_in_summary_and_end_of_day(shop):
     assert r.status_code == 400
 
     summary = client.get("/pos/summary").text
-    assert "Personal (admin) from shop funds: 2 transactions, ₱800.00" in summary  # 200 + 100 load + 500 cash-in
+    # 200 + 100 load + 500 cash-in, and the ₱1,000 bill (as End of day counts it)
+    assert "Personal (admin) from shop funds: 3 transactions, ₱1,800.00" in summary
 
     day = TODAY.isoformat()
     r = client.post(f"/pos/api/eod/{day}", json={"opening_cash": "0", "counted_cash": "100", "wallets": [{"wallet_id": GCASH, "opening": "1000"}]})

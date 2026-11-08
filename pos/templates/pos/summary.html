@@ -11,14 +11,19 @@
 
 <section class="kpis">
     <div class="kpi">
-        <span>Shop income</span>
-        <strong>{{ s.income_cents | peso }}</strong>
-        <small>Services + load fees + GCash/Maya fees</small>
+        <span>Income</span>
+        <strong>{{ s.total_income_cents | peso }}</strong>
+        <small>Shop {{ s.income_cents | peso }} (services, load and GCash/Maya fees) + bills service charges {{ s.bill_charge_cents | peso }}</small>
     </div>
     <div class="kpi">
         <span>Cash drawer change</span>
         <strong>{{ s.drawer_cents | peso }}</strong>
-        <small>Cash in minus cash paid out (before starting cash and expenses)</small>
+        <small>Cash in minus cash paid out, bills included (before starting cash and expenses)</small>
+    </div>
+    <div class="kpi">
+        <span>Bills paid</span>
+        <strong>{{ s.bill_count }}</strong>
+        <small>{{ s.bill_total_cents | peso }} collected</small>
     </div>
     <div class="kpi">
         <span>Shop sales</span>
@@ -32,10 +37,59 @@
     </div>
 </section>
 {% if s.personal_shop_count %}
-<p class="alert alert-warn">Personal (admin) from shop funds: {{ s.personal_shop_count }} transaction{{ '' if s.personal_shop_count == 1 else 's' }}, {{ s.personal_shop_cents | peso }}. Not counted as income or cash received; loads and cash-ins still lower the GCash/Maya balances.</p>
+<p class="alert alert-warn">Personal (admin) from shop funds: {{ s.personal_shop_count }} transaction{{ '' if s.personal_shop_count == 1 else 's' }}, {{ s.personal_shop_cents | peso }}. Not counted as income or cash received; loads and cash-ins still lower the GCash/Maya balances. Includes bills paid from shop funds.</p>
 {% endif %}
 
 <div class="grid2">
+    <section class="panel">
+        <h2>Bills payment</h2>
+        <table class="list">
+            <tbody>
+                <tr><td>Bill amounts</td><td class="num">{{ s.bill_amt_cents | peso }}</td></tr>
+                <tr><td>Late charges</td><td class="num">{{ s.bill_late_cents | peso }}</td></tr>
+                <tr><td>Service charges (income)</td><td class="num">{{ s.bill_charge_cents | peso }}</td></tr>
+            </tbody>
+            <tfoot><tr><th>Total collected ({{ s.bill_count }} bill{{ '' if s.bill_count == 1 else 's' }})</th><th class="num">{{ s.bill_total_cents | peso }}</th></tr></tfoot>
+        </table>
+        <h3>By mode of payment</h3>
+        <table class="list">
+            <tbody>
+                {% for name, row in s.bills_by_method | dictsort %}
+                <tr><td>{{ name | title if name in ("CASH", "SHOP FUNDS") else name }}</td><td class="num">{{ row[0] }}</td><td class="num">{{ row[1] | peso }}</td></tr>
+                {% else %}
+                <tr><td class="muted" colspan="3">No bills.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if s.bill_cash_cents %}<p class="muted small">Cash into the drawer: {{ s.bill_cash_cents | peso }} (each bill to the whole peso).</p>{% endif %}
+    </section>
+
+    <section class="panel">
+        <h2>Bills by biller</h2>
+        <table class="list">
+            <thead><tr><th>Biller</th><th class="num">Count</th><th class="num">Total</th></tr></thead>
+            <tbody>
+                {% for name, row in s.bills_by_biller | dictsort %}
+                <tr><td>{{ name }}</td><td class="num">{{ row[0] }}</td><td class="num">{{ row[1] | peso }}</td></tr>
+                {% else %}
+                <tr><td class="muted" colspan="3">No bills.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <h3>Paid to billers</h3>
+        <table class="list">
+            <tbody>
+                {% for name, row in s.bills_settled | dictsort %}
+                <tr><td>{{ name | title if name in ("CASH", "NOT SET") else name }}</td><td class="num">{{ row[0] }}</td><td class="num">{{ row[1] | peso }}</td></tr>
+                {% else %}
+                <tr><td class="muted" colspan="3">None paid to billers on these dates.</td></tr>
+                {% endfor %}
+            </tbody>
+            {% if s.bills_settled %}<tfoot><tr><th>Total paid to billers</th><th></th><th class="num">{{ s.bills_settled_cents | peso }}</th></tr></tfoot>{% endif %}
+        </table>
+        <p class="muted small">Bills count on their transaction date; payments to billers count on the day they were paid (bill amount and late charge, without the service charge).</p>
+    </section>
+
     <section class="panel">
         <h2>Services</h2>
         <table class="list">
@@ -85,7 +139,7 @@
 
     <section class="panel">
         <h2>Wallet balance change</h2>
-        <p class="muted small">Loads and cash-ins lower the balance; cash-outs and shop sales paid via GCash/Maya raise it. Compare with the change in your GCash/Maya app balance.</p>
+        <p class="muted small">Loads, cash-ins and bills paid to billers from it lower the balance; cash-outs, and shop sales and bills paid via GCash/Maya, raise it. Compare with the change in your GCash/Maya app balance.</p>
         <table class="list">
             <tbody>
                 {% for w in wallets %}

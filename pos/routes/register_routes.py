@@ -444,6 +444,7 @@ async def summary_page(
     start_d, end_d = _parse_range(start, end)
     summary = await sales.day_summary(db, start_d, end_d)
     wallets = await list_wallets(db)
+    await sales.add_bills(db, summary, start_d, end_d, [w for w in wallets if w.is_active])  # as End of day
     return templates.TemplateResponse(
         request,
         "pos/summary.html",

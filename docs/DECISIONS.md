@@ -438,3 +438,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The owner wants a bill paid twice in a month caught at the counter, not later in reconciliation; a same-day check missed repeats on different days.
 - Alternatives considered: the last 30 days (would block next month's fixed-amount bill paid early in its month); keeping the biller in the match (account and amount are enough, and a different biller with the same account and amount is almost always a mistake).
 - Follow-up: There's no override. A customer paying two months of a fixed-amount bill (e.g. the same plan price for September and October) in one month is refused for the second; enter it with an admin's record edit, or add an override if it happens often. Imports still allow it so history files aren't trimmed.
+
+- Date: 2026-11-08
+- ID: DEC-054
+- Related task: none
+- Decision: The register's Summary page includes bills (`bill_records`), counted the way End of day counts them: collected by transaction date, paid to billers by `settled_at` (bill amount and late charge, not the service charge). It shows a Bills payment panel (bill amounts, late charges, service charges, total, by mode of payment), Bills by biller, and Paid to billers by channel. The Income KPI is shop income plus bills service charges; the cash drawer change adds bills paid in cash (each to the whole peso) and subtracts bills paid to billers in cash; GCash/Maya bills and payments to billers move the first active wallet of that provider; bills count toward each cashier (`created_by_user_id`); bills from shop funds join the personal (admin) note. A blank mode of payment counts as cash. Done in `add_bills`, called only by the Summary page; `day_summary` is unchanged so End of day doesn't count bills twice.
+- Why: The owner wants one summary for the whole shop, bills included.
+- Alternatives considered: adding bills inside `day_summary` (End of day already adds bills itself and would double-count them).
+- Follow-up: none.
