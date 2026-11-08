@@ -195,3 +195,39 @@ def test_entry_form_needs_the_mode_of_payment(shop):
     r = shop.client.post("/api/records", json={**record, "cash": 0, "personal": "shop"})
     assert r.status_code == 201, r.text
     assert shop.client.post("/api/records", json={**record, "account": "1111111111", "payment_method": "CASH"}).status_code == 201
+
+
+def test_bills_in_the_register_summary(shop):
+    rules(shop)
+    client = shop.client
+    assert client.post("/pos/api/bills", json={"bills": [bill(amount="1000.45")], "cash": "2000"}).status_code == 200  # ₱1,015 in the drawer
+    assert client.post("/pos/api/bills", json={"bills": [bill(account="0012345678", biller="PLDT", amount="500")],
+                                               "payment_method": "GCASH", "reference": "REF 9"}).status_code == 200
+    assert client.post("/pos/api/bills", json={"bills": [bill(account="2222222222", amount="300")], "personal": "shop"}).status_code == 200
+    # The MERALCO cash bill is paid to the biller in cash today: ₱1,000.45 leaves the drawer.
+    with Session(shop.engine) as session:
+        meralco = session.exec(select(BillRecord).where(BillRecord.account == "1234567890")).one()
+        meralco.settled_at, meralco.payment_channel = datetime.now(), "CASH"
+        session.add(meralco)
+        session.commit()
+
+    from pos.controllers import sale_controller as sales
+    import asyncio
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+    async def summary():
+        engine = create_async_engine(str(shop.engine.url).replace("sqlite://", "sqlite+aiosqlite://"))
+        async with AsyncSession(engine) as db:
+            from pos.controllers.settings_controller import list_wallets
+            out = await sales.day_summary(db, TODAY, TODAY)
+            return await sales.add_bills(db, out, TODAY, TODAY, await list_wallets(db, active_only=True))
+
+    s = asyncio.run(summary())
+    assert s.bill_count == 3 and s.bill_charge_cents == 3_000 and s.bill_total_cents == 101_545 + 51_500 + 30_000
+    assert dict(s.bills_by_method) == {"CASH": [1, 101_545], "GCASH": [1, 51_500], "SHOP FUNDS": [1, 30_000]}
+    assert s.bill_cash_cents == 101_500 and s.drawer_cents == 101_500 - 100_045
+    assert s.wallet_deltas["GCASH"] == 51_500
+    assert s.total_income_cents == s.income_cents + 3_000 and s.personal_shop_count == 1
+
+    page = client.get("/pos/summary").text
+    assert "Bills payment" in page and "Bills by biller" in page and "PLDT" in page and "Paid to billers" in page

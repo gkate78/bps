@@ -717,6 +717,16 @@ class DaySummary:
     # Admin's personal transactions paid from shop funds: nothing received, not income.
     personal_shop_count: int = 0
     personal_shop_cents: int = 0  # services at their price, loads at what the wallet deducted, cash-ins sent
+    # Bills (BPS bill_records), added by add_bills for the Summary page; End of day counts them itself.
+    bill_count: int = 0
+    bill_amt_cents: int = 0
+    bill_late_cents: int = 0
+    bill_charge_cents: int = 0  # service charges: the shop's income from bills
+    bill_total_cents: int = 0
+    bills_by_method: dict = field(default_factory=lambda: defaultdict(lambda: [0, 0]))  # method -> [count, total]
+    bills_by_biller: dict = field(default_factory=lambda: defaultdict(lambda: [0, 0]))  # biller -> [count, total]
+    bill_cash_cents: int = 0  # into the drawer (cash collected to the whole peso)
+    bills_settled: dict = field(default_factory=lambda: defaultdict(lambda: [0, 0]))  # channel -> [count, to biller]
 
     @property
     def load_income_cents(self) -> int:
@@ -726,6 +736,15 @@ class DaySummary:
     def income_cents(self) -> int:
         """What the shop earned: service sales + load fees/rounding + GCash/Maya fees."""
         return self.service_sales_cents + self.load_income_cents + self.cash_in_fees_cents + self.cash_out_fees_cents
+
+    @property
+    def total_income_cents(self) -> int:
+        """Shop income plus the service charges on bills."""
+        return self.income_cents + self.bill_charge_cents
+
+    @property
+    def bills_settled_cents(self) -> int:
+        return sum(row[1] for row in self.bills_settled.values())
 
 
 async def day_summary(
@@ -839,4 +858,65 @@ async def day_summary(
         out.ewallet_drawer_cents += drawer
         out.by_cashier[who(txn.cashier_user_id)][0] += 1
         out.by_cashier[who(txn.cashier_user_id)][1] += drawer
+    return out
+
+
+def _bill_cents(value) -> int:
+    return int(round(float(value or 0) * 100))
+
+
+async def add_bills(db: AsyncSession, out: DaySummary, start: date, end: date, wallets: list) -> DaySummary:
+    """Add bills to a summary the way End of day counts them: collected by transaction date, paid to
+    the biller by settled_at; GCash/Maya bills go to the first account of that provider."""
+    lo, hi = day_range(start, end)
+    users = await _users_by_id(db)
+    first_of_provider = {}
+    for wallet in wallets:
+        first_of_provider.setdefault(wallet.provider, wallet.name)
+
+    bills = (
+        await db.execute(select(BillRecord).where(BillRecord.txn_date >= start, BillRecord.txn_date <= end))
+    ).scalars().all()
+    for bill in bills:
+        total = _bill_cents(bill.total)
+        method = str(bill.payment_method or "").strip().upper() or "CASH"  # blank was cash (older entry form)
+        out.bill_count += 1
+        out.bill_amt_cents += _bill_cents(bill.bill_amt)
+        out.bill_late_cents += _bill_cents(bill.late_charge)
+        out.bill_charge_cents += _bill_cents(bill.charge)
+        out.bill_total_cents += total
+        out.bills_by_biller[bill.biller or "?"][0] += 1
+        out.bills_by_biller[bill.biller or "?"][1] += total
+        cashier = display_name(users.get(bill.created_by_user_id))
+        out.by_cashier[cashier][0] += 1
+        if bill.personal == "shop":
+            # Paid from shop funds: nothing received (paying the biller still takes money out).
+            out.personal_shop_count += 1
+            out.personal_shop_cents += total
+            out.bills_by_method["SHOP FUNDS"][0] += 1
+            out.bills_by_method["SHOP FUNDS"][1] += total
+            continue
+        out.bills_by_method[method][0] += 1
+        out.bills_by_method[method][1] += total
+        if method == "CASH":
+            cash = cash_due_cents(total)
+            out.bill_cash_cents += cash
+            out.drawer_cents += cash
+            out.by_cashier[cashier][1] += cash
+        elif method in first_of_provider:
+            out.wallet_deltas[first_of_provider[method]] += total
+
+    settled = (
+        await db.execute(select(BillRecord).where(BillRecord.settled_at >= lo, BillRecord.settled_at < hi))
+    ).scalars().all()
+    for bill in settled:
+        # The biller gets the bill amount and late charge; the service charge stays with the shop.
+        to_biller = _bill_cents(bill.total) - _bill_cents(bill.charge)
+        channel = str(bill.payment_channel or "").strip().upper() or "NOT SET"
+        out.bills_settled[channel][0] += 1
+        out.bills_settled[channel][1] += to_biller
+        if channel == "CASH":
+            out.drawer_cents -= to_biller
+        elif channel in first_of_provider:
+            out.wallet_deltas[first_of_provider[channel]] -= to_biller
     return out
