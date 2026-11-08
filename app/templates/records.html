@@ -4,7 +4,7 @@
 {% block topbar_title %}Bills Records Admin{% endblock %}
 {% block topbar_subtitle %}Manage imported billing rows with fast table tools.{% endblock %}
 {% block topbar_actions %}
-<a href="/entry/form" class="btn btn-primary">Add Record</a>
+<a href="{{ '/pos?tab=bills' if pos_enabled else '/entry/form' }}" class="btn btn-primary">Add Record</a>
 <a href="/admin/reconciliation" class="btn btn-secondary">Reconciliation</a>
 <a href="/admin/reports" class="btn btn-secondary">Reports</a>
 <a href="/admin/insights" class="btn btn-secondary">Insights</a>

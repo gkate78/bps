@@ -281,3 +281,10 @@ textarea.code { width: 100%; font-family: ui-monospace, Consolas, monospace; fon
     .grid2 { grid-template-columns: 1fr; }
     .who { margin-left: 0; }
 }
+
+/* Bills payment tab */
+.register .panel.wide { grid-column: 1 / -1; }
+.panel-head-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.panel-head-row h2 { margin: 0; }
+.table-scroll { overflow-x: auto; }
+.table-scroll .lines { min-width: 520px; }

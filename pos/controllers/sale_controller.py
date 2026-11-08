@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.models import BillRecord
 from pos.auth_adapter import User, display_name, normalize_phone, validate_mobile, validate_phone
 from pos.controllers.settings_controller import add_audit, get_fee_schedule
 from pos.fees import (
@@ -267,7 +268,8 @@ class UsedReference:
 async def used_reference(db: AsyncSession, reference: Optional[str]) -> Optional[UsedReference]:
     """
     The completed transaction that already used this GCash/Maya reference no. (ignoring case and
-    spaces): a cash-in, a cash-out, or a shop sale or job order payment paid by GCash/Maya. A
+    spaces): a cash-in, a cash-out, a shop sale or job order payment paid by GCash/Maya, or bills
+    paid by GCash/Maya (several bills paid with one transfer share it). A
     reference no. belongs to one transaction, so the same receipt can't be claimed or paid with twice.
     Voided transactions don't count.
     """
@@ -307,6 +309,23 @@ async def used_reference(db: AsyncSession, reference: Optional[str]) -> Optional
     ).scalar_one_or_none()
     if payment:
         return UsedReference(payment.payment_no, f"{payment.pay_wallet_name} job order payment", payment.amount_cents, payment.created_at)
+    # Bills paid to the shop's GCash/Maya (the customer's confirmation reference).
+    bills = (
+        await db.execute(
+            select(BillRecord)
+            .where(
+                func.upper(BillRecord.payment_method).in_(("GCASH", "MAYA")),
+                same(BillRecord.confirmation_reference),
+            )
+            .order_by(BillRecord.id)
+        )
+    ).scalars().all()
+    if bills:
+        first = bills[0]
+        billers = ", ".join(dict.fromkeys(b.biller for b in bills))
+        label = f"{first.payment_method} payment for {'bill' if len(bills) == 1 else f'{len(bills)} bills'} ({billers})"
+        total = sum(int(round(float(b.total or 0) * 100)) for b in bills)
+        return UsedReference(first.reference or f"bill #{first.id}", label, total, first.txn_datetime)
     return None
 
 

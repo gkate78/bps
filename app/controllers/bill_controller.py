@@ -489,7 +489,69 @@ async def _generate_reference(db: AsyncSession, txn_date: date) -> str:
     return f"REF-{date_part}-{secrets.token_hex(6).upper()}"
 
 
+async def quote_bill(
+    db: AsyncSession, *, biller: str, bill_amt: float, due_date: Optional[date], personal: Optional[str] = None
+) -> dict:
+    """Late charge, service charge and total for a new bill today, from the active biller rules."""
+    charge_map, late_map = await _get_biller_rule_maps(db)
+    amounts = _apply_computations(
+        {"biller": biller, "bill_amt": bill_amt, "due_date": due_date, "txn_date": date.today(), "personal": personal},
+        charge_map,
+        late_map,
+    )
+    return {key: amounts[key] for key in ("bill_amt", "late_charge", "charge", "total")}
+
+
+def _month_range(day: date) -> tuple[date, date]:
+    start = day.replace(day=1)
+    end = (start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1))
+    return start, end
+
+
+async def find_monthly_duplicate(
+    db: AsyncSession, *, account: str, bill_amt: float, txn_date: Optional[date] = None
+) -> Optional[BillRecord]:
+    """
+    A bill already entered in the same calendar month for the same account and amount (any biller):
+    a new bill like that is a duplicate (DEC-053). Matches the earlier bill's amount or its total.
+    """
+    account_key = str(account or "").strip().upper()
+    amount = round(float(bill_amt or 0), 2)
+    if not account_key or amount <= 0:
+        return None
+    start, end = _month_range(txn_date or date.today())
+    stmt = (
+        select(BillRecord)
+        .where(
+            BillRecord.account == account_key,
+            BillRecord.txn_date >= start,
+            BillRecord.txn_date < end,
+            or_(func.round(BillRecord.bill_amt, 2) == amount, func.round(BillRecord.total, 2) == amount),
+        )
+        .order_by(BillRecord.txn_datetime, BillRecord.id)
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+def monthly_duplicate_message(account: str, bill_amt: float, existing: BillRecord) -> str:
+    when = existing.txn_date.strftime("%m/%d/%Y") if existing.txn_date else "this month"
+    return (
+        f"Duplicate: account {str(account).strip().upper()} already has a bill of ₱{float(bill_amt):,.2f} this month "
+        f"({existing.biller}, {when}, {existing.reference or 'no reference'})"
+    )
+
+
 async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
+    record = await build_record(db, payload)
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+    return record
+
+
+async def build_record(db: AsyncSession, payload: dict) -> BillRecord:
+    """The new bill with its charges and reference, not added to the session yet. Raises 409 for a duplicate."""
     txn_datetime = payload.get("txn_datetime") or datetime.now()
     txn_date = payload.get("txn_date") or txn_datetime.date()
     payload["txn_datetime"] = txn_datetime
@@ -500,18 +562,12 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
     charge_map, late_map = await _get_biller_rule_maps(db)
     payload = _apply_computations(payload, charge_map, late_map)
 
+    # New bills: the same account and amount only once a month (DEC-053). Edits and CSV imports
+    # keep the same-day check.
     amount = _normalized_amount(payload)
-    if await _is_duplicate_record(
-        db,
-        txn_date=txn_date,
-        account=payload["account"],
-        biller=payload["biller"],
-        amount=amount,
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="Duplicate detected: same date, account, biller, and amount already exists",
-        )
+    existing = await find_monthly_duplicate(db, account=payload["account"], bill_amt=amount, txn_date=txn_date)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=monthly_duplicate_message(payload["account"], amount, existing))
 
     reference = payload.get("reference")
     if not reference:
@@ -543,10 +599,6 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         personal=payload.get("personal"),
     )
     _stamp_settled(record, had_payment_reference=False)
-
-    db.add(record)
-    await db.commit()
-    await db.refresh(record)
     return record
 
 

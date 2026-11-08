@@ -4,6 +4,7 @@
 <div class="tabs" role="tablist">
     <button type="button" class="tab on" data-tab="shop" role="tab">Shop sale</button>
     <button type="button" class="tab" data-tab="wallet" role="tab">GCash / Maya cash-in · cash-out</button>
+    <button type="button" class="tab" data-tab="bills" role="tab">Bills payment</button>
 </div>
 
 <div id="notice" class="alert" hidden></div>
@@ -204,7 +205,125 @@
         </div>
     </div>
 </section>
+<!-- Bills payment: several bills, any billers, one payment. Each bill is saved to the bills records. -->
+<section id="tab-bills" class="register" hidden>
+    <form id="billEditor" class="panel" autocomplete="off">
+        <h2>Add bill</h2>
+        <datalist id="billerOptions">
+            {% for b in billers %}<option value="{{ b }}"></option>{% endfor %}
+        </datalist>
+        <datalist id="billAccountOptions"></datalist>
+        <div class="row2">
+            <label>Account <input type="text" id="bAccount" list="billAccountOptions" maxlength="64" required></label>
+            <label>Biller <input type="text" id="bBiller" list="billerOptions" maxlength="120" required></label>
+        </div>
+        <div class="row2">
+            <label>Customer name <input type="text" id="bName" maxlength="160" required></label>
+            <label>CP number <input type="tel" id="bPhone" maxlength="11" inputmode="numeric" placeholder="09XXXXXXXXX"></label>
+        </div>
+        <div class="row2">
+            <label>Due date <input type="date" id="bDue" required></label>
+            <label>Bill amount ₱ <input type="text" id="bAmount" inputmode="decimal" required></label>
+        </div>
+        <label>Payment reference <span class="muted">(optional, from the biller if paid right away)</span>
+            <input type="text" id="bPayRef" maxlength="120">
+        </label>
+        <div class="quote" id="billQuote">Enter the biller and bill amount.</div>
+        <div class="actions">
+            <button type="button" class="btn btn-secondary" id="billCancel" hidden>Cancel edit</button>
+            <button type="submit" class="btn btn-primary" id="billSubmit">Add bill</button>
+        </div>
+    </form>
+
+    <div class="panel cart">
+        <h2>Bills to pay</h2>
+        <table class="lines">
+            <thead><tr><th>Bill</th><th class="num">Amount</th><th></th></tr></thead>
+            <tbody id="billsBody"><tr class="empty"><td colspan="3">No bills yet. Add each bill on the left.</td></tr></tbody>
+        </table>
+        <div class="total-row"><span>Total</span><strong id="billsTotal">₱0.00</strong></div>
+
+        <form id="billsCheckout" autocomplete="off" class="stack">
+            {% if bills_personal %}
+            <div class="field">
+                <span class="field-label">Personal <span class="muted">(admin, no service charge)</span></span>
+                <div class="choice" id="billsPersonalChoice">
+                    <label class="pill"><input type="radio" name="b_personal" value="" checked> No</label>
+                    <label class="pill"><input type="radio" name="b_personal" value="paid"> I pay</label>
+                    <label class="pill"><input type="radio" name="b_personal" value="shop"> From shop funds</label>
+                </div>
+            </div>
+            {% endif %}
+            <p id="billsShopNote" class="quote" hidden>Paid from shop funds: nothing to collect.</p>
+            <div class="field" id="billsPayField">
+                <span class="field-label">Paid with</span>
+                <div class="choice big">
+                    <label class="pill"><input type="radio" name="b_pay" value="CASH" checked> Cash</label>
+                    <label class="pill"><input type="radio" name="b_pay" value="GCASH"> GCash</label>
+                    <label class="pill"><input type="radio" name="b_pay" value="MAYA"> Maya</label>
+                    <label class="pill"><input type="radio" name="b_pay" value="BDO"> BDO</label>
+                    <label class="pill"><input type="radio" name="b_pay" value="BPI"> BPI</label>
+                </div>
+            </div>
+            <div id="billsCashBlock" class="stack">
+                <div class="total-row"><span>To collect <span class="muted small">(each bill to the whole peso)</span></span><strong id="billsDue">₱0.00</strong></div>
+                <label class="cash">Cash received ₱ <input type="text" id="bCash" inputmode="decimal"></label>
+                <div class="total-row change"><span>Change</span><strong id="billsChange">₱0.00</strong></div>
+            </div>
+            <div id="billsRefBlock" class="stack" hidden>
+                <div class="quote" id="billsRefHint"></div>
+                <label>Reference no. <span class="muted" id="billsRefOptional" hidden>(optional)</span> <input type="text" id="bRef" maxlength="60"></label>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn-secondary" id="parkBills" title="Put these bills on hold and serve the next customer">Park</button>
+                <button type="submit" class="btn btn-primary btn-big" id="saveBills">Save &amp; Print</button>
+            </div>
+            <p class="muted small">Each bill prints its own receipt (customer and shop copy).</p>
+        </form>
+    </div>
+
+    <div class="panel wide">
+        <div class="panel-head-row">
+            <h2>Bills I entered today</h2>
+            <button type="button" class="btn btn-secondary btn-small" id="myBillsRefresh">Refresh</button>
+        </div>
+        <p class="muted small" id="myBillsStatus"></p>
+        <div class="table-scroll">
+        <table class="lines">
+            <thead><tr><th>Time</th><th>Bill</th><th>Customer</th><th>Mode</th><th class="num">Total</th><th></th></tr></thead>
+            <tbody id="myBillsBody"></tbody>
+        </table>
+        </div>
+    </div>
+</section>
+
+<dialog id="billerRuleDialog" class="dialog">
+    <form id="billerRuleForm" class="stack" autocomplete="off" novalidate>
+        <h3>New biller</h3>
+        <p id="billerRuleIntro" class="muted"></p>
+        <label>Biller <input type="text" id="ruleBiller" maxlength="120" required></label>
+        <div class="row2">
+            <label>Service charge ₱ <input type="text" id="ruleServiceCharge" inputmode="decimal" value="15" required></label>
+            <label>Late charge ₱ <input type="text" id="ruleLateCharge" inputmode="decimal" value="0"></label>
+        </div>
+        <div class="row2">
+            <label>Account type
+                <select id="ruleAccountFormat">
+                    <option value="NUMERIC">Numbers only</option>
+                    <option value="ALPHANUMERIC">Letters and numbers (e.g. SSS, PhilHealth)</option>
+                </select>
+            </label>
+            <label>Account length <span class="muted">(optional)</span> <input type="text" id="ruleAccountDigits" inputmode="numeric"></label>
+        </div>
+        <p id="billerRuleStatus" class="muted small" role="status"></p>
+        <div class="actions">
+            <button type="button" class="btn btn-secondary" id="billerRuleCancel">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="billerRuleSave">Save rule</button>
+        </div>
+    </form>
+</dialog>
 {% endblock %}
 {% block scripts %}
+<script src="{{ '/pos/static/js/bills.js' | v }}"></script>
 <script src="{{ '/pos/static/js/register.js' | v }}"></script>
 {% endblock %}

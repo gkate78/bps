@@ -8,6 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from pos.auth_adapter import User, display_name, get_current_user, page_admin, page_user, pin_matches
+from app.auth import is_business_owner
+from app.controllers.bill_controller import get_distinct_billers
+from pos.controllers import bill_checkout_controller as bills
 from pos.controllers import parked_controller as parked
 from pos.controllers import sale_controller as sales
 from pos.controllers import suggest_controller as suggest
@@ -16,7 +19,7 @@ from pos.database import get_db
 from pos.fees import FeeError, load_cost, quote_load, quote_personal_load, quote_personal_wallet, quote_wallet
 from pos.models import PosWallet
 from pos.money import MoneyError, to_cents
-from pos.schemas import BalancePaymentIn, JobStatusIn, ParkIn, SaleIn, VoidIn, WalletTxnIn
+from pos.schemas import BalancePaymentIn, BillsCheckoutIn, JobStatusIn, ParkIn, SaleIn, VoidIn, WalletTxnIn
 from pos.templating import templates
 
 router = APIRouter(prefix="/pos")
@@ -43,6 +46,9 @@ async def register_page(request: Request, user: User = Depends(page_user), db: A
             "services": await list_services(db, active_only=True),
             "networks": await list_networks(db, active_only=True),
             "wallets": await list_wallets(db, active_only=True),
+            "billers": await get_distinct_billers(db),
+            # Personal bills: admins and the business owner, as on the entry form.
+            "bills_personal": user.role == "admin" or await is_business_owner(db, user.id),
         },
     )
 
@@ -148,6 +154,32 @@ async def create_sale(data: SaleIn, user: User = Depends(get_current_user), db: 
         "cash_out": {"txn_no": cash_out.txn_no, "amount_cents": cash_out.amount_cents, "fee_cents": cash_out.fee_cents,
                      "give_cents": cash_out.give_cents} if cash_out else None,
     }
+
+
+@router.get("/api/quote/bill")
+async def bill_quote(
+    biller: str = Query(""),
+    account: str = Query(""),
+    amount: str = Query(""),
+    due_date: Optional[date] = Query(None),
+    personal: bool = Query(False),
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Charges for one bill before it goes on the list; needs_rule when the biller has no rule yet."""
+    try:
+        return await bills.quote(db, biller=biller, account=account, amount=amount, due_date=due_date, personal=personal)
+    except sales.PosError as exc:
+        raise _bad_request(exc)
+
+
+@router.post("/api/bills")
+async def checkout_bills(data: BillsCheckoutIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Several bills paid together; each is saved to bill_records like one from the entry form."""
+    try:
+        return await bills.checkout(db, data, user)
+    except sales.PosError as exc:
+        raise _bad_request(exc)
 
 
 @router.post("/api/wallet-txns")

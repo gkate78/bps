@@ -70,8 +70,32 @@ class VoidIn(BaseModel):
     admin_pin: str = ""
 
 
+class BillIn(BaseModel):
+    """One bill in a register bills checkout; saved to bill_records like a bill from the entry form."""
+
+    account: str = ""
+    biller: str = ""
+    customer_name: str = ""
+    cp_number: str = ""
+    due_date: Optional[date] = None
+    bill_amt: Optional[str] = None
+    payment_reference: Optional[str] = None  # from the biller, if it's paid to the biller right away
+
+
+class BillsCheckoutIn(BaseModel):
+    """Several bills (any billers and accounts) paid together in one payment."""
+
+    bills: list[BillIn] = Field(default_factory=list)
+    payment_method: Literal["CASH", "GCASH", "MAYA", "BDO", "BPI"] = "CASH"
+    # The customer's GCash/Maya/bank transfer reference no. (one transfer for all the bills).
+    reference: Optional[str] = None
+    cash: Optional[str] = None
+    # Admin (or business owner) only: own bills, no service charge; "shop" = paid from shop funds.
+    personal: Optional[Literal["paid", "shop"]] = None
+
+
 class ParkIn(BaseModel):
-    kind: Literal["sale", "wallet"]
+    kind: Literal["sale", "wallet", "bills"]
     label: str = ""
     summary: str = ""
     total_cents: int = 0

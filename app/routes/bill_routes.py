@@ -1059,6 +1059,9 @@ async def entry_form_page(
         return RedirectResponse(url="/auth/signin", status_code=303)
     if current_user.role not in {"admin", "encoder"}:
         return RedirectResponse(url="/customer/dashboard", status_code=303)
+    if templates.env.globals.get("pos_enabled"):
+        # In the shop, bills are entered in the register's Bills tab (several bills, one payment).
+        return RedirectResponse(url="/pos?tab=bills", status_code=303)
 
     billers = await get_distinct_billers(db)
     show_admin_records_link = current_user.role == "admin" or await is_business_owner(
@@ -1397,24 +1400,42 @@ async def receipt_page(
     current_user: UserAccount = Depends(require_data_entry_access),
 ):
     record = await get_record(db, record_id)
+    return await _receipts_response(request, db, current_user, [record])
+
+
+@router.get("/api/receipts/bills", response_class=HTMLResponse)
+async def bills_receipt_page(
+    request: Request,
+    ids: str = Query(..., description="Bill record ids, comma-separated"),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_data_entry_access),
+):
+    """Several bills paid together (shop register): one receipt per bill, printed as one job."""
+    try:
+        record_ids = [int(part) for part in ids.split(",") if part.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Bill ids must be numbers")
+    if not record_ids or len(record_ids) > 50:
+        raise HTTPException(status_code=400, detail="Give 1 to 50 bill ids")
+    records = [await get_record(db, record_id) for record_id in record_ids]
+    return await _receipts_response(request, db, current_user, records)
+
+
+async def _receipts_response(request: Request, db: AsyncSession, current_user: UserAccount, records: list):
     business_profile = await _get_receipt_business_profile(db, current_user)
     return templates.TemplateResponse(
         "receipt.html",
         {
             "request": request,
-            "record": record,
+            "records": records,
             "business_profile": business_profile,
             "receipt_settings": _build_receipt_settings(business_profile),
         },
     )
 
 
-@router.post("/api/records", response_model=RecordResponse, status_code=201)
-async def create_record_endpoint(
-    payload: RecordCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserAccount = Depends(require_data_entry_access),
-):
+async def prepare_new_record(db: AsyncSession, payload: RecordCreate, current_user: UserAccount) -> dict:
+    """Check a new bill as entered by current_user and return the payload for build_record/create_record."""
     payload.payment_method = _validate_payment_method(payload.payment_method, CUSTOMER_PAYMENT_METHODS)
     if payload.personal:
         if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
@@ -1447,7 +1468,11 @@ async def create_record_endpoint(
     initial_payload.pop("amt2", None)
     initial_payload["processed_by_user_id"] = current_user.id
     initial_payload["created_by_user_id"] = current_user.id
-    record = await create_record(db, initial_payload)
+    return initial_payload
+
+
+async def finish_new_record(db: AsyncSession, record, current_user: UserAccount, channel: str = "web") -> None:
+    """After a new bill is saved: remember the customer, log it, and text the customer a confirmation."""
     await upsert_customer_from_record(
         db,
         account=record.account,
@@ -1461,7 +1486,7 @@ async def create_record_endpoint(
         action="create",
         status="success",
         current_user=current_user,
-        channel="web",
+        channel=channel,
         record_id=record.id,
         detail=(
             f"reference={record.reference or '-'}, "
@@ -1516,6 +1541,16 @@ async def create_record_endpoint(
             record_id=record.id,
             detail="cp_number_missing_or_invalid",
         )
+
+
+@router.post("/api/records", response_model=RecordResponse, status_code=201)
+async def create_record_endpoint(
+    payload: RecordCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_data_entry_access),
+):
+    record = await create_record(db, await prepare_new_record(db, payload, current_user))
+    await finish_new_record(db, record, current_user)
     return record
 
 
