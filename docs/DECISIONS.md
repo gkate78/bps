@@ -414,3 +414,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The owner pays their own bills and loads through the counter and either pays in cash or takes it from the shop's money; without a marker the charges were wrong and End of day expected money that never came in.
 - Alternatives considered: a new payment method value on bills (the records edit and "Mark Cash" both rewrite `payment_method`, which would lose it); recording shop-funded ones as cash taken out (separate step, easy to forget, and the fee would still be charged).
 - Follow-up: The older Reconciliation page still counts shop-funded bills as collected; End of day is the count to use. Personal can't be changed after saving: re-enter the bill, or void and redo the register transaction.
+
+- Date: 2026-11-07
+- ID: DEC-051
+- Related task: none
+- Decision: Cash is collected to the whole peso: under 50 centavos rounds down, 50 centavos and up rounds up (₱1,025.45 → ₱1,025, so ₱1,100 gets ₱75 change; ₱1,025.50 → ₱1,026, ₱74 change). This applies to bills paid in cash (or with no mode of payment), shop sales, job order down payments and balance payments. Totals stay exact (the bill total is what the biller gets and what the receipt shows); change is cash received minus the rounded amount, and the amount received only has to cover the rounded amount. End of day expects the rounded amounts in the drawer. GCash, Maya and bank payments are not rounded. Helpers: `pos.money.cash_due_cents` and `app.controllers.bill_controller.cash_to_collect`, with matching `cashDue` / `cashToCollect` in the register and bill form scripts.
+- Why: The counter has always rounded this way; with exact change the cashier couldn't enter ₱1,025 for a ₱1,025.45 bill, change and receipts didn't match what was given, and End of day was off by the centavos.
+- Alternatives considered: rounding the stored total (would change what's paid to the biller and the bill's charges); always rounding down (not the shop's rule).
+- Follow-up: The rounding difference (shop absorbs up to ₱0.49, gains up to ₱0.50 per cash payment) isn't reported as its own line. Bills and sales saved before this keep their exact change; End of day rounds them too, which matches what was collected if the counter was already rounding. The older Reconciliation page still compares cash on hand to exact totals.

@@ -71,6 +71,20 @@ async def load_quote(
     }
 
 
+@router.get("/api/quote/sale-cash-out")
+async def sale_cash_out_quote(
+    due: str = Query(""), sent: str = Query(""), _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+):
+    """The cash-out part when a GCash/Maya-paid sale's customer sent more than the amount due."""
+    try:
+        q = sales.quote_sale_cash_out(to_cents(due), to_cents(sent), await get_fee_schedule(db))
+    except (MoneyError, sales.PosError) as exc:
+        raise _bad_request(exc)
+    if not q:
+        return {"amount_cents": 0, "fee_cents": 0, "give_cents": 0}
+    return {"amount_cents": q.amount_cents, "fee_cents": q.fee_cents, "give_cents": q.give_cents}
+
+
 @router.get("/api/quote/wallet")
 async def wallet_quote(
     kind: str = Query("cash_in"),
@@ -125,7 +139,15 @@ async def create_sale(data: SaleIn, user: User = Depends(get_current_user), db: 
         sale = await sales.create_sale(db, data, user)
     except sales.PosError as exc:
         raise _bad_request(exc)
-    return {"id": sale.id, "sale_no": sale.sale_no, "change_cents": sale.change_cents, "balance_cents": sale.balance_cents}
+    cash_out = await sales.linked_cash_out(db, sale.id)
+    return {
+        "id": sale.id,
+        "sale_no": sale.sale_no,
+        "change_cents": sale.change_cents,
+        "balance_cents": sale.balance_cents,
+        "cash_out": {"txn_no": cash_out.txn_no, "amount_cents": cash_out.amount_cents, "fee_cents": cash_out.fee_cents,
+                     "give_cents": cash_out.give_cents} if cash_out else None,
+    }
 
 
 @router.post("/api/wallet-txns")
@@ -272,6 +294,7 @@ async def sale_receipt(
         {
             "sale": sale,
             "lines": lines,
+            "cash_out": await sales.linked_cash_out(db, sale.id),
             "settings": await get_settings(db),
             "business": await receipt_business(db),
             "cashier": await _cashier_name(db, sale.cashier_user_id),

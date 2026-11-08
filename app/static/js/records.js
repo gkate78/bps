@@ -39,6 +39,14 @@ function round2(value) {
     return Math.round((parseNum(value) + Number.EPSILON) * 100) / 100;
 }
 
+/** Cash is collected to the whole peso: under 50 centavos rounds down, 50 and up rounds up
+ * (₱1,025.45 → ₱1,025, ₱1,025.50 → ₱1,026). GCash, Maya and bank payments stay exact. */
+function cashToCollect(total, paymentMethod) {
+    const method = String(paymentMethod || "").trim().toUpperCase();
+    if (method && method !== "CASH") return round2(total);
+    return Math.floor((Math.round(round2(total) * 100) + 50) / 100);
+}
+
 function formatStatusPill(value) {
     const status = String(value || "").toLowerCase();
     const cls = status === "success" ? "status-success" : "status-failed";
@@ -215,7 +223,7 @@ function recomputeFinancials() {
     const charge = computeCharge(dom.biller.value, billAmt);
     const total = round2(billAmt + lateCharge + charge);
     const cash = round2(dom.cash.value);
-    const change = round2(cash - total);
+    const change = round2(cash - cashToCollect(total, dom.paymentMethod?.value));
 
     dom.charge.value = charge.toFixed(2);
     dom.total.value = total.toFixed(2);
@@ -635,8 +643,9 @@ function validatePayload(payload) {
         return false;
     }
 
-    if (payload.cash < payload.total) {
-        showMessage("Cash must be greater than or equal to Total.", "Validation");
+    const toCollect = cashToCollect(payload.total, payload.payment_method);
+    if (payload.cash < toCollect) {
+        showMessage(`Cash must be at least ${toCollect.toFixed(2)}.`, "Validation");
         return false;
     }
 
@@ -866,6 +875,7 @@ Object.values(filters).forEach((el) => {
 });
 if (dom.paymentMethod) {
     dom.paymentMethod.addEventListener("input", syncConfirmationReferenceState);
+    dom.paymentMethod.addEventListener("change", recomputeFinancials);
     dom.paymentMethod.addEventListener("change", syncConfirmationReferenceState);
 }
 

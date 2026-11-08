@@ -31,7 +31,7 @@ from pos.auth_adapter import User, display_name
 from pos.controllers.sale_controller import PosError, clean_text, day_range, day_summary
 from pos.controllers.settings_controller import add_audit, get_settings, list_wallets
 from pos.models import PosCashMovement, PosDayClose, PosDayWallet, PosDrawerHandover, PosParkedTxn, PosWallet
-from pos.money import MoneyError, to_cents, to_cents_optional
+from pos.money import MoneyError, cash_due_cents, to_cents, to_cents_optional
 
 MOVEMENT_KINDS = {
     "take_out": "Cash taken out",
@@ -248,7 +248,8 @@ async def _changes(db: AsyncSession, day: date, lo: datetime, hi: datetime, wall
     ]
     # Personal bills paid from shop funds bring nothing in; paying them to the biller still takes money out.
     received_bills = [b for b in bills_in if b.personal != "shop"]
-    bills_cash = sum(bill_cents(b.total) for b in received_bills if _method(b.payment_method) in ("", "CASH"))
+    # Cash is collected to the whole peso (₱1,025.45 → ₱1,025), so that's what's in the drawer.
+    bills_cash = sum(cash_due_cents(bill_cents(b.total)) for b in received_bills if _method(b.payment_method) in ("", "CASH"))
     bills_by_method = defaultdict(int)
     for bill in received_bills:
         bills_by_method[_method(bill.payment_method)] += bill_cents(bill.total)

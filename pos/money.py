@@ -41,6 +41,12 @@ def whole_pesos(cents: int, *, field: str = "Amount") -> int:
     return cents
 
 
+def cash_due_cents(cents: int) -> int:
+    """Cash is collected to the whole peso: under 50 centavos rounds down, 50 and up rounds up.
+    ₱1,025.45 → ₱1,025 (₱1,100 gets ₱75 change); ₱1,025.50 → ₱1,026 (₱74 change)."""
+    return (int(cents) + 50) // 100 * 100
+
+
 def fmt(cents: Optional[int]) -> str:
     """12345 -> '123.45', with thousands separators."""
     value = (Decimal(int(cents or 0)) / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

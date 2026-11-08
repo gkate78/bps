@@ -220,6 +220,43 @@ def test_a_gcash_maya_reference_is_accepted_only_once(shop):
     assert client.post("/pos/api/wallet-txns", json={**out, "reference": "5012345678"}).status_code == 200
 
 
+def test_sale_paid_by_gcash_with_a_cash_out_in_the_same_transfer(shop):
+    """₱50 load (+₱5) and a ₱1,000 cash-out (+₱20) in one ₱1,075 GCash transfer."""
+    client = shop.client
+    i = ids()
+    load = {"kind": "load", "network_id": i["GLOBE"], "wallet_id": i["GCASH"], "mobile_no": "09181112222", "amount": "50"}
+    body = {"lines": [load], "payment_method": "wallet", "pay_wallet_id": i["GCASH"], "payment_reference": "7001", "customer_phone": "09181112222"}
+
+    q = client.get("/pos/api/quote/sale-cash-out", params={"due": "55", "sent": "1075"}).json()
+    assert (q["amount_cents"], q["fee_cents"], q["give_cents"]) == (102_000, 2_000, 100_000)
+    bad = client.get("/pos/api/quote/sale-cash-out", params={"due": "55", "sent": "1080"})
+    assert bad.status_code == 400 and "₱1,075.00 sent gives ₱1,000.00 cash" in bad.json()["detail"]
+    assert client.get("/pos/api/quote/sale-cash-out", params={"due": "55", "sent": "50"}).status_code == 400
+    assert client.post("/pos/api/sales", json={**body, "amount_sent": "1075", "customer_phone": ""}).status_code == 400
+
+    r = client.post("/pos/api/sales", json={**body, "amount_sent": "1,075"})
+    assert r.status_code == 200, r.text
+    sale = r.json()
+    assert sale["cash_out"]["give_cents"] == 100_000 and sale["cash_out"]["fee_cents"] == 2_000
+
+    receipt = client.get(f"/pos/receipt/sale/{sale['id']}").text
+    assert "CASH GIVEN" in receipt and "1,000.00" in receipt and "1,075.00" in receipt
+    listing = client.get("/pos/sales").text
+    assert f"sent with sale {sale['sale_no']}" in listing
+    # fees: ₱5 load + ₱20 cash-out
+    assert "₱25.00" in client.get("/pos/summary").text
+
+    # the reference is used up by the pair
+    r = client.post("/pos/api/wallet-txns", json={"kind": "cash_out", "wallet_id": i["GCASH"], "amount": "500",
+                                                  "customer_mobile": "09181112222", "reference": "7001"})
+    assert r.status_code == 400 and "already used" in r.json()["detail"]
+
+    # voiding the sale voids its cash-out too
+    r = client.post(f"/pos/api/sales/{sale['id']}/void", json={"reason": "wrong amount", "admin_pin": ADMIN_PIN})
+    assert r.status_code == 200, r.text
+    assert "VOIDED" in client.get(f"/pos/receipt/wallet/{sale['cash_out']['txn_no'][2:].lstrip('0')}").text
+
+
 def test_mobile_suggestions_include_bill_customers(shop):
     from app.models import Customer
 

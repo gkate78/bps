@@ -356,6 +356,15 @@ def _compute_late_charge(
     return round(float(late_map.get(biller.strip().upper(), 0.0)), 2)
 
 
+def cash_to_collect(total: float, payment_method: Optional[str] = None) -> float:
+    """Cash is collected to the whole peso: under 50 centavos rounds down, 50 and up rounds up
+    (₱1,025.45 → ₱1,025, ₱1,025.50 → ₱1,026). GCash, Maya and bank payments stay exact."""
+    if str(payment_method or "").strip().upper() not in ("", "CASH"):
+        return round(float(total or 0), 2)
+    cents = int(round(float(total or 0) * 100))
+    return float((cents + 50) // 100)
+
+
 def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: dict[str, float]) -> dict:
     bill_amt = round(float(payload.get("bill_amt", 0) or 0), 2)
     due_date = payload.get("due_date")
@@ -371,7 +380,7 @@ def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: d
         cash = 0.0  # paid from shop funds: nothing received
         change_amt = 0.0
     else:
-        change_amt = round(cash - total, 2)
+        change_amt = round(cash - cash_to_collect(total, payload.get("payment_method")), 2)
 
     payload["bill_amt"] = bill_amt
     payload["amt2"] = late_charge
@@ -406,7 +415,7 @@ def _apply_file_amounts(
     parts_total = round(bill_amt + late_charge + charge, 2)
     total = file_amounts["total"] if file_amounts.get("total") is not None else parts_total
     cash = round(float(payload.get("cash", 0) or 0), 2)
-    change_amt = file_amounts["change_amt"] if file_amounts.get("change_amt") is not None else round(cash - total, 2)
+    change_amt = file_amounts["change_amt"] if file_amounts.get("change_amt") is not None else round(cash - cash_to_collect(total, payload.get("payment_method")), 2)
 
     issues = []
     if abs(parts_total - total) >= 0.01:

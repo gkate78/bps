@@ -19,6 +19,14 @@ function round2(value) {
     return Math.round((parseNum(value) + Number.EPSILON) * 100) / 100;
 }
 
+/** Cash is collected to the whole peso: under 50 centavos rounds down, 50 and up rounds up
+ * (₱1,025.45 → ₱1,025, ₱1,025.50 → ₱1,026). GCash, Maya and bank payments stay exact. */
+function cashToCollect(total, paymentMethod) {
+    const method = String(paymentMethod || "").trim().toUpperCase();
+    if (method && method !== "CASH") return round2(total);
+    return Math.floor((Math.round(round2(total) * 100) + 50) / 100);
+}
+
 function formatMoney(value) {
     const num = round2(value);
     return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -129,7 +137,7 @@ function recomputeFinancials() {
     const charge = personalMode() ? 0 : computeCharge(dom.biller.value, billAmt);
     const total = round2(billAmt + lateCharge + charge);
     const cash = round2(rawCash);
-    const change = round2(cash - total);
+    const change = round2(cash - cashToCollect(total, dom.paymentMethod?.value));
 
     dom.amt2.value = rawBillAmt || dom.dueDate.value ? lateCharge.toFixed(2) : "";
     dom.charge.value = rawBillAmt ? charge.toFixed(2) : "";
@@ -329,8 +337,9 @@ function validatePayload(payload) {
         alert("BILL AMOUNT IS REQUIRED");
         return false;
     }
-    if (payload.personal !== "shop" && payload.cash < payload.total) {
-        alert("AMOUNT RECEIVED MUST BE GREATER THAN OR EQUAL TO TOTAL");
+    const toCollect = cashToCollect(payload.total, payload.payment_method);
+    if (payload.personal !== "shop" && payload.cash < toCollect) {
+        alert(`AMOUNT RECEIVED MUST BE AT LEAST ${formatMoney(toCollect)}`);
         return false;
     }
     return true;
@@ -476,6 +485,7 @@ dom.biller.addEventListener("change", () => fetchKnownAccounts({ query: dom.acco
 if (dom.paymentMethod) {
     dom.paymentMethod.addEventListener("input", syncConfirmationReferenceState);
     dom.paymentMethod.addEventListener("change", syncConfirmationReferenceState);
+    dom.paymentMethod.addEventListener("change", recomputeFinancials);
 }
 if (dom.personal) {
     dom.personal.addEventListener("change", syncPersonalState);

@@ -9,8 +9,17 @@ from sqlmodel import select
 
 from pos.auth_adapter import User, display_name, normalize_phone, validate_mobile, validate_phone
 from pos.controllers.settings_controller import add_audit, get_fee_schedule
-from pos.fees import FeeError, load_cost, quote_load, quote_personal_load, quote_personal_wallet, quote_wallet
-from pos.money import MoneyError, to_cents, to_cents_optional
+from pos.fees import (
+    FeeError,
+    WalletQuote,
+    load_cost,
+    nearest_fee_included,
+    quote_load,
+    quote_personal_load,
+    quote_personal_wallet,
+    quote_wallet,
+)
+from pos.money import MoneyError, cash_due_cents, to_cents, to_cents_optional
 from pos.models import PosNetwork, PosSale, PosSaleLine, PosSalePayment, PosService, PosWallet, PosWalletTxn
 from pos.schemas import BalancePaymentIn, SaleIn, WalletTxnIn
 
@@ -69,14 +78,42 @@ async def _take_payment(db: AsyncSession, method: str, wallet_id, reference, cas
             "change_cents": 0,
         }
     cash = _money(cash_text, "Cash received")
-    if cash < due_cents:
-        raise PosError("Cash received is less than the amount due")
-    return {"payment_method": "cash", "cash_cents": cash, "change_cents": cash - due_cents}
+    collect = cash_due_cents(due_cents)  # cash is collected to the whole peso
+    if cash < collect:
+        raise PosError(f"Cash received is less than the amount due (₱{collect / 100:,.2f})")
+    return {"payment_method": "cash", "cash_cents": cash, "change_cents": cash - collect}
 
 
 def _check_personal(personal: Optional[str], user: User) -> None:
     if personal and user.role != "admin":
         raise PosError("Only an admin can ring up a personal transaction")
+
+
+def quote_sale_cash_out(due_cents: int, sent_cents: int, schedule) -> Optional[WalletQuote]:
+    """
+    The customer paid a sale by GCash/Maya and sent more (₱1,075 for a ₱55 load): the extra is a
+    cash-out with its fee included (₱1,020 = ₱1,000 + ₱20 fee, give ₱1,000). None when nothing extra.
+    """
+    if sent_cents < due_cents:
+        raise PosError("Amount sent is less than the amount due")
+    extra = sent_cents - due_cents
+    if not extra:
+        return None
+    if extra % 100:
+        raise PosError(f"The cash-out part (₱{extra / 100:,.2f}) must be whole pesos. Check the amount sent.")
+    try:
+        return quote_wallet("cash_out", extra, "included", schedule)
+    except (MoneyError, FeeError) as exc:
+        payout, fits = nearest_fee_included(extra, schedule)
+        # fits > extra: even ₱1 plus its fee is more than what's left over.
+        hint = f" The nearest that works: ₱{(due_cents + fits) / 100:,.2f} sent gives ₱{payout / 100:,.2f} cash." if fits <= extra else ""
+        raise PosError(f"₱{extra / 100:,.2f} left after the sale isn't a cash-out plus its fee.{hint} Check the amount sent.") from exc
+
+
+async def linked_cash_out(db: AsyncSession, sale_id: int) -> Optional[PosWalletTxn]:
+    return (
+        await db.execute(select(PosWalletTxn).where(PosWalletTxn.sale_id == sale_id, PosWalletTxn.kind == "cash_out").limit(1))
+    ).scalar_one_or_none()
 
 
 async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
@@ -160,6 +197,15 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
     customer_phone = normalize_phone(data.customer_phone or "") or None
     if customer_phone and not validate_phone(customer_phone):
         raise PosError("Customer phone must be 11 digits")
+    cash_out = None
+    if (data.amount_sent or "").strip():
+        if payment["payment_method"] != "wallet":
+            raise PosError("Amount sent is only for a sale paid by GCash/Maya")
+        if data.personal:
+            raise PosError("A personal sale can't include a cash-out")
+        cash_out = quote_sale_cash_out(due, _money(data.amount_sent, "Amount sent"), schedule)
+        if cash_out:
+            customer_phone = _mobile(data.customer_phone, "Customer mobile no. (needed for the cash-out)")
 
     sale = PosSale(
         cashier_user_id=user.id,
@@ -181,6 +227,26 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
     for line in lines:
         line.sale_id = sale.id
         db.add(line)
+    if cash_out:
+        txn = PosWalletTxn(
+            cashier_user_id=user.id,
+            kind="cash_out",
+            wallet_id=sale.pay_wallet_id,
+            wallet_name=sale.pay_wallet_name,
+            amount_cents=cash_out.amount_cents,
+            fee_cents=cash_out.fee_cents,
+            fee_mode=cash_out.fee_mode,
+            collect_cents=0,
+            give_cents=cash_out.give_cents,
+            customer_mobile=customer_phone,
+            customer_name=customer_name,
+            reference=sale.payment_reference,
+            sale_id=sale.id,
+        )
+        db.add(txn)
+        await db.flush()
+        txn.txn_no = f"W-{txn.id:06d}"
+        add_audit(db, "wallet_txn", txn.id, "create", user.id, {"txn_no": txn.txn_no, "kind": "cash_out", "sale_no": sale.sale_no})
     add_audit(
         db, "sale", sale.id, "create", user.id,
         {"sale_no": sale.sale_no, "total_cents": total, "paid_cents": due, "job_order": data.is_job_order, "personal": data.personal},
@@ -434,6 +500,11 @@ async def void_record(db: AsyncSession, record, entity: str, reason: str, admin:
         item.voided_at = now
         db.add(item)
 
+    if entity == "sale":
+        # The cash-out sent in the same transfer goes with the sale.
+        linked = await linked_cash_out(db, record.id)
+        if linked and linked.status != "voided":
+            mark(linked)
     if entity == "sale" and record.is_job_order:
         # Voiding a job order voids its balance payments too.
         for payment in await sale_payments(db, record.id):
@@ -565,6 +636,8 @@ async def list_transactions(
                 details += f" · {PERSONAL_LABELS[txn.personal]}"
             elif txn.kind == "cash_out":
                 details += CASH_OUT_FEE_LABELS.get(txn.fee_mode, " (fee deducted)")
+            if txn.sale_id:
+                details += f" · sent with sale S-{txn.sale_id:06d}"
             haystack = " ".join(filter(None, [txn.txn_no, label, details, txn.customer_name]))
             if needle and needle not in haystack.upper():
                 continue
@@ -686,6 +759,7 @@ async def day_summary(
             out.sales_paid_by_wallet[wallet_name][0] += 1
             out.sales_paid_by_wallet[wallet_name][1] += cents
         else:
+            cents = cash_due_cents(cents)  # what went into the drawer: cash is collected to the whole peso
             out.drawer_cents += cents
             out.shop_cash_cents += cents
             out.by_cashier[who(user_id)][1] += cents

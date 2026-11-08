@@ -27,6 +27,7 @@ BPS helps teams manage bill records end-to-end: encode customer bills, process s
 The print shop's cash register runs inside BPS on the shop computer (on when `POS_ENABLED=1`, which `run_local.sh` sets; off on the online deployment). Use **Shop register →** in the top bar, or **Next: Shop sale** after saving a bill (a separate transaction; only the customer's name and phone carry over). Encoders work it as cashiers; admins also get its Settings.
 - **Register**: shop services with typed prices (suggestions from past sales), loading (fee added automatically; promos rounded up to the next ₱10), each account's load discount (Maya 3%: ₱96.03 for ₱99) taken into its balance and the load income, paid in cash or to the shop's GCash/Maya; **job orders** with a down payment (tarpaulin, invitations, …)
 - **Personal (admin only)**: the owner's own bills, shop sales, loads and GCash/Maya with no service charge or fees. Choose **I pay** (money comes in as usual) or **From shop funds** (nothing is collected; End of day and Summary list these separately, while loads, cash-ins and bills paid to billers still lower the drawer or GCash/Maya). Receipts say PERSONAL. A personal cash-out can't be from shop funds (record cash taken out in End of day instead).
+- **Sale + cash-out in one transfer**: a sale paid by GCash/Maya takes an optional **Amount sent**; anything above the amount due is a cash-out with its fee included (₱55 load + ₱1,020 = ₱1,075 sent → give ₱1,000). It is saved as the sale plus a linked cash-out under the same reference no., printed on one receipt, and voided with the sale. Amounts that don't fit are refused with the nearest total that works
 - **Edit before saving**: each item in the current sale has ✎ (puts it back in its form; Update replaces it in place) and ✕ (removes it)
 - **Park** an unpaid sale or GCash/Maya transaction to serve the next customer first, then **Resume** it (not counted anywhere until it's paid)
 - **GCash / Maya cash-in and cash-out** as their own transactions, with step-by-step instructions and the fee rule (₱20 per full ₱1,000 plus ₱10/₱20 on the remainder; loads of ₱50 or less +₱5). A cash-out fee can be deducted from the payout, included in the amount sent (customer sends ₱6,120 to get exactly ₱6,000), or paid in cash. Typing a mobile number used before (register or bill customers) fills in the customer name; a GCash/Maya reference no. is accepted only once across cash-ins, cash-outs and shop sales or job order payments paid by GCash/Maya (ignoring case and spaces; voided ones excluded), with a warning as soon as it is typed.
@@ -40,6 +41,7 @@ The print shop's cash register runs inside BPS on the shop computer (on when `PO
 - Customer payment mode options: `CASH`, `GCASH`, `MAYA`, `BDO`, `BPI`
 - Admin settlement channel options: `CASH`, `GCASH`, `MAYA`, `BAYAD`, `BPICC`, `BPI`
 - `payment_method` and `payment_channel` are intentionally independent fields for operational auditability
+- Cash is collected to the whole peso: under 50 centavos rounds down, 50 and up rounds up (₱1,025.45 → ₱1,025, so ₱1,100 gets ₱75 change; ₱1,025.50 → ₱1,026, ₱74 change). Bills paid in cash, shop sales and job order payments; End of day expects the rounded amounts. GCash/Maya/bank are not rounded, and totals stay exact (DEC-051).
 
 ## Local Development
 Requires Python 3.12+ (tested on 3.12 and 3.14). `sqlmodel` is pinned to 0.0.44: later versions reject the timezone-naive datetimes the app stores.
@@ -88,6 +90,7 @@ Run from the project root with `venv/bin/python`. Data-changing scripts are dry 
 | `scripts/clean_phone_numbers.py --db <path>` | Normalize stored phone numbers (blank `NA`, restore dropped leading 0) and fill customers' missing phones |
 | `scripts/apply_file_amounts.py --db <path>` | Put the import file's own amounts back on records imported before file amounts were kept, flagging differences for review |
 | `scripts/db_view.py` | Read-only database preview |
+| `scripts/make_demo_data.py [--dir ~/bps-demo] [--days 120] [--force]` | Build a separate demo database with synthetic bills, register sales, demo accounts and a messy CSV for the import demo; run it with `BPS_DATA_DIR=~/bps-demo ./scripts/run_local.sh`. Refuses `~/bps-data` and the project folder |
 | `scripts/import_cashreg.py --from <cashreg.db> --db <path>` | One-time move of the standalone shop register's data into BPS (users matched by phone; backs up first; refuses if BPS already has register sales) |
 
 ### Windows (PowerShell) quickstart

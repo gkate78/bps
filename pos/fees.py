@@ -155,10 +155,10 @@ def quote_wallet(
     return WalletQuote(kind, fee_mode, amount_cents, fee, collect_cents=0, give_cents=amount_cents - fee)
 
 
-def payout_with_fee_included(sent_cents: int, s: FeeSchedule = DEFAULT_SCHEDULE) -> int:
+def nearest_fee_included(sent_cents: int, s: FeeSchedule = DEFAULT_SCHEDULE) -> tuple[int, int]:
     """
-    The customer sent the payout plus its fee (₱6,120 = ₱6,000 + ₱120) to get an exact amount.
-    payout + fee(payout) rises with every peso, so at most one payout fits.
+    The largest payout whose payout + fee is at most sent_cents: (payout, payout + fee).
+    payout + fee(payout) rises with every peso, so a binary search finds it.
     """
     _check_amount(sent_cents)
     low, high = 1, sent_cents // 100  # in pesos
@@ -169,7 +169,15 @@ def payout_with_fee_included(sent_cents: int, s: FeeSchedule = DEFAULT_SCHEDULE)
         else:
             high = mid - 1
     payout = low * 100
-    total = payout + ewallet_fee(payout, s)
+    return payout, payout + ewallet_fee(payout, s)
+
+
+def payout_with_fee_included(sent_cents: int, s: FeeSchedule = DEFAULT_SCHEDULE) -> int:
+    """
+    The customer sent the payout plus its fee (₱6,120 = ₱6,000 + ₱120) to get an exact amount.
+    At most one payout fits.
+    """
+    payout, total = nearest_fee_included(sent_cents, s)
     if total != sent_cents:
         if total > sent_cents:
             raise FeeError("Cash-out amount must be more than the fee")

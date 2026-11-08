@@ -25,6 +25,8 @@ class PosWalletTxn(SQLModel, table=True):
     fee_mode: str = Field(max_length=14)  # added | deducted | paid_in_cash | included | none (personal)
     # Admin's own, no fee: "paid" (cash handed over) or "shop" (cash-in sent from shop funds, nothing collected).
     personal: Optional[str] = Field(default=None, max_length=8)
+    # A cash-out sent together with a shop sale's payment (one GCash/Maya transfer, one reference no.).
+    sale_id: Optional[int] = Field(default=None, index=True)
     collect_cents: int = Field(default=0, nullable=False)
     give_cents: int = Field(default=0, nullable=False)
     tendered_cents: int = Field(default=0, nullable=False)
