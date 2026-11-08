@@ -75,26 +75,18 @@ async def quote(
     }
 
 
-async def checkout(db: AsyncSession, data: BillsCheckoutIn, user: User) -> dict:
+async def prepare_bills(
+    db: AsyncSession, bills: list[BillIn], *, method: Optional[str], reference: Optional[str], personal: Optional[str],
+    user: User, now: datetime, first_index: int = 1,
+) -> list[tuple[str, dict, int]]:
+    """Check every bill (nothing is saved): (label, payload for build_record, total cents) for each.
+    method is the bill_records payment method (None for bills paid from shop funds)."""
     # Imported here: bill_routes is BPS's web layer, loaded once the app is set up.
-    from app.routes.bill_routes import RecordCreate, finish_new_record, prepare_new_record
+    from app.routes.bill_routes import RecordCreate, prepare_new_record
 
-    if not data.bills:
-        raise PosError("Add at least one bill")
-    if len(data.bills) > MAX_BILLS:
-        raise PosError(f"At most {MAX_BILLS} bills at a time")
-
-    method = None if data.personal == "shop" else data.payment_method  # from shop funds: nothing received
-    reference = clean_text(data.reference, 120) if method and method != "CASH" else None
-    if method in WALLET_METHODS:
-        if not reference:
-            raise PosError(f"Enter the {METHOD_NAMES[method]} reference no.")
-        await _check_reference(db, reference)  # one transfer, used once: not again for a cash-in or sale
-
-    now = datetime.now()
-    prepared: list[tuple[str, dict, int]] = []  # (label, payload, total cents)
+    prepared: list[tuple[str, dict, int]] = []
     seen: set[tuple[str, int]] = set()  # same account and amount: a duplicate
-    for index, bill in enumerate(data.bills, start=1):
+    for index, bill in enumerate(bills, start=first_index):
         label = _label(index, bill)
         biller = clean_text(bill.biller, 120)
         account = clean_text(bill.account, 64)
@@ -118,7 +110,7 @@ async def checkout(db: AsyncSession, data: BillsCheckoutIn, user: User) -> dict:
                 payment_method=method,
                 confirmation_reference=reference,
                 payment_reference=clean_text(bill.payment_reference, 120),
-                personal=data.personal,
+                personal=personal,
             )
             payload = await prepare_new_record(db, record_in, user)
         except ValidationError as exc:
@@ -128,9 +120,51 @@ async def checkout(db: AsyncSession, data: BillsCheckoutIn, user: User) -> dict:
         existing = await find_monthly_duplicate(db, account=account, bill_amt=amount / 100, txn_date=now.date())
         if existing:
             raise PosError(f"{label}: {monthly_duplicate_message(account, amount / 100, existing)}")
-        amounts = await quote_bill(db, biller=biller, bill_amt=amount / 100, due_date=bill.due_date, personal=data.personal)
+        amounts = await quote_bill(db, biller=biller, bill_amt=amount / 100, due_date=bill.due_date, personal=personal)
         prepared.append((label, payload, peso_cents(amounts["total"])))
+    return prepared
 
+
+async def add_bills(db: AsyncSession, prepared: list[tuple[str, dict, int]], cash_each: list[int]) -> list:
+    """Add the checked bills to the session (flushed, not committed); cash_each is each bill's cash in cents."""
+    records = []
+    for (label, payload, _), cents in zip(prepared, cash_each):
+        payload["cash"] = cents / 100
+        try:
+            record = await build_record(db, payload)
+        except HTTPException as exc:
+            raise PosError(f"{label}: {_detail(exc)}") from exc
+        db.add(record)
+        await db.flush()
+        records.append(record)
+    return records
+
+
+async def finish_bills(db: AsyncSession, records: list, user: User) -> None:
+    """After the commit: customer list, audit log and SMS for each bill, as from the entry form."""
+    from app.routes.bill_routes import finish_new_record
+
+    for record in records:
+        await db.refresh(record)
+        await finish_new_record(db, record, user, channel="register")
+
+
+async def checkout(db: AsyncSession, data: BillsCheckoutIn, user: User) -> dict:
+    if not data.bills:
+        raise PosError("Add at least one bill")
+    if len(data.bills) > MAX_BILLS:
+        raise PosError(f"At most {MAX_BILLS} bills at a time")
+
+    method = None if data.personal == "shop" else data.payment_method  # from shop funds: nothing received
+    reference = clean_text(data.reference, 120) if method and method != "CASH" else None
+    if method in WALLET_METHODS:
+        if not reference:
+            raise PosError(f"Enter the {METHOD_NAMES[method]} reference no.")
+        await _check_reference(db, reference)  # one transfer, used once: not again for a cash-in or sale
+
+    prepared = await prepare_bills(
+        db, data.bills, method=method, reference=reference, personal=data.personal, user=user, now=datetime.now()
+    )
     totals = [total for _, _, total in prepared]
     if method is None:
         due, cash, cash_each = 0, 0, [0] * len(prepared)
@@ -145,26 +179,14 @@ async def checkout(db: AsyncSession, data: BillsCheckoutIn, user: User) -> dict:
     else:
         cash_each = list(totals)  # GCash, Maya and bank: exact, no change
         due = cash = sum(totals)
-    for (_, payload, _), cents in zip(prepared, cash_each):
-        payload["cash"] = cents / 100
 
-    records = []
     try:
-        for label, payload, _ in prepared:
-            try:
-                record = await build_record(db, payload)
-            except HTTPException as exc:
-                raise PosError(f"{label}: {_detail(exc)}") from exc
-            db.add(record)
-            await db.flush()
-            records.append(record)
+        records = await add_bills(db, prepared, cash_each)
         await db.commit()
     except Exception:
         await db.rollback()
         raise
-    for record in records:
-        await db.refresh(record)
-        await finish_new_record(db, record, user, channel="register")
+    await finish_bills(db, records, user)
 
     first = records[0]
     return {

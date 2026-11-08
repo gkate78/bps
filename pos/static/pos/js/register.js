@@ -53,6 +53,10 @@
     function showEditor(which) {
         $("serviceEditor").hidden = which !== "service";
         $("loadEditor").hidden = which !== "load";
+        $("cashInEditor").hidden = which !== "cash_in";
+        $("cashOutEditor").hidden = which !== "cash_out";
+        if (which === "bill") window.registerBills?.openInShop($("shopBillSlot"));
+        else window.registerBills?.hideInShop();
         document.querySelectorAll(".svc-btn").forEach((b) => b.classList.remove("on"));
     }
 
@@ -63,7 +67,9 @@
         const editing = index !== null;
         $("svcSubmit").textContent = editing ? "Update line" : "Add line";
         $("loadSubmit").textContent = editing ? "Update load" : "Add load";
-        $("svcCancel").hidden = $("loadCancel").hidden = !editing;
+        $("ciSubmit").textContent = editing ? "Update cash-in" : "Add cash-in";
+        $("coSubmit").textContent = editing ? "Update cash-out" : "Add cash-out";
+        $("svcCancel").hidden = $("loadCancel").hidden = $("ciCancel").hidden = $("coCancel").hidden = !editing;
     }
     function resetServiceForm() {
         $("svcDesc").value = "";
@@ -76,11 +82,24 @@
         $("loadPromo").checked = false;
         $("loadQuote").textContent = "Enter the load amount.";
     }
+    function resetCashInForm() {
+        $("ciMobile").value = "";
+        $("ciAmount").value = "";
+        $("ciQuote").textContent = "Enter the cash-in amount.";
+    }
+    function resetCashOutForm() {
+        ["coMobile", "coAmount", "coRef"].forEach((id) => ($(id).value = ""));
+        setRadio("cashout_fee", "deducted");
+        $("coRefWarn").hidden = true;
+        $("coQuote").textContent = "Enter the amount received.";
+    }
     function cancelEdit() {
         if (editingIndex === null) return;
         setEditing(null);
         resetServiceForm();
         resetLoadForm();
+        resetCashInForm();
+        resetCashOutForm();
         renderCart();
     }
     // Put the item back in its form; Add becomes Update.
@@ -97,6 +116,28 @@
             $("svcQty").value = String(line.qty);
             $("svcPrice").value = line.unit_price;
             $("svcPrice").focus();
+        } else if (line.kind === "bill") {
+            showEditor(null);
+            document.querySelector(".svc-btn[data-bill]")?.classList.add("on");
+            window.registerBills.openInShop($("shopBillSlot"), { ...line.bill, amount: line.bill.bill_amt }, index);
+        } else if (line.kind === "cash_out") {
+            showEditor("cash_out");
+            document.querySelector(".svc-btn[data-cashout]")?.classList.add("on");
+            setRadio("cashout_wallet", String(line.wallet_id));
+            setRadio("cashout_fee", line.fee_mode);
+            $("coMobile").value = line.mobile_no || "";
+            $("coAmount").value = line.amount || "";
+            $("coRef").value = line.reference || "";
+            fetchCashOutQuote();
+            $("coAmount").focus();
+        } else if (line.kind === "cash_in") {
+            showEditor("cash_in");
+            document.querySelector(".svc-btn[data-cashin]")?.classList.add("on");
+            setRadio("cashin_wallet", String(line.wallet_id));
+            $("ciMobile").value = line.mobile_no || "";
+            $("ciAmount").value = line.amount || "";
+            fetchCashInQuote();
+            $("ciAmount").focus();
         } else {
             showEditor("load");
             document.querySelector(".svc-btn[data-load]")?.classList.add("on");
@@ -115,6 +156,9 @@
     }
     $("svcCancel").addEventListener("click", cancelEdit);
     $("loadCancel").addEventListener("click", cancelEdit);
+    $("ciCancel").addEventListener("click", cancelEdit);
+    $("coCancel").addEventListener("click", cancelEdit);
+    window.addEventListener("pos:bill-cancel", cancelEdit);
 
     document.querySelectorAll(".svc-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -125,6 +169,26 @@
                 btn.classList.add("on");
                 const checked = document.querySelector('input[name="network"]:checked');
                 (checked ? $("loadMobile") : document.querySelector('input[name="network"]'))?.focus();
+                return;
+            }
+            if (btn.dataset.bill) {
+                showEditor("bill");
+                btn.classList.add("on");
+                return;
+            }
+            if (btn.dataset.cashout) {
+                showEditor("cash_out");
+                btn.classList.add("on");
+                if (!$("coMobile").value && /^09\d{9}$/.test($("custPhone").value)) $("coMobile").value = $("custPhone").value;
+                ($("coMobile").value ? $("coAmount") : $("coMobile")).focus();
+                return;
+            }
+            if (btn.dataset.cashin) {
+                showEditor("cash_in");
+                btn.classList.add("on");
+                // Usually the same number as the customer's phone.
+                if (!$("ciMobile").value && /^09\d{9}$/.test($("custPhone").value)) $("ciMobile").value = $("custPhone").value;
+                ($("ciMobile").value ? $("ciAmount") : $("ciMobile")).focus();
                 return;
             }
             currentService = { id: Number(btn.dataset.serviceId), name: btn.dataset.name };
@@ -233,9 +297,228 @@
         $("loadMobile").focus();
     });
 
+    // ---------- Cash-in paid with the sale (saved as its own GCash/Maya transaction) ----------
+    async function fetchCashInQuote() {
+        const amount = $("ciAmount").value.trim();
+        if (!amount) {
+            $("ciQuote").textContent = "Enter the cash-in amount.";
+            return null;
+        }
+        try {
+            const q = await getJson(`/pos/api/quote/wallet?kind=cash_in&amount=${encodeURIComponent(amount)}&fee_mode=deducted&personal=`);
+            $("ciQuote").innerHTML =
+                `${escapeHtml(peso(q.amount_cents))} + ${escapeHtml(peso(q.fee_cents))} fee = <strong>${escapeHtml(peso(q.collect_cents))}</strong>`;
+            return q;
+        } catch (err) {
+            $("ciQuote").textContent = err.message;
+            return null;
+        }
+    }
+    $("ciAmount").addEventListener("input", debounce(fetchCashInQuote));
+
+    $("cashInEditor").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const wallet = document.querySelector('input[name="cashin_wallet"]:checked');
+        const mobile = $("ciMobile").value;
+        if (!wallet) return say("Choose where the cash-in is sent from", "error");
+        if (!/^09\d{9}$/.test(mobile)) return say("Mobile no. must be 11 digits starting with 09", "error");
+        const q = await fetchCashInQuote();
+        if (!q) return say($("ciQuote").textContent || "Check the cash-in amount", "error");
+        hush();
+        const before = editingIndex !== null ? cart[editingIndex] : null;
+        const line = {
+            kind: "cash_in",
+            name: `${wallet.dataset.name} CASH-IN`,
+            qty: 1,
+            wallet_id: Number(wallet.value),
+            wallet_name: wallet.dataset.name,
+            mobile_no: mobile,
+            amount: $("ciAmount").value,
+            reference: before?.kind === "cash_in" ? before.reference : "",
+            total_cents: q.collect_cents,
+            amount_cents: q.amount_cents,
+            fee_cents: q.fee_cents,
+        };
+        if (editingIndex !== null) cart.splice(editingIndex, 1, line);
+        else cart.push(line);
+        setEditing(null);
+        renderCart();
+        resetCashInForm();
+        showEditor(null);
+        $("cashIn").focus();
+    });
+
+    // ---------- Cash-out paid toward the sale (saved as its own GCash/Maya transaction) ----------
+    const cashOutFee = () => document.querySelector('input[name="cashout_fee"]:checked')?.value || "deducted";
+    async function fetchCashOutQuote() {
+        const amount = $("coAmount").value.trim();
+        if (!amount) {
+            $("coQuote").textContent = "Enter the amount received.";
+            return null;
+        }
+        try {
+            const q = await getJson(`/pos/api/quote/wallet?kind=cash_out&amount=${encodeURIComponent(amount)}&fee_mode=${cashOutFee()}&personal=`);
+            const how =
+                cashOutFee() === "paid_in_cash"
+                    ? `${peso(q.fee_cents)} fee paid in cash`
+                    : cashOutFee() === "included"
+                      ? `${peso(q.fee_cents)} fee included`
+                      : `${peso(q.fee_cents)} fee deducted`;
+            $("coQuote").innerHTML = `${escapeHtml(peso(q.amount_cents))} received, ${escapeHtml(how)}: <strong>pays ${escapeHtml(peso(q.give_cents - q.collect_cents))}</strong> toward the sale`;
+            return q;
+        } catch (err) {
+            $("coQuote").textContent = err.message;
+            return null;
+        }
+    }
+    $("coAmount").addEventListener("input", debounce(fetchCashOutQuote));
+    document.querySelectorAll('input[name="cashout_fee"]').forEach((el) => el.addEventListener("change", fetchCashOutQuote));
+    warnIfReferenceUsed(
+        $("coRef"),
+        (message) => {
+            $("coRefWarn").textContent = message;
+            $("coRefWarn").hidden = false;
+        },
+        () => ($("coRefWarn").hidden = true),
+    );
+
+    $("cashOutEditor").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const wallet = document.querySelector('input[name="cashout_wallet"]:checked');
+        const mobile = $("coMobile").value;
+        if (!wallet) return say("Choose where the cash-out was received", "error");
+        if (!/^09\d{9}$/.test(mobile)) return say("Mobile no. must be 11 digits starting with 09", "error");
+        if (!$("coRef").value.trim()) return say("Enter the reference no. of what the customer sent", "error");
+        if (!$("coRefWarn").hidden) return say($("coRefWarn").textContent, "error");
+        const q = await fetchCashOutQuote();
+        if (!q) return say($("coQuote").textContent || "Check the amount", "error");
+        hush();
+        const line = {
+            kind: "cash_out",
+            name: `${wallet.dataset.name} CASH-OUT`,
+            qty: 1,
+            wallet_id: Number(wallet.value),
+            wallet_name: wallet.dataset.name,
+            mobile_no: mobile,
+            amount: $("coAmount").value,
+            fee_mode: cashOutFee(),
+            reference: $("coRef").value.trim(),
+            total_cents: -(q.give_cents - q.collect_cents), // pays toward the sale
+            amount_cents: q.amount_cents,
+            fee_cents: q.fee_cents,
+        };
+        if (editingIndex !== null) cart.splice(editingIndex, 1, line);
+        else cart.push(line);
+        setEditing(null);
+        renderCart();
+        resetCashOutForm();
+        showEditor(null);
+    });
+
+    // ---------- Bill paid with the sale (the Bills tab's form, moved here; bills.js checks and quotes it) ----------
+    window.addEventListener("pos:bill-ready", (event) => {
+        const { bill, index } = event.detail;
+        const amount = toCents(bill.amount);
+        const twice = cart.findIndex((l, i) => i !== index && l.kind === "bill" && l.bill.account === bill.account && toCents(l.bill.bill_amt) === amount);
+        if (twice >= 0) {
+            event.preventDefault();
+            return say(`Duplicate: account ${bill.account} for ${peso(amount)} is already in the sale`, "error");
+        }
+        const line = {
+            kind: "bill",
+            name: `BILL ${bill.biller}`,
+            qty: 1,
+            bill: {
+                account: bill.account,
+                biller: bill.biller,
+                customer_name: bill.customer_name,
+                cp_number: bill.cp_number,
+                due_date: bill.due_date,
+                bill_amt: bill.amount,
+                payment_reference: bill.payment_reference,
+            },
+            quote: bill.quote,
+            total_cents: bill.quote.total_cents,
+        };
+        if (index !== null && index !== undefined) cart.splice(index, 1, line);
+        else cart.push(line);
+        // The bill's customer is usually the sale's customer.
+        if (!$("custName").value.trim()) $("custName").value = bill.customer_name;
+        if (!$("custPhone").value.trim() && bill.cp_number) $("custPhone").value = $("payMobile").value = bill.cp_number;
+        setEditing(null);
+        renderCart();
+    });
+
+    function billDetail(line) {
+        const q = line.quote || {};
+        const charges = [q.late_charge_cents ? `late ${peso(q.late_charge_cents)}` : "", q.charge_cents ? `service ${peso(q.charge_cents)}` : ""].filter(Boolean);
+        return `${line.bill.account} · ${line.bill.customer_name} · bill ${peso(q.bill_cents || 0)}${charges.length ? ` + ${charges.join(" + ")}` : ""}`;
+    }
+
+    // Personal changes the service charge on the sale's bills.
+    async function requoteBills() {
+        for (const line of cart.filter((l) => l.kind === "bill")) {
+            const params = new URLSearchParams({
+                biller: line.bill.biller,
+                account: line.bill.account,
+                amount: line.bill.bill_amt,
+                personal: String(!!personal()),
+            });
+            if (line.bill.due_date) params.set("due_date", line.bill.due_date);
+            try {
+                line.quote = await getJson(`/pos/api/quote/bill?${params}`);
+                line.total_cents = line.quote.total_cents;
+            } catch (err) {
+                say(`${line.bill.biller} ${line.bill.account}: ${err.message}`, "error");
+            }
+        }
+        renderCart();
+    }
+
+    const hasCashIn = () => cart.some((line) => line.kind === "cash_in");
+    const hasWalletItems = () => cart.some((line) => line.kind === "cash_in" || line.kind === "cash_out");
+    const hasExtras = () => cart.some((line) => ["cash_in", "cash_out", "bill"].includes(line.kind));
+
+    // The reference no. of each cash-in, entered once it's sent (just before saving).
+    function renderCashInRefs() {
+        const box = $("cashInRefs");
+        const items = cart.map((line, i) => [line, i]).filter(([line]) => line.kind === "cash_in");
+        box.hidden = !items.length;
+        box.innerHTML = items
+            .map(
+                ([line, i]) => `<label>${escapeHtml(line.wallet_name)} cash-in reference no. <span class="muted">(${escapeHtml(peso(line.amount_cents))} to ${escapeHtml(line.mobile_no)})</span>
+                    <input type="text" maxlength="60" data-cashin-ref="${i}" value="${escapeHtml(line.reference || "")}"></label>
+                    <p class="alert alert-error small" data-cashin-warn="${i}" hidden></p>`,
+            )
+            .join("");
+        box.querySelectorAll("[data-cashin-ref]").forEach((input) => {
+            const index = Number(input.dataset.cashinRef);
+            const warning = box.querySelector(`[data-cashin-warn="${index}"]`);
+            input.addEventListener("input", () => (cart[index].reference = input.value));
+            warnIfReferenceUsed(
+                input,
+                (message) => {
+                    warning.textContent = message;
+                    warning.hidden = false;
+                },
+                () => (warning.hidden = true),
+            );
+            if (input.value.trim()) input.dispatchEvent(new Event("change"));
+        });
+    }
+
     // A personal sale's load costs only the load amount; the server prices it the same way.
     function lineTotal(line) {
         return line.kind === "load" && personal() && line.load_cents ? line.load_cents : line.total_cents;
+    }
+
+    function cashOutDetail(line) {
+        const fee = line.fee_mode === "paid_in_cash" ? `${peso(line.fee_cents)} fee in cash` : `${peso(line.fee_cents)} fee`;
+        return `${line.mobile_no} · ${peso(line.amount_cents)} received in ${line.wallet_name}, ${fee}`;
+    }
+
+    function cashInDetail(line) {
+        return `${line.mobile_no} · ${peso(line.amount_cents)} + ${peso(line.fee_cents)} fee from ${line.wallet_name}`;
     }
 
     function loadDetail(line) {
@@ -255,11 +538,22 @@
     function renderCart() {
         const body = $("cartBody");
         if (!cart.length) {
-            body.innerHTML = '<tr class="empty"><td colspan="4">No items yet. Tap a service or LOAD.</td></tr>';
+            body.innerHTML = '<tr class="empty"><td colspan="4">No items yet. Tap a service, LOAD, CASH-IN, CASH-OUT or BILL.</td></tr>';
         } else {
             body.innerHTML = cart
                 .map((line, i) => {
-                    const sub = line.kind === "load" ? loadDetail(line) : line.qty > 1 ? `${peso(toCents(line.unit_price))} each` : "";
+                    const sub =
+                        line.kind === "load"
+                            ? loadDetail(line)
+                            : line.kind === "cash_in"
+                              ? cashInDetail(line)
+                              : line.kind === "cash_out"
+                                ? cashOutDetail(line)
+                                : line.kind === "bill"
+                                  ? billDetail(line)
+                              : line.qty > 1
+                                ? `${peso(toCents(line.unit_price))} each`
+                                : "";
                     const desc = line.description ? ` · ${line.description}` : "";
                     const editing = i === editingIndex;
                     return `<tr class="${editing ? "editing" : ""}">
@@ -272,6 +566,7 @@
                 .join("");
         }
         $("cartTotal").textContent = peso(cartTotal());
+        renderCashInRefs();
         updateJob();
         updateChange();
         updatePayment();
@@ -317,13 +612,25 @@
         updatePayment();
     });
 
+    // Cash to collect: each part as it would be on its own (the shop items and each bill to the whole
+    // peso, cash-ins with their fee); a cash-out pays toward it, so it can be negative (the shop gives cash).
+    function cashToCollect() {
+        if (isJob()) return cashDue(dueNow());
+        const sum = (kinds, f) => cart.filter((l) => kinds.includes(l.kind)).reduce((total, l) => total + f(l), 0);
+        return cashDue(sum(["service", "load"], lineTotal)) + sum(["bill"], (l) => cashDue(l.total_cents)) + sum(["cash_in", "cash_out"], (l) => l.total_cents);
+    }
+
     function updateChange() {
         const cash = toCents($("cashIn").value);
-        const total = cashDue(dueNow());
+        const total = cashToCollect();
         const el = $("cartChange");
+        el.classList.remove("short");
+        if (total < 0 && !cash) {
+            el.textContent = `Give ${peso(-total)} cash`;
+            return;
+        }
         if (cash === null || !total) {
             el.textContent = "₱0.00";
-            el.classList.remove("short");
             return;
         }
         el.textContent = cash >= total ? peso(cash - total) : `Short ${peso(total - cash)}`;
@@ -334,9 +641,25 @@
     // Paid with: cash (cash received/change) or the shop's GCash/Maya (reference no., no change).
     const payChoice = () => document.querySelector('input[name="pay"]:checked');
 
+    const isBank = (choice) => String(choice?.value || "").startsWith("bank:");
     function updatePayment() {
+        // A cash-in or cash-out is settled in cash at the counter.
+        const cashOnly = hasWalletItems();
+        document.querySelectorAll('input[name="pay"]').forEach((el) => {
+            el.disabled = cashOnly && el.value !== "cash";
+            if (cashOnly && el.value === "cash") el.checked = true;
+        });
+        $("jobField").hidden = hasExtras() || !!personal();
+        if (hasExtras()) $("isJob").checked = false;
         const choice = payChoice();
         const byWallet = choice.value !== "cash";
+        const bank = isBank(choice);
+        $("paySentField").hidden = bank;
+        $("payRefOptional").hidden = !bank;
+        if (bank) {
+            $("paySent").value = "";
+            $("payCashOut").hidden = true;
+        }
         const fromShop = personal() === "shop";
         $("payField").hidden = fromShop;
         $("shopFundsNote").hidden = !fromShop;
@@ -346,7 +669,8 @@
             const sent = toCents($("paySent").value);
             const expected = sent !== null && sent > dueNow() ? sent : dueNow();
             $("walletPayHint").innerHTML =
-                `Check that <strong>${escapeHtml(peso(expected))}</strong> arrived in ${escapeHtml(choice.dataset.name)}, then enter its reference no.`;
+                `Check that <strong>${escapeHtml(peso(expected))}</strong> arrived in ${escapeHtml(choice.dataset.name)}` +
+                (bank ? ". Enter its reference no. if there is one." : ", then enter its reference no.");
         }
         updateSaleCashOut();
     }
@@ -365,7 +689,7 @@
         const mine = ++saleCashOutSeq;
         const sentText = $("paySent").value.trim();
         $("payMobileField").hidden = !hasSaleCashOut();
-        if (!sentText || payChoice().value === "cash" || personal()) {
+        if (!sentText || payChoice().value === "cash" || isBank(payChoice()) || personal()) {
             box.hidden = true;
             return;
         }
@@ -387,7 +711,7 @@
     }
     // The customer sent more than the sale by GCash/Maya, so part of it is a cash-out.
     function hasSaleCashOut() {
-        return payChoice().value !== "cash" && !personal() && (toCents($("paySent").value) || 0) > dueNow();
+        return payChoice().value !== "cash" && !isBank(payChoice()) && !personal() && (toCents($("paySent").value) || 0) > dueNow();
     }
     $("paySent").addEventListener("input", updatePayment);
     // One number: the cash-out field and the "Customer phone" field under Customer stay the same.
@@ -404,6 +728,7 @@
         if (personal()) $("isJob").checked = false;
         $("jobField").hidden = !!personal();
         renderCart();
+        if (cart.some((l) => l.kind === "bill")) requoteBills();
         if ($("loadAmount").value.trim()) updateLoadQuote();
     }
     document.querySelectorAll('input[name="personal"]').forEach((el) => el.addEventListener("change", updatePersonal));
@@ -412,6 +737,8 @@
         setEditing(null);
         resetServiceForm();
         resetLoadForm();
+        resetCashInForm();
+        resetCashOutForm();
         cart.length = 0;
         setRadio("personal", "");
         if ($("jobField")) $("jobField").hidden = false;
@@ -423,22 +750,43 @@
         renderCart();
     }
 
+    // What the server needs for each item (the rest is for the screen).
+    function linePayload(line) {
+        if (line.kind === "bill") return { kind: "bill", bill: line.bill };
+        if (line.kind === "cash_in" || line.kind === "cash_out") {
+            const { kind, wallet_id, mobile_no, amount, reference, fee_mode } = line;
+            return { kind, wallet_id, mobile_no, amount, reference, fee_mode: fee_mode || "deducted" };
+        }
+        const { total_cents, name, detail, wallet_name, load_cents, cost_cents, ...rest } = line;
+        return rest;
+    }
+
     let saving = false;
     $("checkoutForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         if (saving) return;
         if (!cart.length) return say("Add at least one item", "error");
+        if (editingIndex !== null) return say("Finish editing the item first (Update or Cancel edit)", "error");
+        if (hasWalletItems() && personal()) return say("A personal sale can't include a cash-in or cash-out. Use the GCash / Maya tab.", "error");
+        if (hasCashIn()) {
+            const missing = cart.findIndex((line) => line.kind === "cash_in" && !String(line.reference || "").trim());
+            if (missing >= 0) {
+                $("cashInRefs").querySelector(`[data-cashin-ref="${missing}"]`)?.focus();
+                return say(`Send the cash-in, then enter its ${cart[missing].wallet_name} reference no.`, "error");
+            }
+        }
         const pay = payChoice();
         const fromShop = personal() === "shop";
-        const byWallet = pay.value !== "cash" && !fromShop;
+        const bank = !fromShop && isBank(pay);
+        const byWallet = pay.value !== "cash" && !fromShop && !bank;
         if (isJob()) {
             if (cart.some((line) => line.kind === "load")) return say("Load can't be in a job order. Ring it up as a separate sale.", "error");
             if (!$("custName").value.trim()) return say("Enter the customer's name for a job order", "error");
             const down = toCents($("downPayment").value);
             if (!down || down >= cartTotal()) return say("Down payment must be more than zero and less than the total", "error");
         }
-        if (fromShop) {
-            // Nothing to collect.
+        if (fromShop || bank) {
+            // Nothing to collect (bank: the reference no. is optional).
         } else if (byWallet) {
             if (!$("payRef").value.trim()) return say(`Enter the ${pay.dataset.name} reference no.`, "error");
             if (hasSaleCashOut() && !/^09\d{9}$/.test($("payMobile").value.trim())) {
@@ -447,20 +795,22 @@
             }
         } else {
             const cash = toCents($("cashIn").value);
-            if (cash === null) return say("Enter the cash received", "error");
-            if (cash < cashDue(dueNow())) return say(`Cash received is less than ${isJob() ? "the down payment" : "the total"} (${peso(cashDue(dueNow()))})`, "error");
+            const need = cashToCollect();
+            if (need > 0 && cash === null) return say("Enter the cash received", "error");
+            if ((cash || 0) < need) return say(`Cash received is less than ${isJob() ? "the down payment" : "the total"} (${peso(need)})`, "error");
         }
         saving = true;
         $("saveSale").disabled = true;
         const win = openReceiptWindow();
         try {
             const result = await postJson("/pos/api/sales", {
-                lines: cart.map(({ total_cents, name, detail, wallet_name, load_cents, cost_cents, ...line }) => line),
-                payment_method: byWallet ? "wallet" : "cash",
+                lines: cart.map(linePayload),
+                payment_method: bank ? "bank" : byWallet ? "wallet" : "cash",
                 pay_wallet_id: byWallet ? Number(pay.value) : null,
-                payment_reference: byWallet ? $("payRef").value : null,
+                bank: bank ? pay.dataset.name : null,
+                payment_reference: byWallet || bank ? $("payRef").value : null,
                 amount_sent: byWallet && $("paySent").value.trim() ? $("paySent").value : null,
-                cash: byWallet || fromShop ? null : $("cashIn").value,
+                cash: byWallet || bank || fromShop ? null : $("cashIn").value,
                 personal: personal() || null,
                 customer_name: $("custName").value,
                 customer_phone: $("custPhone").value,
@@ -480,7 +830,12 @@
                             (result.cash_out
                                 ? ` Cash-out ${escapeHtml(result.cash_out.txn_no)}: <strong>give ${escapeHtml(peso(result.cash_out.give_cents))} cash</strong>`
                                 : "")
-                          : `Change: <strong>${escapeHtml(peso(result.change_cents))}</strong>`) +
+                          : bank
+                            ? `Paid via ${escapeHtml(pay.dataset.name)}.`
+                            : toCents($("cashIn").value)
+                              ? `Change: <strong>${escapeHtml(peso(result.change_cents))}</strong>`
+                              : `<strong>Give ${escapeHtml(peso(result.change_cents))} cash</strong>`) +
+                    (result.bill_references.length ? ` Bills: ${escapeHtml(result.bill_references.join(", "))}.` : "") +
                     (opened ? "" : ` · <a href="${url}" target="receipt">Print receipt</a>`),
                 "success",
                 true,

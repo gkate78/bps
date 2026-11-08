@@ -5,7 +5,12 @@ from pydantic import BaseModel, Field
 
 
 class SaleLineIn(BaseModel):
-    kind: Literal["service", "load"]
+    # Besides services and loads, a sale can carry what the customer pays (or gets) together with it;
+    # each is saved in its own records, linked to the sale:
+    # cash_in: a GCash/Maya cash-in (wallet_id, mobile_no, amount; reference once it's sent).
+    # cash_out: a GCash/Maya cash-out (wallet_id it was received in, mobile_no, amount, fee_mode, reference).
+    # bill: a bill (BPS bill_records).
+    kind: Literal["service", "load", "cash_in", "cash_out", "bill"]
     # service lines
     service_id: Optional[int] = None
     description: Optional[str] = None
@@ -19,12 +24,16 @@ class SaleLineIn(BaseModel):
     is_promo: bool = False
     deducted: Optional[str] = None  # what the GCash/Maya app deducted; blank = the account's discount
     reference: Optional[str] = None
+    fee_mode: Literal["deducted", "paid_in_cash", "included"] = "deducted"  # cash-out lines
+    bill: Optional["BillIn"] = None  # bill lines
 
 
 class SaleIn(BaseModel):
     lines: list[SaleLineIn] = Field(default_factory=list)
-    payment_method: Literal["cash", "wallet"] = "cash"
+    # cash, the shop's GCash/Maya (pay_wallet_id) or its bank account (bank).
+    payment_method: Literal["cash", "wallet", "bank"] = "cash"
     pay_wallet_id: Optional[int] = None
+    bank: Optional[Literal["BDO", "BPI"]] = None
     payment_reference: Optional[str] = None
     # Paid by GCash/Maya and the customer sent more: the extra is a cash-out with its fee included.
     amount_sent: Optional[str] = None
@@ -100,3 +109,6 @@ class ParkIn(BaseModel):
     summary: str = ""
     total_cents: int = 0
     data: dict[str, Any]
+
+
+SaleLineIn.model_rebuild()

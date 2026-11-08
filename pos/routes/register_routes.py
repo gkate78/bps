@@ -146,7 +146,14 @@ async def create_sale(data: SaleIn, user: User = Depends(get_current_user), db: 
     except sales.PosError as exc:
         raise _bad_request(exc)
     cash_out = await sales.linked_cash_out(db, sale.id)
+    linked = [] if sale.payment_method == "wallet" else await sales.linked_wallet_txns(db, sale.id)
+    bills = await sales.linked_bills(db, sale.id)
     return {
+        "wallet_txns": [{"txn_no": t.txn_no, "kind": t.kind, "amount_cents": t.amount_cents, "fee_cents": t.fee_cents,
+                         "collect_cents": t.collect_cents, "give_cents": t.give_cents, "customer_mobile": t.customer_mobile}
+                        for t in linked],
+        "bill_ids": [b.id for b in bills],
+        "bill_references": [b.reference for b in bills],
         "id": sale.id,
         "sale_no": sale.sale_no,
         "change_cents": sale.change_cents,
@@ -315,18 +322,37 @@ async def _cashier_name(db: AsyncSession, user_id: int) -> str:
 
 @router.get("/receipt/sale/{sale_id}", response_class=HTMLResponse, include_in_schema=False)
 async def sale_receipt(
-    request: Request, sale_id: int, _: User = Depends(page_user), db: AsyncSession = Depends(get_db)
+    request: Request, sale_id: int, user: User = Depends(page_user), db: AsyncSession = Depends(get_db)
 ):
     sale, lines = await sales.get_sale(db, sale_id)
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
+    # Bills, cash-ins and cash-outs paid together with the sale; the cash-out of "Amount sent" is shown on its own.
+    bills = await sales.linked_bills(db, sale.id)
+    # Cash-in/cash-out items are only in cash sales; a GCash/Maya-paid sale's cash-out is its "Amount sent" extra.
+    by_wallet = sale.payment_method == "wallet"
+    wallet_txns = [] if by_wallet else await sales.linked_wallet_txns(db, sale.id)
+    cash_out = await sales.linked_cash_out(db, sale.id) if by_wallet else None
+    grand_total = (
+        sale.total_cents
+        + sum(int(round(float(b.total or 0) * 100)) for b in bills)
+        + sum(t.collect_cents - t.give_cents for t in wallet_txns)
+    )
+    from app.routes.bill_routes import _build_receipt_settings, _get_receipt_business_profile
+
+    profile = await _get_receipt_business_profile(db, user) if bills else None
     return templates.TemplateResponse(
         request,
         "pos/receipt_sale.html",
         {
             "sale": sale,
             "lines": lines,
-            "cash_out": await sales.linked_cash_out(db, sale.id),
+            "cash_out": cash_out,
+            "wallet_txns": wallet_txns,
+            "bills": bills,
+            "grand_total_cents": grand_total,
+            "business_profile": profile,
+            "receipt_settings": _build_receipt_settings(profile) if bills else None,
             "settings": await get_settings(db),
             "business": await receipt_business(db),
             "cashier": await _cashier_name(db, sale.cashier_user_id),

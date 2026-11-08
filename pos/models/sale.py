@@ -111,3 +111,13 @@ class PosSaleLine(SQLModel, table=True):
     @property
     def cost_cents(self) -> int:
         return self.load_cents if self.wallet_cost_cents is None else self.wallet_cost_cents
+
+
+class PosSaleBill(SQLModel, table=True):
+    """A bill (BPS bill_records) paid together with a shop sale. The bill itself stays in bill_records."""
+
+    __tablename__ = "pos_sale_bills"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    sale_id: int = Field(index=True, foreign_key="pos_sales.id")
+    bill_record_id: int = Field(index=True)

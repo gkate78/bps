@@ -24,7 +24,31 @@
     {% if line.qty > 1 %}<div class="sub">{{ line.qty }} × {{ line.unit_price_cents | fmt }}</div>{% endif %}
     {% endif %}
 {% endfor %}
-<div class="line total"><span>TOTAL</span><span>{{ sale.total_cents | fmt }}</span></div>
+{% for bill in bills or [] %}
+<div class="line">
+    <span>BILL {{ bill.biller }}</span>
+    <span>{{ "{:,.2f}".format(bill.total or 0) }}</span>
+</div>
+<div class="sub">{{ bill.account }} · {{ bill.customer_name }}</div>
+<div class="sub">{{ bill.reference }}</div>
+{% endfor %}
+{% for t in wallet_txns or [] %}
+{% if t.kind == 'cash_in' %}
+<div class="line">
+    <span>{{ t.wallet_name }} CASH-IN{% if t.status == 'voided' %} (VOIDED){% endif %}</span>
+    <span>{{ t.collect_cents | fmt }}</span>
+</div>
+<div class="sub">{{ t.customer_mobile }} · ₱{{ t.amount_cents | fmt }} + ₱{{ t.fee_cents | fmt }} FEE</div>
+{% else %}
+<div class="line">
+    <span>{{ t.wallet_name }} CASH-OUT{% if t.status == 'voided' %} (VOIDED){% endif %}</span>
+    <span>-{{ (t.give_cents - t.collect_cents) | fmt }}</span>
+</div>
+<div class="sub">{{ t.customer_mobile }} · ₱{{ t.amount_cents | fmt }} RECEIVED{% if t.fee_mode == 'paid_in_cash' %}, ₱{{ t.fee_cents | fmt }} FEE IN CASH{% else %} − ₱{{ t.fee_cents | fmt }} FEE{% endif %}</div>
+{% endif %}
+<div class="sub">REF {{ t.reference }}</div>
+{% endfor %}
+<div class="line total"><span>TOTAL</span><span>{{ grand_total_cents | fmt }}</span></div>
 {% if sale.is_job_order %}
 <div class="line"><span>DOWN PAYMENT</span><span>{{ sale.checkout_paid_cents | fmt }}</span></div>
 <div class="line total"><span>BALANCE</span><span>{{ (sale.total_cents - sale.checkout_paid_cents) | fmt }}</span></div>
@@ -33,20 +57,30 @@
 {% endif %}
 {% if sale.personal %}<div class="info">PERSONAL{{ ' · FROM SHOP FUNDS' if sale.personal == 'shop' }}</div>{% endif %}
 {% if sale.payment_method == 'shop' %}
+{% elif sale.payment_method == 'bank' %}
+<div class="line"><span>PAID VIA {{ sale.pay_wallet_name }}</span><span>{{ grand_total_cents | fmt }}</span></div>
+{% if sale.payment_reference %}<div class="info">REF {{ sale.payment_reference }}</div>{% endif %}
 {% elif sale.payment_method == 'wallet' %}
-<div class="line"><span>PAID VIA {{ sale.pay_wallet_name }}</span><span>{{ sale.checkout_paid_cents | fmt }}</span></div>
+<div class="line"><span>PAID VIA {{ sale.pay_wallet_name }}</span><span>{{ (grand_total_cents if not sale.is_job_order else sale.checkout_paid_cents) | fmt }}</span></div>
 {% if cash_out %}
 <div class="rule"></div>
 <div class="info">CASH-OUT {{ cash_out.txn_no }}{% if cash_out.status == 'voided' %} (VOIDED){% endif %}</div>
 <div class="line"><span>AMOUNT</span><span>{{ cash_out.amount_cents | fmt }}</span></div>
 <div class="line"><span>FEE (INCLUDED)</span><span>-{{ cash_out.fee_cents | fmt }}</span></div>
 <div class="line total"><span>CASH GIVEN</span><span>{{ cash_out.give_cents | fmt }}</span></div>
-<div class="line"><span>TOTAL SENT VIA {{ sale.pay_wallet_name }}</span><span>{{ (sale.checkout_paid_cents + cash_out.amount_cents) | fmt }}</span></div>
+<div class="line"><span>TOTAL SENT VIA {{ sale.pay_wallet_name }}</span><span>{{ (grand_total_cents + cash_out.amount_cents) | fmt }}</span></div>
 {% endif %}
 <div class="info">REF {{ sale.payment_reference }}</div>
 {% else %}
-<div class="line"><span>CASH</span><span>{{ sale.cash_cents | fmt }}</span></div>
-<div class="line"><span>CHANGE</span><span>{{ sale.change_cents | fmt }}</span></div>
+{% if sale.cash_cents %}<div class="line"><span>CASH</span><span>{{ sale.cash_cents | fmt }}</span></div>{% endif %}
+<div class="line{{ ' total' if not sale.cash_cents }}"><span>{{ 'CHANGE' if sale.cash_cents else 'CASH GIVEN' }}</span><span>{{ sale.change_cents | fmt }}</span></div>
 {% endif %}
 {% if cashier %}<div class="meta">CASHIER: {{ cashier }}</div>{% endif %}
+{% endblock %}
+
+{% block after %}
+{# Each bill's own receipt, 2 copies, in the same print job (as from the Bills tab). #}
+{% for record in bills or [] %}{% for _ in range(2) %}
+{% include "_bill_receipt.html" %}
+{% endfor %}{% endfor %}
 {% endblock %}

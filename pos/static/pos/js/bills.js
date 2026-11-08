@@ -7,6 +7,10 @@
     const notice = $("notice");
     const bills = [];
     let editingIndex = null;
+    // The bill form also adds bills to a shop sale (BILL in the Shop sale tab): it's moved there and
+    // hands each bill to register.js instead of this tab's list.
+    let inShop = false;
+    let shopIndex = null; // the sale item being edited, or null for a new one
 
     function say(message, kind = "success", html = false) {
         notice.className = `alert alert-${kind}`;
@@ -26,7 +30,7 @@
     };
 
     // Admin's own bills: "" (no), "paid" (no service charge) or "shop" (from shop funds, nothing collected).
-    const personal = () => radio("b_personal");
+    const personal = () => (inShop ? radio("personal") : radio("b_personal"));
     const payMethod = () => radio("b_pay") || "CASH";
     const METHOD_NAMES = { CASH: "Cash", GCASH: "GCash", MAYA: "Maya", BDO: "BDO", BPI: "BPI" };
 
@@ -200,6 +204,7 @@
 
     $("billEditor").addEventListener("submit", async (event) => {
         event.preventDefault();
+        if (inShop) return addToSale();
         const bill = editorBill();
         if (!bill.account || !bill.biller || !bill.customer_name) return say("Enter the account, biller and customer name", "error");
         if (bill.cp_number && !/^\d{11}$/.test(bill.cp_number)) return say("CP number must be exactly 11 digits", "error");
@@ -227,6 +232,85 @@
         $("bAccount").focus();
     });
 
+    // ---------- Bills in a shop sale ----------
+    async function addToSale() {
+        const bill = editorBill();
+        if (!bill.account || !bill.biller || !bill.customer_name) return say("Enter the account, biller and customer name", "error");
+        if (bill.cp_number && !/^\d{11}$/.test(bill.cp_number)) return say("CP number must be exactly 11 digits", "error");
+        if (!bill.due_date) return say("Enter the due date", "error");
+        if (!toCents(bill.amount)) return say("Enter the bill amount", "error");
+        $("billSubmit").disabled = true;
+        try {
+            bill.quote = await fetchQuote(bill, { openRule: true });
+        } catch (err) {
+            $("billQuote").classList.add("error");
+            $("billQuote").textContent = err.message;
+            return say(err.message, "error");
+        } finally {
+            $("billSubmit").disabled = false;
+        }
+        // register.js checks for the same account and amount in the sale, then adds or updates it.
+        const event = new CustomEvent("pos:bill-ready", { detail: { bill, index: shopIndex }, cancelable: true });
+        if (!window.dispatchEvent(event)) return; // refused (a duplicate); the message is shown
+        hush();
+        shopIndex = null;
+        $("billSubmit").textContent = "Add bill";
+        $("billCancel").hidden = true;
+        resetEditor();
+        $("bAccount").focus();
+    }
+
+    const billHeading = () => $("billEditor").querySelector("h2, h3");
+    function openInShop(slot, bill = null, index = null) {
+        const form = $("billEditor");
+        if (!inShop) {
+            slot.appendChild(form);
+            form.classList.remove("panel");
+            form.classList.add("editor");
+            billHeading().textContent = "Bill (paid with this sale)";
+            inShop = true;
+            resetEditor();
+        }
+        form.hidden = false;
+        shopIndex = index;
+        $("billSubmit").textContent = index === null ? "Add bill" : "Update bill";
+        $("billCancel").hidden = index === null;
+        if (bill) {
+            $("bAccount").value = bill.account;
+            $("bBiller").value = bill.biller;
+            $("bName").value = bill.customer_name;
+            $("bPhone").value = bill.cp_number;
+            $("bDue").value = bill.due_date;
+            $("bAmount").value = bill.amount;
+            $("bPayRef").value = bill.payment_reference || "";
+            lookedUp = bill.account;
+            updateQuote();
+            $("bAmount").focus();
+        } else {
+            $("bAccount").focus();
+        }
+    }
+    function closeInShop() {
+        if (!inShop) return;
+        const form = $("billEditor");
+        form.hidden = false;
+        form.classList.add("panel");
+        form.classList.remove("editor");
+        billHeading().textContent = "Add bill";
+        $("tab-bills").prepend(form);
+        inShop = false;
+        shopIndex = null;
+        setEditing(editingIndex);
+        resetEditor();
+    }
+    function hideInShop() {
+        if (!inShop) return;
+        $("billEditor").hidden = true;
+        shopIndex = null;
+        $("billSubmit").textContent = "Add bill";
+        $("billCancel").hidden = true;
+    }
+
     function editBill(index) {
         const bill = bills[index];
         hush();
@@ -244,6 +328,14 @@
         $("bAmount").focus();
     }
     $("billCancel").addEventListener("click", () => {
+        if (inShop) {
+            window.dispatchEvent(new CustomEvent("pos:bill-cancel"));
+            shopIndex = null;
+            $("billSubmit").textContent = "Add bill";
+            $("billCancel").hidden = true;
+            resetEditor();
+            return;
+        }
         setEditing(null);
         resetEditor();
         renderBills();
@@ -289,6 +381,8 @@
         updateQuote();
     }
     document.querySelectorAll('input[name="b_personal"]').forEach((el) => el.addEventListener("change", requoteAll));
+    // In a shop sale, the sale's Personal changes the charge shown for the bill being entered.
+    document.querySelectorAll('input[name="personal"]').forEach((el) => el.addEventListener("change", () => inShop && updateQuote()));
 
     // ---------- Payment ----------
     function updatePayment() {
@@ -531,7 +625,14 @@
         },
         clear,
         focus: () => $("bAccount").focus(),
-        shown: loadMyBills,
+        shown() {
+            closeInShop();
+            loadMyBills();
+        },
+        openInShop,
+        hideInShop,
+        closeInShop,
+        quote: fetchQuote, // charges for a bill (uses the sale's Personal while the form is in the sale)
     };
 
     renderBills();

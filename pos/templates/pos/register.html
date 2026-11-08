@@ -24,6 +24,9 @@
             <button type="button" class="svc-btn" data-service-id="{{ s.id }}" data-name="{{ s.name }}">{{ s.name }}</button>
             {% endfor %}
             <button type="button" class="svc-btn svc-load" data-load="1">LOAD</button>
+            <button type="button" class="svc-btn svc-load" data-cashin="1">CASH-IN</button>
+            <button type="button" class="svc-btn svc-load" data-cashout="1">CASH-OUT</button>
+            <button type="button" class="svc-btn svc-load" data-bill="1">BILL</button>
         </div>
 
         <form id="serviceEditor" class="editor" hidden autocomplete="off">
@@ -75,6 +78,60 @@
                 <button type="submit" class="btn btn-primary" id="loadSubmit">Add load</button>
             </div>
         </form>
+
+        <form id="cashInEditor" class="editor" hidden autocomplete="off">
+            <h3>GCash / Maya cash-in <span class="muted">(paid with this sale)</span></h3>
+            <div class="field">
+                <span class="field-label">Send from</span>
+                <div class="choice" id="cashInWallets">
+                    {% for w in wallets %}
+                    <label class="pill"><input type="radio" name="cashin_wallet" value="{{ w.id }}" data-name="{{ w.name }}" {{ 'checked' if loop.first }}> {{ w.name }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="row2">
+                <label>Customer's mobile no. <input type="tel" id="ciMobile" maxlength="11" inputmode="numeric" placeholder="09XXXXXXXXX" required></label>
+                <label>Cash-in amount ₱ <input type="text" id="ciAmount" inputmode="numeric" required></label>
+            </div>
+            <div class="quote" id="ciQuote">Enter the cash-in amount.</div>
+            <div class="actions">
+                <button type="button" class="btn btn-secondary" id="ciCancel" hidden>Cancel edit</button>
+                <button type="submit" class="btn btn-primary" id="ciSubmit">Add cash-in</button>
+            </div>
+        </form>
+
+        <form id="cashOutEditor" class="editor" hidden autocomplete="off">
+            <h3>GCash / Maya cash-out <span class="muted">(pays toward this sale; the shop gives back the rest)</span></h3>
+            <div class="field">
+                <span class="field-label">Received in</span>
+                <div class="choice">
+                    {% for w in wallets %}
+                    <label class="pill"><input type="radio" name="cashout_wallet" value="{{ w.id }}" data-name="{{ w.name }}" {{ 'checked' if loop.first }}> {{ w.name }}</label>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="row2">
+                <label>Customer's mobile no. <input type="tel" id="coMobile" maxlength="11" inputmode="numeric" placeholder="09XXXXXXXXX" required></label>
+                <label>Amount received ₱ <input type="text" id="coAmount" inputmode="numeric" required></label>
+            </div>
+            <div class="field">
+                <span class="field-label">Fee</span>
+                <div class="choice">
+                    <label class="pill"><input type="radio" name="cashout_fee" value="deducted" checked> Deduct from payout</label>
+                    <label class="pill"><input type="radio" name="cashout_fee" value="included"> Included in amount sent</label>
+                    <label class="pill"><input type="radio" name="cashout_fee" value="paid_in_cash"> Paid in cash</label>
+                </div>
+            </div>
+            <label>Reference no. <input type="text" id="coRef" maxlength="60" required></label>
+            <p class="alert alert-error small" id="coRefWarn" hidden></p>
+            <div class="quote" id="coQuote">Enter the amount received.</div>
+            <div class="actions">
+                <button type="button" class="btn btn-secondary" id="coCancel" hidden>Cancel edit</button>
+                <button type="submit" class="btn btn-primary" id="coSubmit">Add cash-out</button>
+            </div>
+        </form>
+        <!-- BILL: the Bills tab's form (#billEditor) is moved here while a bill is added to the sale. -->
+        <div id="shopBillSlot"></div>
     </div>
 
     <div class="panel cart">
@@ -123,16 +180,19 @@
                     {% for w in wallets %}
                     <label class="pill"><input type="radio" name="pay" value="{{ w.id }}" data-name="{{ w.name }}"> {{ w.name }}</label>
                     {% endfor %}
+                    <label class="pill"><input type="radio" name="pay" value="bank:BDO" data-name="BDO"> BDO</label>
+                    <label class="pill"><input type="radio" name="pay" value="bank:BPI" data-name="BPI"> BPI</label>
                 </div>
             </div>
+            <div id="cashInRefs" class="stack" hidden></div>
             <div id="cashBlock" class="stack">
                 <label class="cash">Cash received ₱ <input type="text" id="cashIn" inputmode="decimal"></label>
                 <div class="total-row change"><span>Change</span><strong id="cartChange">₱0.00</strong></div>
             </div>
             <div id="walletPayBlock" class="stack" hidden>
                 <div class="quote" id="walletPayHint"></div>
-                <label>Reference no. <input type="text" id="payRef" maxlength="60"></label>
-                <label>Amount sent ₱ <span class="muted">(only if the customer also cashes out)</span> <input type="text" id="paySent" inputmode="decimal"></label>
+                <label>Reference no. <span class="muted" id="payRefOptional" hidden>(optional)</span> <input type="text" id="payRef" maxlength="60"></label>
+                <label id="paySentField">Amount sent ₱ <span class="muted">(only if the customer also cashes out)</span> <input type="text" id="paySent" inputmode="decimal"></label>
                 <label id="payMobileField" hidden>Customer mobile no. <span class="muted">(for the cash-out)</span> <input type="tel" id="payMobile" maxlength="11" inputmode="numeric" placeholder="09XXXXXXXXX"></label>
                 <div class="quote big" id="payCashOut" hidden></div>
             </div>

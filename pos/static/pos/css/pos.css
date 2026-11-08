@@ -288,3 +288,6 @@ textarea.code { width: 100%; font-family: ui-monospace, Consolas, monospace; fon
 .panel-head-row h2 { margin: 0; }
 .table-scroll { overflow-x: auto; }
 .table-scroll .lines { min-width: 520px; }
+
+/* A payment option that doesn't apply (e.g. a sale with a cash-out is settled in cash). */
+.pill:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
