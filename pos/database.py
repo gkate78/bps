@@ -39,6 +39,17 @@ async def init_db() -> None:
 
     async with bps_db.engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        # Split payment: part cash, part GCash/Maya.
+        await _add_missing_columns(
+            conn,
+            "pos_sales",
+            (
+                ("split_wallet_id", "INTEGER"),
+                ("split_wallet_name", "VARCHAR(60)"),
+                ("split_reference", "VARCHAR(60)"),
+                ("split_cents", "INTEGER NOT NULL DEFAULT 0"),
+            ),
+        )
         await _add_missing_columns(
             conn,
             "pos_sales",

@@ -280,12 +280,38 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
         if bill_lines else []
     )
     bill_totals = [total for *_, total in prepared_bills]
+    split = None
+    if (data.split_amount or "").strip():
+        if payment is not None:
+            raise PosError("Only a cash payment can have part paid by GCash/Maya")
+        if wallet_txns:
+            raise PosError("A sale with a cash-in or cash-out is paid in cash only")
+        if data.is_job_order:
+            raise PosError("A job order's down payment can't be split between cash and GCash/Maya")
+        split_wallet = await _get_active(db, PosWallet, data.split_wallet_id, "GCash/Maya account for the part sent")
+        split_amount = _money(data.split_amount, f"Amount sent by {split_wallet.name}")
+        if split_amount <= 0:
+            raise PosError(f"Amount sent by {split_wallet.name} must be more than zero")
+        if split_amount % 100:
+            raise PosError(f"Amount sent by {split_wallet.name} must be in whole pesos (the rest is collected in cash)")
+        split_reference = clean_text(data.split_reference, 60)
+        if not split_reference:
+            raise PosError(f"Enter the {split_wallet.name} reference no.")
+        await _check_reference(db, split_reference)
+        # Bills in the sale stay recorded as cash (one method per bill); the GCash/Maya part is on the sale.
+        split = {"split_wallet_id": split_wallet.id, "split_wallet_name": split_wallet.name,
+                 "split_reference": split_reference, "split_cents": split_amount}
+
     if payment is None:
         # Each part is collected as it would be on its own (the sale and each bill to the whole peso,
         # cash-ins with their fee); a cash-out pays toward it (the shop gives back what's left).
         bill_cash = [cash_due_cents(total) for total in bill_totals]
         wallet_net = sum(quote.collect_cents - quote.give_cents for *_, quote in wallet_txns)
         need = cash_due_cents(due) + sum(bill_cash) + wallet_net
+        if split:
+            if split["split_cents"] > need:
+                raise PosError(f"Amount sent by {split['split_wallet_name']} is more than the total (₱{need / 100:,.2f})")
+            need -= split["split_cents"]  # the rest is in cash
         if (data.cash or "").strip():
             cash = _money(data.cash, "Cash received")
         elif need <= 0:
@@ -294,7 +320,7 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
             raise PosError("Enter the cash received")
         if cash < need:
             raise PosError(f"Cash received is less than the amount due (₱{need / 100:,.2f})")
-        payment = {"payment_method": "cash", "cash_cents": cash, "change_cents": cash - need}
+        payment = {"payment_method": "cash", "cash_cents": cash, "change_cents": cash - need, **(split or {})}
     elif payment["payment_method"] == "shop":
         bill_cash = [0] * len(bill_totals)
     else:
@@ -440,6 +466,11 @@ async def used_reference(db: AsyncSession, reference: Optional[str]) -> Optional
     if sale:
         what = "job order down payment" if sale.is_job_order else "shop sale paid"
         return UsedReference(sale.sale_no, f"{sale.pay_wallet_name} {what}", sale.checkout_paid_cents, sale.created_at)
+    split = (
+        await db.execute(select(PosSale).where(PosSale.status == "completed", same(PosSale.split_reference)).limit(1))
+    ).scalar_one_or_none()
+    if split:
+        return UsedReference(split.sale_no, f"{split.split_wallet_name} part of a shop sale", split.split_cents, split.created_at)
     payment = (
         await db.execute(
             select(PosSalePayment)
@@ -754,6 +785,8 @@ async def list_transactions(
                 details += f" · job order, down payment ₱{sale.checkout_paid_cents / 100:,.2f}"
             if sale.payment_method in ("wallet", "bank"):
                 details += f" · paid via {sale.pay_wallet_name}" + (f" ref {sale.payment_reference}" if sale.payment_reference else "")
+            if sale.split_cents:
+                details += f" · ₱{sale.split_cents / 100:,.2f} via {sale.split_wallet_name} ref {sale.split_reference}, rest in cash"
             if sale.personal:
                 details += f" · {PERSONAL_LABELS[sale.personal]}"
             haystack = " ".join(filter(None, [sale.sale_no, details, sale.customer_name, sale.customer_phone, sale.bir_invoice_no]))
@@ -983,6 +1016,15 @@ async def day_summary(
 
     with_lines = {line.sale_id for line in lines} if completed else set()
     for sale in completed.values():
+        if sale.split_cents:
+            # Part sent to the shop's GCash/Maya: in that wallet, not the drawer (the parts were counted as cash).
+            out.wallet_deltas[sale.split_wallet_name] += sale.split_cents
+            out.wallet_parts[sale.split_wallet_name]["payments"] += sale.split_cents
+            out.sales_paid_by_wallet[sale.split_wallet_name][0] += 1
+            out.sales_paid_by_wallet[sale.split_wallet_name][1] += sale.split_cents
+            out.drawer_cents -= sale.split_cents
+            out.shop_cash_cents -= sale.split_cents
+            out.by_cashier[who(sale.cashier_user_id)][1] -= sale.split_cents
         # A sale of only bills, cash-ins or cash-outs isn't a shop sale; those count in their own records.
         if sale.id not in with_lines:
             continue

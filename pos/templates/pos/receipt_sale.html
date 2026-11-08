@@ -72,8 +72,12 @@
 {% endif %}
 <div class="info">REF {{ sale.payment_reference }}</div>
 {% else %}
+{% if sale.split_cents %}
+<div class="line"><span>PAID VIA {{ sale.split_wallet_name }}</span><span>{{ sale.split_cents | fmt }}</span></div>
+<div class="info">REF {{ sale.split_reference }}</div>
+{% endif %}
 {% if sale.cash_cents %}<div class="line"><span>CASH</span><span>{{ sale.cash_cents | fmt }}</span></div>{% endif %}
-<div class="line{{ ' total' if not sale.cash_cents }}"><span>{{ 'CHANGE' if sale.cash_cents else 'CASH GIVEN' }}</span><span>{{ sale.change_cents | fmt }}</span></div>
+<div class="line{{ ' total' if not sale.cash_cents and not sale.split_cents }}"><span>{{ 'CHANGE' if sale.cash_cents or sale.split_cents else 'CASH GIVEN' }}</span><span>{{ sale.change_cents | fmt }}</span></div>
 {% endif %}
 {% if cashier %}<div class="meta">CASHIER: {{ cashier }}</div>{% endif %}
 {% endblock %}
