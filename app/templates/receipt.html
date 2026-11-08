@@ -105,6 +105,11 @@
             font-size: 12px;
             text-transform: uppercase;
         }
+        /* Several bills paid together: each bill is its own receipt (the printer cuts between them). */
+        .receipt + .receipt {
+            break-before: page;
+            page-break-before: always;
+        }
         .sign-line {
             border-top: 1px solid #111;
             margin: 0 auto 1.2mm;
@@ -120,6 +125,7 @@
     </style>
 </head>
 <body>
+    {% for record in records %}
     <div class="receipt">
         <div class="shop">
             {% if receipt_settings.show_business_name %}
@@ -198,6 +204,7 @@
         <p class="meta">{{ business_profile.receipt_footer if business_profile and business_profile.receipt_footer else "THANK YOU" }}</p>
         {% endif %}
     </div>
+    {% endfor %}
     <div class="preview-actions">
         <button type="button" class="toolbar-btn primary" id="printReceiptBtn">Print</button>
         <button type="button" class="toolbar-btn" id="cancelPreviewBtn">Cancel</button>
@@ -228,6 +235,9 @@
 
         document.getElementById("printReceiptBtn").addEventListener("click", printCopies);
         document.getElementById("cancelPreviewBtn").addEventListener("click", () => window.close());
+        if (params.get("autoprint") === "1") {
+            window.addEventListener("load", () => setTimeout(printCopies, 150));
+        }
     </script>
 </body>
 </html>

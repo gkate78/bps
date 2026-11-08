@@ -32,12 +32,15 @@
         document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("on", t.dataset.tab === name));
         $("tab-shop").hidden = name !== "shop";
         $("tab-wallet").hidden = name !== "wallet";
+        $("tab-bills").hidden = name !== "bills";
+        if (name === "bills") window.registerBills?.shown();
     }
     document.querySelectorAll(".tab").forEach((tab) => {
         tab.addEventListener("click", () => {
             showTab(tab.dataset.tab);
             hush();
             if (tab.dataset.tab === "wallet") $("wAmount").focus();
+            if (tab.dataset.tab === "bills") window.registerBills?.focus();
         });
     });
 
@@ -708,7 +711,10 @@
 
     function restore(item) {
         const data = item.data || {};
-        if (item.kind === "sale") {
+        if (item.kind === "bills") {
+            showTab("bills");
+            window.registerBills.restore(data);
+        } else if (item.kind === "sale") {
             clearSale();
             showEditor(null);
             cart.push(...(data.cart || []));
@@ -765,9 +771,11 @@
     }
 
     async function park(which) {
-        const body = which === "sale" ? saleParking() : walletParking();
+        const body = which === "sale" ? saleParking() : which === "bills" ? window.registerBills.parking() : walletParking();
         const result = await postJson("/pos/api/parked", body);
-        if (which === "sale") {
+        if (which === "bills") {
+            window.registerBills.clear();
+        } else if (which === "sale") {
             clearSale();
             showEditor(null);
         } else {
@@ -798,6 +806,17 @@
         loadParked();
     });
 
+    $("parkBills").addEventListener("click", async () => {
+        if (!window.registerBills.inProgress()) return say("Nothing to park yet. Add a bill first.", "error");
+        try {
+            const result = await park("bills");
+            say(`Parked ${result.label}. Ready for the next customer.`);
+        } catch (err) {
+            say(err.message, "error");
+        }
+        loadParked();
+    });
+
     $("parkedList").addEventListener("click", async (event) => {
         const resume = event.target.closest("[data-resume]");
         const discard = event.target.closest("[data-discard]");
@@ -814,6 +833,7 @@
             let swapped = null;
             if (kind === "sale" && saleInProgress()) swapped = await park("sale");
             if (kind === "wallet" && walletInProgress()) swapped = await park("wallet");
+            if (kind === "bills" && window.registerBills.inProgress()) swapped = await park("bills");
             const item = await postJson(`/pos/api/parked/${id}/resume`, {});
             restore(item);
             say(`Resumed ${item.label}.${swapped ? ` ${swapped.label} was parked.` : ""}`);
@@ -827,12 +847,28 @@
     window.addEventListener("focus", loadParked);
     setInterval(loadParked, 30000);
 
-    // Coming from a bill ("Next: Shop sale"): fill in the customer, nothing else.
-    const fromBill = new URLSearchParams(window.location.search);
-    if (fromBill.get("customer_name") || fromBill.get("customer_phone")) {
-        $("custName").value = (fromBill.get("customer_name") || "").toUpperCase();
-        $("custPhone").value = $("payMobile").value = (fromBill.get("customer_phone") || "").replace(/\D/g, "").slice(0, 11);
+    // A shop sale for a bills customer (link after saving bills, or "Next: Shop sale" on the online
+    // entry form): fill in the customer, nothing else.
+    function shopSaleFor(name, phone) {
+        if (saleInProgress()) {
+            say("Finish or park the current shop sale first.", "error");
+            showTab("shop");
+            return;
+        }
+        $("custName").value = String(name || "").toUpperCase();
+        $("custPhone").value = $("payMobile").value = String(phone || "").replace(/\D/g, "").slice(0, 11);
         document.querySelector("#checkoutForm details").open = true;
+        showTab("shop");
+        hush();
+    }
+    window.addEventListener("pos:shop-sale-for", (event) => shopSaleFor(event.detail.name, event.detail.phone));
+    const fromUrl = new URLSearchParams(window.location.search);
+    if (fromUrl.get("customer_name") || fromUrl.get("customer_phone")) {
+        shopSaleFor(fromUrl.get("customer_name"), fromUrl.get("customer_phone"));
+        history.replaceState(null, "", "/pos");
+    } else if (fromUrl.get("tab") === "bills") {
+        showTab("bills");
+        window.registerBills?.focus();
         history.replaceState(null, "", "/pos");
     }
 

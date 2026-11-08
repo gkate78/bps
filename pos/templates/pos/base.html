@@ -16,7 +16,7 @@
         </div>
         {% if user %}
         <nav class="nav">
-            <a href="/dashboard" class="switch">← Bills</a>
+            {% if user.role == 'admin' %}<a href="/dashboard" class="switch">← Bills records</a>{% endif %}
             <a href="/pos" class="{{ 'on' if active == 'register' }}">Register</a>
             <a href="/pos/jobs" class="{{ 'on' if active == 'jobs' }}">Job orders</a>
             <a href="/pos/sales" class="{{ 'on' if active == 'sales' }}">Sales</a>

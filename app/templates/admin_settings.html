@@ -31,7 +31,7 @@
     <ol class="setup-steps">
         <li>Confirm your <strong>business profile</strong> below and click <strong>Save Business Details</strong> (used on receipts).</li>
         <li>Add <strong>biller rules</strong>: use <strong>Import Biller Rules CSV</strong> (repo file <code>sample_biller_rules.csv</code> is a starter) or fill the form and <strong>Add / Update Rule</strong> for each biller.</li>
-        <li>Open <a href="/entry/form">Payment Entry</a> to encode new payments, or <a href="/admin/records">Records</a> to search, edit, and import historical bill CSVs.</li>
+        <li>Open <a href="{{ '/pos?tab=bills' if pos_enabled else '/entry/form' }}">Payment Entry</a> to encode new payments, or <a href="/admin/records">Records</a> to search, edit, and import historical bill CSVs.</li>
     </ol>
     {% if show_welcome_guide %}
     <p class="panel-onboarding-foot"><a href="/admin/settings">Hide welcome message</a> (setup tips stay visible until you have at least one active biller rule).</p>

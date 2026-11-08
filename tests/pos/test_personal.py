@@ -29,11 +29,10 @@ def load(amount: str, **extra) -> dict:
 def test_personal_bill_has_no_service_charge(shop):
     shop.add(BillerRule(biller="MERALCO", service_charge=15))
     client = shop.client
-    assert 'id="personal"' in client.get("/entry/form").text
     register = client.get("/pos").text
-    assert 'name="personal"' in register and 'name="w_personal"' in register
-    assert "/pos/static/js/register.js?v=" in register  # so an update isn't run from an old cached script
-    assert "/static/js/entry_form.js?v=" in client.get("/entry/form").text
+    assert 'name="personal"' in register and 'name="w_personal"' in register and 'name="b_personal"' in register
+    # Versioned, so an update isn't run from an old cached script.
+    assert "/pos/static/js/register.js?v=" in register and "/pos/static/js/bills.js?v=" in register
 
     paid =client.post("/api/records", json=new_bill(personal="paid"))
     assert paid.status_code == 201, paid.text
@@ -65,8 +64,8 @@ def test_only_admins_can_enter_personal_transactions(shop):
         json={"kind": "cash_in", "wallet_id": GCASH, "amount": "500", "customer_mobile": "09181112222", "reference": "X", "personal": "paid"},
     )
     assert r.status_code == 400
-    assert 'name="personal"' not in client.get("/pos").text
-    assert 'id="personal"' not in client.get("/entry/form").text
+    register = client.get("/pos").text
+    assert 'name="personal"' not in register and 'name="b_personal"' not in register
 
 
 def test_personal_sale_loads_without_fees(shop):

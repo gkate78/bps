@@ -13,7 +13,7 @@ class PosParkedTxn(SQLModel, table=True):
     __tablename__ = "pos_parked_txns"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    kind: str = Field(max_length=10)  # sale | wallet
+    kind: str = Field(max_length=10)  # sale | wallet | bills
     label: str = Field(max_length=160)  # customer name, or "WALK-IN"
     summary: str = Field(default="", max_length=300)
     total_cents: int = Field(default=0, nullable=False)
