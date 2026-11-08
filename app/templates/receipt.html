@@ -105,7 +105,7 @@
             font-size: 12px;
             text-transform: uppercase;
         }
-        /* Several bills paid together: each bill is its own receipt (the printer cuts between them). */
+        /* Each copy, and each bill paid together, is its own receipt (the printer cuts between them). */
         .receipt + .receipt {
             break-before: page;
             page-break-before: always;
@@ -125,7 +125,7 @@
     </style>
 </head>
 <body>
-    {% for record in records %}
+    {% for record in records %}{% for _ in range(copies) %}
     <div class="receipt">
         <div class="shop">
             {% if receipt_settings.show_business_name %}
@@ -204,39 +204,35 @@
         <p class="meta">{{ business_profile.receipt_footer if business_profile and business_profile.receipt_footer else "THANK YOU" }}</p>
         {% endif %}
     </div>
-    {% endfor %}
+    {% endfor %}{% endfor %}
     <div class="preview-actions">
         <button type="button" class="toolbar-btn primary" id="printReceiptBtn">Print</button>
         <button type="button" class="toolbar-btn" id="cancelPreviewBtn">Cancel</button>
     </div>
     <script>
+        // Every copy is already on the page (each bill's copies together), so it prints as one job.
+        // The window closes only after printing: closing right after print() can cancel the job.
         const params = new URLSearchParams(window.location.search);
-        const copiesRaw = Number.parseInt(params.get("copies") || "2", 10);
-        const copies = Number.isFinite(copiesRaw) && copiesRaw > 0 ? copiesRaw : 2;
+        const copies = {{ copies }};
+        let printing = false;
 
-        let isPrinting = false;
+        function printReceipts() {
+            if (printing) return;
+            printing = true;
+            window.print();
+        }
 
-        async function printCopies() {
-            if (isPrinting) return;
-            isPrinting = true;
-
-            for (let i = 0; i < copies; i += 1) {
-                window.print();
-                if (i < copies - 1) {
-                    await new Promise((resolve) => setTimeout(resolve, 250));
-                }
-            }
-
+        window.addEventListener("afterprint", () => {
+            if (!printing) return;
             if (window.opener && params.get("from") === "entry") {
                 window.opener.postMessage({ type: "receipt_print_completed", copies }, window.location.origin);
             }
             window.close();
-        }
-
-        document.getElementById("printReceiptBtn").addEventListener("click", printCopies);
+        });
+        document.getElementById("printReceiptBtn").addEventListener("click", printReceipts);
         document.getElementById("cancelPreviewBtn").addEventListener("click", () => window.close());
         if (params.get("autoprint") === "1") {
-            window.addEventListener("load", () => setTimeout(printCopies, 150));
+            window.addEventListener("load", () => setTimeout(printReceipts, 150));
         }
     </script>
 </body>

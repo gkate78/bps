@@ -1423,11 +1423,16 @@ async def bills_receipt_page(
 
 async def _receipts_response(request: Request, db: AsyncSession, current_user: UserAccount, records: list):
     business_profile = await _get_receipt_business_profile(db, current_user)
+    try:
+        copies = int(request.query_params.get("copies") or 2)
+    except ValueError:
+        copies = 2
     return templates.TemplateResponse(
         "receipt.html",
         {
             "request": request,
             "records": records,
+            "copies": min(max(copies, 1), 3),
             "business_profile": business_profile,
             "receipt_settings": _build_receipt_settings(business_profile),
         },
@@ -1444,6 +1449,9 @@ async def prepare_new_record(db: AsyncSession, payload: RecordCreate, current_us
             # Nothing is received from anyone.
             payload.payment_method = None
             payload.confirmation_reference = None
+    if payload.personal != "shop" and payload.payment_method is None:
+        # Money was received, so how it was paid is needed (End of day counts bills by it).
+        raise HTTPException(status_code=400, detail="Select the mode of payment.")
 
     if payload.txn_datetime is None:
         payload.txn_datetime = datetime.now()
