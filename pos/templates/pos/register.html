@@ -186,6 +186,20 @@
             </div>
             <div id="cashInRefs" class="stack" hidden></div>
             <div id="cashBlock" class="stack">
+                <label class="check" id="splitField"><input type="checkbox" id="splitPay"> Part paid by GCash/Maya, the rest in cash</label>
+                <div id="splitBlock" class="stack" hidden>
+                    <div class="choice">
+                        {% for w in wallets %}
+                        <label class="pill"><input type="radio" name="split_wallet" value="{{ w.id }}" data-name="{{ w.name }}" {{ 'checked' if loop.first }}> {{ w.name }}</label>
+                        {% endfor %}
+                    </div>
+                    <div class="row2">
+                        <label>Amount sent ₱ <input type="text" id="splitAmount" inputmode="numeric"></label>
+                        <label>Reference no. <input type="text" id="splitRef" maxlength="60"></label>
+                    </div>
+                    <p class="alert alert-error small" id="splitRefWarn" hidden></p>
+                    <div class="total-row"><span>Cash to collect</span><strong id="splitCash">₱0.00</strong></div>
+                </div>
                 <label class="cash">Cash received ₱ <input type="text" id="cashIn" inputmode="decimal"></label>
                 <div class="total-row change"><span>Change</span><strong id="cartChange">₱0.00</strong></div>
             </div>

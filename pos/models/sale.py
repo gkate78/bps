@@ -27,6 +27,11 @@ class PosSale(SQLModel, table=True):
     payment_reference: Optional[str] = Field(default=None, max_length=60, index=True)
     cash_cents: int = Field(default=0, nullable=False)
     change_cents: int = Field(default=0, nullable=False)
+    # Cash sale with part paid to the shop's GCash/Maya (split payment): that part, exact, in whole pesos.
+    split_wallet_id: Optional[int] = Field(default=None)
+    split_wallet_name: Optional[str] = Field(default=None, max_length=60)
+    split_reference: Optional[str] = Field(default=None, max_length=60)
+    split_cents: int = Field(default=0, nullable=False)
     # Paid at checkout: the total for a regular sale, the down payment for a job order.
     checkout_paid_cents: int = Field(default=0, nullable=False)
     # Paid so far (checkout + balance payments); balance = total - amount_paid.

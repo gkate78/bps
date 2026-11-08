@@ -38,6 +38,10 @@ class SaleIn(BaseModel):
     # Paid by GCash/Maya and the customer sent more: the extra is a cash-out with its fee included.
     amount_sent: Optional[str] = None
     cash: Optional[str] = None
+    # Cash sale, part paid to the shop's GCash/Maya: that account, the amount sent and its reference no.
+    split_wallet_id: Optional[int] = None
+    split_amount: Optional[str] = None
+    split_reference: Optional[str] = None
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
     bir_invoice_no: Optional[str] = None

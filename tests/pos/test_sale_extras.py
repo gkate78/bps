@@ -194,3 +194,58 @@ def test_personal_sale_with_bills(shop):
     with Session(shop.engine) as session:
         record = session.exec(select(BillRecord)).one()
         assert (record.personal, record.payment_method, record.charge, record.cash) == ("shop", None, 0, 0)
+
+
+def test_part_cash_part_gcash(shop):
+    rules(shop)
+    client = shop.client
+    lines = [*services(), bill(amount="1000.45")]  # ₱110 + ₱1,015 (₱1,015.45 to the whole peso) = ₱1,125
+
+    def post(**body):
+        return client.post("/pos/api/sales", json={"lines": lines, "split_wallet_id": GCASH, "split_reference": "GC 700", **body})
+
+    assert post(split_amount="500.50", cash="1000").json()["detail"].endswith("(the rest is collected in cash)")
+    r = post(split_amount="2000", cash="0")
+    assert r.status_code == 400 and "more than the total (₱1,125.00)" in r.json()["detail"]
+    r = post(split_amount="500", cash="600")
+    assert r.status_code == 400 and "less than the amount due (₱625.00)" in r.json()["detail"]
+    r = post(split_amount="500", cash="1000", split_reference="")
+    assert r.status_code == 400 and "GCASH reference no." in r.json()["detail"]
+    r = client.post("/pos/api/sales", json={"lines": [*services(), cash_in()], "cash": "3000", "split_wallet_id": GCASH,
+                                            "split_amount": "100", "split_reference": "GC 701"})
+    assert r.status_code == 400 and "cash only" in r.json()["detail"]
+
+    r = post(split_amount="500", cash="1000")
+    assert r.status_code == 200, r.text
+    assert r.json()["change_cents"] == 37_500  # ₱625 in cash
+    with Session(shop.engine) as session:
+        sale = session.exec(select(PosSale)).one()
+        assert (sale.payment_method, sale.split_wallet_name, sale.split_cents, sale.cash_cents) == ("cash", "GCASH", 50_000, 100_000)
+        assert session.exec(select(BillRecord)).one().payment_method == "CASH"
+
+    receipt = client.get(f"/pos/receipt/sale/{sale.id}").text
+    assert "PAID VIA GCASH" in receipt and "REF GC 700" in receipt and "CHANGE" in receipt
+    assert client.get("/pos/api/wallet-txns/claimed?reference=gc700").json()["claimed"]
+    assert "₱500.00 via GCASH ref GC 700, rest in cash" in client.get("/pos/sales").text
+
+    # The drawer gets only the cash part; GCash gets the rest.
+    from pos.controllers import sale_controller as sales
+    import asyncio
+    from datetime import date as day
+    from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+    from pos.controllers.settings_controller import list_wallets
+
+    async def summary():
+        engine = create_async_engine(str(shop.engine.url).replace("sqlite://", "sqlite+aiosqlite://"))
+        async with AsyncSession(engine) as db:
+            out = await sales.day_summary(db, day.today(), day.today())
+            return await sales.add_bills(db, out, day.today(), day.today(), await list_wallets(db, active_only=True))
+
+    s = asyncio.run(summary())
+    assert s.drawer_cents == 62_500 and s.wallet_deltas["GCASH"] == 50_000
+
+    # End of day expects ₱625 in the drawer (₱110 + ₱1,015 − ₱500 sent by GCash).
+    r = client.post(f"/pos/api/eod/{day.today().isoformat()}", json={"opening_cash": "0", "counted_cash": "625",
+                                                                     "wallets": [{"wallet_id": GCASH, "opening": "0"}]})
+    assert r.json() == {"expected_cash_cents": 62_500, "difference_cents": 0}
+    assert "₱500.00" in client.get("/pos/eod").text

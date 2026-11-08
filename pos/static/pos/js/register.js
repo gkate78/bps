@@ -620,9 +620,15 @@
         return cashDue(sum(["service", "load"], lineTotal)) + sum(["bill"], (l) => cashDue(l.total_cents)) + sum(["cash_in", "cash_out"], (l) => l.total_cents);
     }
 
+    // Split payment: part sent to the shop's GCash/Maya (whole pesos), the rest in cash.
+    const splitOn = () => $("splitPay").checked && !$("splitField").hidden;
+    const splitWallet = () => document.querySelector('input[name="split_wallet"]:checked');
+    const splitCents = () => (splitOn() ? toCents($("splitAmount").value) || 0 : 0);
+
     function updateChange() {
         const cash = toCents($("cashIn").value);
-        const total = cashToCollect();
+        const total = cashToCollect() - splitCents();
+        $("splitCash").textContent = peso(Math.max(total, 0));
         const el = $("cartChange");
         el.classList.remove("short");
         if (total < 0 && !cash) {
@@ -637,6 +643,20 @@
         el.classList.toggle("short", cash < total);
     }
     $("cashIn").addEventListener("input", updateChange);
+    $("splitPay").addEventListener("change", () => {
+        updatePayment();
+        updateChange();
+        if (splitOn()) $("splitAmount").focus();
+    });
+    $("splitAmount").addEventListener("input", updateChange);
+    warnIfReferenceUsed(
+        $("splitRef"),
+        (message) => {
+            $("splitRefWarn").textContent = message;
+            $("splitRefWarn").hidden = false;
+        },
+        () => ($("splitRefWarn").hidden = true),
+    );
 
     // Paid with: cash (cash received/change) or the shop's GCash/Maya (reference no., no change).
     const payChoice = () => document.querySelector('input[name="pay"]:checked');
@@ -651,6 +671,10 @@
         });
         $("jobField").hidden = hasExtras() || !!personal();
         if (hasExtras()) $("isJob").checked = false;
+        // Split: not with a cash-in or cash-out (settled in cash) or a job order's down payment.
+        $("splitField").hidden = cashOnly || isJob() || personal() === "shop";
+        $("splitBlock").hidden = !splitOn();
+        updateChange(); // the split may have just turned off
         const choice = payChoice();
         const byWallet = choice.value !== "cash";
         const bank = isBank(choice);
@@ -739,6 +763,9 @@
         resetLoadForm();
         resetCashInForm();
         resetCashOutForm();
+        $("splitPay").checked = false;
+        ["splitAmount", "splitRef"].forEach((id) => ($(id).value = ""));
+        $("splitRefWarn").hidden = true;
         cart.length = 0;
         setRadio("personal", "");
         if ($("jobField")) $("jobField").hidden = false;
@@ -794,8 +821,17 @@
                 return say("Enter the customer's mobile no. (09XXXXXXXXX) for the cash-out", "error");
             }
         } else {
+            if (splitOn()) {
+                const sent = toCents($("splitAmount").value);
+                const name = splitWallet()?.dataset.name || "GCash/Maya";
+                if (!splitWallet()) return say("Choose the GCash/Maya account the customer sent to", "error");
+                if (!sent || sent % 100) return say(`Enter the amount sent by ${name} in whole pesos (the rest is collected in cash)`, "error");
+                if (sent > cashToCollect()) return say(`Amount sent by ${name} is more than the total (${peso(cashToCollect())})`, "error");
+                if (!$("splitRef").value.trim()) return say(`Enter the ${name} reference no.`, "error");
+                if (!$("splitRefWarn").hidden) return say($("splitRefWarn").textContent, "error");
+            }
             const cash = toCents($("cashIn").value);
-            const need = cashToCollect();
+            const need = cashToCollect() - splitCents();
             if (need > 0 && cash === null) return say("Enter the cash received", "error");
             if ((cash || 0) < need) return say(`Cash received is less than ${isJob() ? "the down payment" : "the total"} (${peso(need)})`, "error");
         }
@@ -811,6 +847,9 @@
                 payment_reference: byWallet || bank ? $("payRef").value : null,
                 amount_sent: byWallet && $("paySent").value.trim() ? $("paySent").value : null,
                 cash: byWallet || bank || fromShop ? null : $("cashIn").value,
+                split_wallet_id: splitOn() && !byWallet && !bank && !fromShop ? Number(splitWallet().value) : null,
+                split_amount: splitOn() && !byWallet && !bank && !fromShop ? $("splitAmount").value : null,
+                split_reference: splitOn() && !byWallet && !bank && !fromShop ? $("splitRef").value : null,
                 personal: personal() || null,
                 customer_name: $("custName").value,
                 customer_phone: $("custPhone").value,
@@ -1027,7 +1066,7 @@
     $("walletForm").addEventListener("submit", (event) => event.preventDefault());
 
     // ---------- Parked: on hold, not paid, while another customer is served ----------
-    const SALE_FIELDS = ["custName", "custPhone", "birNo", "downPayment", "promisedDate", "cashIn", "payRef", "paySent"];
+    const SALE_FIELDS = ["custName", "custPhone", "birNo", "downPayment", "promisedDate", "cashIn", "payRef", "paySent", "splitAmount", "splitRef"];
     const WALLET_FIELDS = ["wAmount", "wMobile", "wRef", "wName", "wTendered"];
     const radio = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value ?? null;
     const setRadio = (name, value) => {
@@ -1048,7 +1087,15 @@
             label: $("custName").value.trim(),
             summary: Object.entries(names).map(([name, qty]) => (qty > 1 ? `${name} ×${qty}` : name)).join(", "),
             total_cents: cartTotal(),
-            data: { cart: cart.slice(), fields: readFields(SALE_FIELDS), isJob: isJob(), pay: radio("pay"), personal: personal() },
+            data: {
+                cart: cart.slice(),
+                fields: readFields(SALE_FIELDS),
+                isJob: isJob(),
+                pay: radio("pay"),
+                personal: personal(),
+                split: $("splitPay").checked,
+                splitWallet: radio("split_wallet"),
+            },
         };
     }
 
@@ -1077,6 +1124,9 @@
             $("payMobile").value = $("custPhone").value;
             $("isJob").checked = !!data.isJob;
             setRadio("pay", data.pay);
+            $("splitPay").checked = !!data.split;
+            if (data.splitWallet) setRadio("split_wallet", data.splitWallet);
+            if ($("splitRef").value) $("splitRef").dispatchEvent(new Event("change"));
             if (data.personal) {
                 setRadio("personal", data.personal);
                 $("jobField").hidden = true;

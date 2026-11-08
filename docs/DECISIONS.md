@@ -454,3 +454,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Customers often pay for several kinds of things at once (a cash-in with an ID picture, a bill paid out of a cash-out) and expect one total, one change and one receipt.
 - Alternatives considered: cash-ins, cash-outs and bills as sale lines (would mix wallet and bill money into service sales and income); a `sale_id` column on `bill_records` (changes the BPS table; a link table keeps the bills data separate); a combined receipt only (billers' customers expect each bill's own receipt).
 - Follow-up: The separate GCash / Maya and Bills payment tabs can be removed once the staff use the sale for everything. The Sales list shows the sale's amount as its services and loads only, with bills, cash-ins and cash-outs described in its details.
+
+- Date: 2026-11-08
+- ID: DEC-056
+- Related task: none
+- Decision: A cash sale can have part paid to the shop's GCash/Maya ("Part paid by GCash/Maya, the rest in cash"): the cashier enters the account, the amount sent (whole pesos, not more than the total) and its reference no. (used once, like any GCash/Maya reference); the rest is collected in cash as usual (each part to the whole peso), with change. It's stored on the sale (`split_wallet_id`, `split_wallet_name`, `split_reference`, `split_cents`, added to `pos_sales` on startup); the sale stays `payment_method = cash`. Summary and End of day move that part from the drawer to the wallet (drawer, shop cash and the cashier's drawer change lower by it; the wallet's "payments" rise by it), so the drawer expects only the cash actually handed over. Bills in a split sale are recorded as cash in the bills records (one method per bill); the money still lands in the right place through the sale. Not with a cash-in or cash-out (settled in cash), a job order's down payment, or a sale from shop funds. The receipt shows PAID VIA GCASH/MAYA with its reference, then CASH and CHANGE.
+- Why: Customers sometimes pay part in cash and the rest by GCash/Maya.
+- Alternatives considered: a zero-fee cash-out to carry the GCash/Maya part (right money, but it would count as a cash-out); splitting each bill's own payment method (bill_records has one method per bill).
+- Follow-up: Splits with BDO/BPI, splits on job order payments, and in the Bills tab aren't offered yet.
