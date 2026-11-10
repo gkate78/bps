@@ -463,7 +463,7 @@ async def used_reference(db: AsyncSession, reference: Optional[str]) -> Optional
             .limit(1)
         )
     ).scalar_one_or_none()
-    if sale:
+    if sale and sale.checkout_paid_cents:  # a sale of only bills: described by its bills below
         what = "job order down payment" if sale.is_job_order else "shop sale paid"
         return UsedReference(sale.sale_no, f"{sale.pay_wallet_name} {what}", sale.checkout_paid_cents, sale.created_at)
     split = (

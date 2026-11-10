@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import HTTPException
 from pydantic import ValidationError
+from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.controllers.bill_controller import (
@@ -22,6 +23,8 @@ from app.controllers.bill_controller import (
 )
 from pos.auth_adapter import User
 from pos.controllers.sale_controller import PosError, _check_reference, _money, clean_text
+from pos.controllers.settings_controller import add_audit
+from pos.models import PosSale, PosSaleBill, PosWallet
 from pos.money import cash_due_cents
 from pos.schemas import BillIn, BillsCheckoutIn
 
@@ -149,6 +152,41 @@ async def finish_bills(db: AsyncSession, records: list, user: User) -> None:
         await finish_new_record(db, record, user, channel="register")
 
 
+async def _bills_sale(db: AsyncSession, records: list, *, method: Optional[str], reference: Optional[str],
+                     cash: int, change: int, personal: Optional[str], user: User) -> PosSale:
+    """
+    A sale of only these bills, as when they're rung up in the shop sale: it holds the one payment
+    (cash and change, or the GCash/Maya/bank transfer) for the receipt and the History list. Its own
+    total is zero, so Summary and End of day still count the bills from their own records only.
+    """
+    if method is None:
+        payment = {"payment_method": "shop"}
+    elif method == "CASH":
+        payment = {"payment_method": "cash", "cash_cents": cash, "change_cents": change}
+    elif method in WALLET_METHODS:
+        wallet = (
+            await db.execute(
+                select(PosWallet).where(PosWallet.provider == method, PosWallet.is_active).order_by(PosWallet.id).limit(1)
+            )
+        ).scalar_one_or_none()
+        payment = {"payment_method": "wallet", "pay_wallet_id": wallet.id if wallet else None,
+                   "pay_wallet_name": wallet.name if wallet else method, "payment_reference": reference}
+    else:
+        payment = {"payment_method": "bank", "pay_wallet_name": method, "payment_reference": reference}
+    first = records[0]
+    sale = PosSale(
+        cashier_user_id=user.id, customer_name=first.customer_name, total_cents=0, checkout_paid_cents=0,
+        amount_paid_cents=0, personal=personal, **payment,
+    )
+    db.add(sale)
+    await db.flush()
+    sale.sale_no = f"S-{sale.id:06d}"
+    for record in records:
+        db.add(PosSaleBill(sale_id=sale.id, bill_record_id=record.id))
+    add_audit(db, "sale", sale.id, "create", user.id, {"sale_no": sale.sale_no, "bills": len(records), "from": "bills tab"})
+    return sale
+
+
 async def checkout(db: AsyncSession, data: BillsCheckoutIn, user: User) -> dict:
     if not data.bills:
         raise PosError("Add at least one bill")
@@ -182,6 +220,8 @@ async def checkout(db: AsyncSession, data: BillsCheckoutIn, user: User) -> dict:
 
     try:
         records = await add_bills(db, prepared, cash_each)
+        sale = await _bills_sale(db, records, method=method, reference=reference, cash=cash, change=cash - due,
+                                 personal=data.personal, user=user)
         await db.commit()
     except Exception:
         await db.rollback()
@@ -190,6 +230,8 @@ async def checkout(db: AsyncSession, data: BillsCheckoutIn, user: User) -> dict:
 
     first = records[0]
     return {
+        "sale_id": sale.id,
+        "sale_no": sale.sale_no,
         "ids": [r.id for r in records],
         "references": [r.reference for r in records],
         "count": len(records),

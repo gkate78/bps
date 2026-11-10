@@ -1421,7 +1421,9 @@ async def bills_receipt_page(
     return await _receipts_response(request, db, current_user, records)
 
 
-async def _receipts_response(request: Request, db: AsyncSession, current_user: UserAccount, records: list):
+async def _receipts_response(
+    request: Request, db: AsyncSession, current_user: UserAccount, records: list, payment: Optional[dict] = None
+):
     business_profile = await _get_receipt_business_profile(db, current_user)
     try:
         copies = int(request.query_params.get("copies") or 2)
@@ -1435,6 +1437,7 @@ async def _receipts_response(request: Request, db: AsyncSession, current_user: U
             "copies": min(max(copies, 1), 3),
             "business_profile": business_profile,
             "receipt_settings": _build_receipt_settings(business_profile),
+            "payment": payment,
         },
     )
 

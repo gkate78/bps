@@ -321,6 +321,21 @@ async def _cashier_name(db: AsyncSession, user_id: int) -> str:
     return found.first_name if found else ""
 
 
+def _bills_payment(sale, bills: list) -> Optional[dict]:
+    """How a sale of only bills was paid, for each bill's receipt: the one payment for all of them."""
+    if sale.payment_method == "shop":
+        return None  # from shop funds: nothing received (the bill receipt says so)
+    total = sum(int(round(float(b.total or 0) * 100)) for b in bills)
+    payment = {"sale_no": sale.sale_no, "count": len(bills), "total_cents": total, "parts": [], "cash_cents": None}
+    if sale.payment_method in ("wallet", "bank"):
+        payment["parts"].append((f"PAID VIA {sale.pay_wallet_name}", total, sale.payment_reference))
+    else:
+        if sale.split_cents:
+            payment["parts"].append((f"PAID VIA {sale.split_wallet_name}", sale.split_cents, sale.split_reference))
+        payment["cash_cents"], payment["change_cents"] = sale.cash_cents, sale.change_cents
+    return payment
+
+
 def _voided_page(no: str) -> HTMLResponse:
     """A voided transaction's receipt is not reprinted (it would look like a valid receipt)."""
     return HTMLResponse(
@@ -349,7 +364,7 @@ async def sale_receipt(
         # Only bills: just each bill's own receipt (2 copies), as from the Bills tab, no sale receipt.
         from app.routes.bill_routes import _receipts_response
 
-        return await _receipts_response(request, db, user, bills)
+        return await _receipts_response(request, db, user, bills, payment=_bills_payment(sale, bills))
     grand_total = (
         sale.total_cents
         + sum(int(round(float(b.total or 0) * 100)) for b in bills)
@@ -370,6 +385,7 @@ async def sale_receipt(
             "grand_total_cents": grand_total,
             "business_profile": profile,
             "receipt_settings": _build_receipt_settings(profile) if bills else None,
+            "payment": {"with_sale": True, "sale_no": sale.sale_no},  # on each bill's own receipt
             "settings": await get_settings(db),
             "business": await receipt_business(db),
             "cashier": await _cashier_name(db, sale.cashier_user_id),

@@ -1,4 +1,4 @@
-{# One bill's receipt. Needs: record, business_profile, receipt_settings. Used by receipt.html and the register's sale receipt. #}
+{# One bill's receipt. Needs: record, business_profile, receipt_settings; optional payment (the sale it was paid in, see sale_receipt). Used by receipt.html and the register's sale receipt. #}
     <div class="receipt">
         <div class="shop">
             {% if receipt_settings.show_business_name %}
@@ -57,17 +57,36 @@
             <span>{{ "{:,.2f}".format(record.total) }}</span>
         </div>
         {% endif %}
-        {% if receipt_settings.show_cash and record.personal != "shop" %}
-        <div class="line">
-            <span>{% if receipt_settings.show_headings %}CASH{% endif %}</span>
-            <span>{{ "{:,.2f}".format(record.cash) }}</span>
-        </div>
+        {% if payment and payment.with_sale %}
+        {# Rung up with other items: the sale's own receipt has the payment. #}
+        <div class="info">PAID WITH SALE {{ payment.sale_no }}</div>
+        {% elif payment %}
+        {# The one payment for all the bills in it (register sale or Bills tab): what was actually paid. #}
+        {% if payment.count > 1 %}
+        <div class="info">PAID TOGETHER: {{ payment.count }} BILLS ({{ payment.sale_no }})</div>
+        <div class="line"><span>TOTAL</span><span>{{ "{:,.2f}".format(payment.total_cents / 100) }}</span></div>
         {% endif %}
-        {% if receipt_settings.show_change_amt and record.personal != "shop" %}
-        <div class="line">
-            <span>{% if receipt_settings.show_headings %}CHANGE{% endif %}</span>
-            <span>{{ "{:,.2f}".format(record.change_amt) }}</span>
-        </div>
+        {% for label, cents, ref in payment.parts %}
+        <div class="line"><span>{{ label }}</span><span>{{ "{:,.2f}".format(cents / 100) }}</span></div>
+        {% if ref %}<div class="info">REF {{ ref }}</div>{% endif %}
+        {% endfor %}
+        {% if payment.cash_cents is not none %}
+        <div class="line"><span>CASH</span><span>{{ "{:,.2f}".format(payment.cash_cents / 100) }}</span></div>
+        <div class="line"><span>CHANGE</span><span>{{ "{:,.2f}".format(payment.change_cents / 100) }}</span></div>
+        {% endif %}
+        {% else %}
+            {% if receipt_settings.show_cash and record.personal != "shop" %}
+            <div class="line">
+                <span>{% if receipt_settings.show_headings %}CASH{% endif %}</span>
+                <span>{{ "{:,.2f}".format(record.cash) }}</span>
+            </div>
+            {% endif %}
+            {% if receipt_settings.show_change_amt and record.personal != "shop" %}
+            <div class="line">
+                <span>{% if receipt_settings.show_headings %}CHANGE{% endif %}</span>
+                <span>{{ "{:,.2f}".format(record.change_amt) }}</span>
+            </div>
+            {% endif %}
         {% endif %}
         <div class="sign">
             <div class="sign-line"></div>
