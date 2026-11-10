@@ -8,7 +8,7 @@
     <link rel="icon" href="/pos/static/favicon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="{{ '/pos/static/css/pos.css' | v }}">
 </head>
-<body>
+<body data-user="{{ user.id if user else '' }}">
     <header class="topbar">
         <div class="brand">
             <strong>Ditto Digital</strong>

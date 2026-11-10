@@ -1248,6 +1248,52 @@
         loadParked();
     });
 
+    // ---------- Unsaved work kept in this browser (a brownout or a closed tab doesn't lose it) ----------
+    // What's being rung up (the same data as parking) is copied to localStorage as it changes and
+    // filled back in when the register opens again. It's removed once the transaction is saved,
+    // parked or cleared. Per cashier, on this computer only.
+    const DRAFT_KEY = `pos-draft:${document.body.dataset.user || ""}`;
+    let lastDraft = null;
+    function keepDraft() {
+        const drafts = {};
+        if (saleInProgress()) drafts.sale = saleParking();
+        if (walletInProgress()) drafts.wallet = walletParking();
+        if (window.registerBills?.inProgress()) drafts.bills = window.registerBills.parking();
+        const text = Object.keys(drafts).length ? JSON.stringify({ at: new Date().toISOString(), drafts }) : null;
+        if (text === lastDraft) return;
+        lastDraft = text;
+        try {
+            if (text) localStorage.setItem(DRAFT_KEY, text);
+            else localStorage.removeItem(DRAFT_KEY);
+        } catch {
+            // storage blocked or full: nothing more to do
+        }
+    }
+    async function restoreDraft() {
+        let saved = null;
+        try {
+            saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+        } catch {
+            saved = null;
+        }
+        const drafts = saved?.drafts || {};
+        const kinds = ["bills", "wallet", "sale"].filter((kind) => drafts[kind]); // the shop sale's tab last
+        if (!kinds.length) return;
+        for (const kind of kinds) await restore(drafts[kind]);
+        const names = { sale: "shop sale", wallet: "GCash/Maya transaction", bills: "bills" };
+        say(
+            `Restored the unsaved ${kinds.map((kind) => names[kind]).join(" and ")} from ${parkedTime(saved.at)}. ` +
+                "If the register lost power or the tab closed while saving, check History first so it isn't saved twice.",
+            "warn",
+        );
+        lastDraft = null;
+        keepDraft();
+    }
+    ["input", "change", "click"].forEach((type) => document.addEventListener(type, () => setTimeout(keepDraft, 0)));
+    setInterval(keepDraft, 3000); // also catches changes made by code (quotes, a resumed transaction)
+    window.addEventListener("pagehide", keepDraft);
+    restoreDraft();
+
     loadParked();
     window.addEventListener("focus", loadParked);
     setInterval(loadParked, 30000);
