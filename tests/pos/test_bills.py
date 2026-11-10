@@ -52,6 +52,14 @@ def test_several_bills_paid_together_in_cash(shop):
     assert shop.client.get(f"/api/receipts/bills?ids={meralco.id},{pldt.id}&copies=1").text.count('<div class="receipt">') == 2
     assert shop.client.get(f"/api/records/{pldt.id}/receipt?copies=1").text.count('<div class="receipt">') == 1
 
+    # The Bills tab saves them as one sale (zero own total) and prints the bills from it, with the one payment.
+    sale_page = shop.client.get(f"/pos/receipt/sale/{result['sale_id']}").text
+    assert sale_page.count('<div class="receipt">') == 4
+    assert sale_page.count(f"PAID TOGETHER: 2 BILLS ({result['sale_no']})") == 4
+    assert sale_page.count("3,000.00") == 4 and sale_page.count("470.00") == 4  # cash handed over, change
+    assert "1,985.00" not in sale_page  # not the last bill's own cash
+    assert result["sale_no"] in shop.client.get("/pos/sales").text
+
     mine = shop.client.get("/api/records/mine").json()
     assert mine["count"] == 2
 
@@ -92,6 +100,9 @@ def test_bills_paid_by_gcash_share_one_reference_used_once(shop):
     for record in saved(shop):
         assert record.payment_method == "GCASH" and record.confirmation_reference == "REF 777"
         assert record.cash == record.total and record.change_amt == 0
+
+    page = client.get(f"/pos/receipt/sale/{r.json()['sale_id']}").text
+    assert page.count("PAID VIA GCASH") == 4 and page.count("REF REF 777") == 4 and "CHANGE" not in page
 
     # The same transfer can't be claimed again: not for a cash-in, not for more bills.
     claimed = client.get("/pos/api/wallet-txns/claimed?reference=REF777").json()

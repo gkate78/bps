@@ -462,3 +462,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: Customers sometimes pay part in cash and the rest by GCash/Maya.
 - Alternatives considered: a zero-fee cash-out to carry the GCash/Maya part (right money, but it would count as a cash-out); splitting each bill's own payment method (bill_records has one method per bill).
 - Follow-up: Splits with BDO/BPI, splits on job order payments, and in the Bills tab aren't offered yet.
+
+- Date: 2026-11-10
+- ID: DEC-057
+- Related task: none
+- Decision: Bill receipts show what was actually paid. A sale of only bills prints each bill's own 2-copy receipt (no sale receipt) with the sale's one payment in place of the bill's own CASH/CHANGE: PAID VIA GCASH/MAYA or bank with its reference, the GCash/Maya part of a split with its reference, then the cash handed over and the change; with several bills, each receipt also says PAID TOGETHER: n BILLS (sale no.) with the combined total. A bill rung up with other items says PAID WITH SALE S-…, since the sale receipt printed with it has the payment. The Bills tab now saves its checkout as such a sale too (`_bills_sale`: zero own total, linked through `pos_sale_bills`, payment on the sale), prints from `/pos/receipt/sale/{id}`, and shows in History. Summary and End of day are unchanged: a sale's own total is zero, so bills still count from `bill_records` only. A GCash/Maya reference used by a bills-only sale is described by its bills.
+- Why: The bill's own CASH/CHANGE showed that bill's share (₱1,215 and 0) rather than the ₱1,300 handed over and ₱85 change, and a GCash/Maya part didn't appear at all; the receipts should back up what the customer paid. Saving Bills tab checkouts as sales is a step toward folding the Bills tab into the sale.
+- Alternatives considered: spreading the change over the bills (a change belongs to the whole payment); a separate payment slip (one more receipt to print and keep); passing the payment in the receipt URL (can't be trusted for a reprint).
+- Follow-up: Bills entered from the BPS entry form, and the Bills tab's per-bill Reprint, still show the bill's own cash and change.

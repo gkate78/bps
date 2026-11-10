@@ -259,9 +259,26 @@ def test_bills_only_sale_prints_just_the_bill_receipts(shop):
     assert r.status_code == 200, r.text
     page = client.get(f"/pos/receipt/sale/{r.json()['id']}").text
     assert page.count('class="receipt"') == 2  # the bill's 2 copies, no sale receipt
-    assert r.json()["sale_no"] not in page and r.json()["bill_references"][0] in page
+    assert r.json()["bill_references"][0] in page
+    # One bill: what was handed over and the change (₱1,215 → ₱85), no "paid together".
+    assert page.count("1,300.00") == 2 and page.count("85.00") == 2 and "PAID TOGETHER" not in page
 
     # Two bills: 2 copies each.
     r = client.post("/pos/api/sales", json={"lines": [bill(account="0012345678", biller="PLDT"), bill(amount="500")], "cash": "2000"})
     assert r.status_code == 200, r.text
     assert client.get(f"/pos/receipt/sale/{r.json()['id']}").text.count('class="receipt"') == 4
+
+    # Part by GCash: shown with its reference, then the cash and change.
+    r = client.post("/pos/api/sales", json={"lines": [bill(account="0099887766", biller="PLDT")], "cash": "300",
+                                            "split_wallet_id": GCASH, "split_amount": "1000", "split_reference": "GC 4242"})
+    assert r.status_code == 200, r.text
+    page = client.get(f"/pos/receipt/sale/{r.json()['id']}").text
+    assert page.count("PAID VIA GCASH") == 2 and page.count("REF GC 4242") == 2 and page.count("85.00") == 2
+
+
+def test_bill_rung_up_with_services_points_to_the_sale_receipt(shop):
+    rules(shop)
+    r = shop.client.post("/pos/api/sales", json={"lines": [*services(), bill()], "cash": "1400"})
+    assert r.status_code == 200, r.text
+    page = shop.client.get(f"/pos/receipt/sale/{r.json()['id']}").text
+    assert page.count(f"PAID WITH SALE {r.json()['sale_no']}") == 2

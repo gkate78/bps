@@ -459,7 +459,7 @@
                 cash: method === "CASH" && !fromShop ? $("bCash").value : null,
                 personal: personal() || null,
             });
-            const url = `/api/receipts/bills?ids=${result.ids.join(",")}&autoprint=1`;
+            const url = `/pos/receipt/sale/${result.sale_id}?autoprint=1`;
             const opened = showReceipt(win, url);
             const paid = fromShop
                 ? "Personal, from shop funds."
