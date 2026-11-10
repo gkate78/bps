@@ -345,6 +345,11 @@ async def sale_receipt(
     by_wallet = sale.payment_method == "wallet"
     wallet_txns = [] if by_wallet else await sales.linked_wallet_txns(db, sale.id)
     cash_out = await sales.linked_cash_out(db, sale.id) if by_wallet else None
+    if bills and not lines and not wallet_txns and not cash_out:
+        # Only bills: just each bill's own receipt (2 copies), as from the Bills tab, no sale receipt.
+        from app.routes.bill_routes import _receipts_response
+
+        return await _receipts_response(request, db, user, bills)
     grand_total = (
         sale.total_cents
         + sum(int(round(float(b.total or 0) * 100)) for b in bills)

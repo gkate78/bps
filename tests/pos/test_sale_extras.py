@@ -250,3 +250,18 @@ def test_part_cash_part_gcash(shop):
                                                                      "wallets": [{"wallet_id": GCASH, "opening": "0"}]})
     assert r.json() == {"expected_cash_cents": 62_500, "difference_cents": 0}
     assert "₱500.00" in client.get("/pos/eod").text
+
+
+def test_bills_only_sale_prints_just_the_bill_receipts(shop):
+    rules(shop)
+    client = shop.client
+    r = client.post("/pos/api/sales", json={"lines": [bill()], "cash": "1300"})
+    assert r.status_code == 200, r.text
+    page = client.get(f"/pos/receipt/sale/{r.json()['id']}").text
+    assert page.count('class="receipt"') == 2  # the bill's 2 copies, no sale receipt
+    assert r.json()["sale_no"] not in page and r.json()["bill_references"][0] in page
+
+    # Two bills: 2 copies each.
+    r = client.post("/pos/api/sales", json={"lines": [bill(account="0012345678", biller="PLDT"), bill(amount="500")], "cash": "2000"})
+    assert r.status_code == 200, r.text
+    assert client.get(f"/pos/receipt/sale/{r.json()['id']}").text.count('class="receipt"') == 4
