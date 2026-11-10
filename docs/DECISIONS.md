@@ -470,3 +470,12 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The bill's own CASH/CHANGE showed that bill's share (₱1,215 and 0) rather than the ₱1,300 handed over and ₱85 change, and a GCash/Maya part didn't appear at all; the receipts should back up what the customer paid. Saving Bills tab checkouts as sales is a step toward folding the Bills tab into the sale.
 - Alternatives considered: spreading the change over the bills (a change belongs to the whole payment); a separate payment slip (one more receipt to print and keep); passing the payment in the receipt URL (can't be trusted for a reprint).
 - Follow-up: Bills entered from the BPS entry form, and the Bills tab's per-bill Reprint, still show the bill's own cash and change.
+
+- Date: 2026-11-10
+- ID: DEC-058
+- Related task: none
+- Decision: The register keeps unsaved work in the browser so a brownout, crash or closed tab doesn't lose it. The shop sale, the GCash/Maya transaction and the bills being rung up (the same data as parking) are copied to `localStorage` (`pos-draft:<user id>`) on every input, change and click, every 3 seconds and when the page closes, and removed once there's nothing in progress (saved, parked or cleared). When the register opens again it fills them back in and says so, with a reminder to check History in case the power went off while saving. Only items already added are kept, not a half-typed item in an editor.
+- Why: A brownout while encoding a sale lost everything and the cashier had to start over.
+- Alternatives considered: saving drafts on the server (survives a different computer, but adds a write per keystroke and the server PC loses power too); auto-parking (would fill the Parked bar with drafts).
+- Follow-up: A UPS for the register PC, router and printer is still the real protection against brownouts.
+
