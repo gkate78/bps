@@ -42,7 +42,11 @@
                     <td class="num">{{ (r.fee_cents | peso) if r.fee_cents is not none else '' }}</td>
                     <td class="nowrap">{{ r.cashier }}</td>
                     <td class="nowrap">
+                        {% if r.status == 'voided' %}
+                        <button type="button" class="btn btn-secondary btn-small" disabled title="Voided: no reprint">Reprint</button>
+                        {% else %}
                         <a class="btn btn-secondary btn-small" target="receipt" href="/pos/receipt/{{ r.type }}/{{ r.id }}">Reprint</a>
+                        {% endif %}
                         {% if r.status != 'voided' and user.role == 'admin' %}
                         <button type="button" class="btn btn-danger btn-small" data-void-type="{{ r.type }}" data-void-id="{{ r.id }}" data-void-no="{{ r.no }}">Void</button>
                         {% endif %}
