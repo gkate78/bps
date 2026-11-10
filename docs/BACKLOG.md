@@ -7,7 +7,12 @@
 - [ ] BPS-209 | Theme: Customer comms | Outcome: SMS/Viber confirmation with reference + posting ETA | Done when: message trigger is sent after submission (post-MVP)
 - [ ] BPS-211 | Theme: Import observability | Outcome: Batch-level import review and replay tools | Done when: admin can filter by `import_batch_id`, inspect row outcomes, and optionally re-run selected skipped rows | Progress: import results now list skipped/duplicate rows with reasons (BPS-216)
 
+- [ ] BPS-245 | Theme: Deployment | Outcome: Shop register and today's bills changes online on Dokploy | Done when: Dokploy deploys `feature/register-bills` (branch setting, so it can be switched back to `main`), `POS_ENABLED` is decided, it's checked online, and the branch is merged to `main`
+
 ## LATER
+- [ ] BPS-246 | Theme: Register consolidation | Outcome: Everything is rung up in the shop sale | Done when: staff use the sale for bills and GCash/Maya, the separate Bills payment and GCash / Maya tabs are removed, and bill reprints (Bills I entered today, BPS entry form) show the sale's payment (DEC-055, DEC-057)
+- [ ] BPS-247 | Theme: Register payments | Outcome: More ways to split a payment (not for now) | Done when: part of a sale can be paid by BDO/BPI, and a job order's payments can be split between cash and GCash/Maya (DEC-056)
+- [ ] BPS-248 | Theme: Shop operations | Outcome: Brownouts don't interrupt the counter | Done when: a UPS keeps the register PC, router and printer on long enough to finish and print a sale (the register already restores unsaved work, DEC-058)
 - [ ] BPS-223 | Theme: Operations insight | Outcome: Separate read-only analytics app for 2020–2025 yearly CSV history (parked) | Done when: yearly files load with data-quality reporting and year-over-year views, real data stays local, and a public demo runs on synthetic data
 - [ ] BPS-226 | Theme: Operations insight | Outcome: Admin can monitor the shop's BPS remotely | Done when: Cloudflare Tunnel + Access (preferred) is set up on a shop-owned domain with an email one-time-code gate, without exposing the PIN login publicly (on hold, DEC-042)
 - [ ] BPS-228 | Theme: Documentation | Outcome: Demo video showing how to use the app, linked from the docs (parked until the app is final) | Done when: a walkthrough of sign-in, entry, receipt, My Transactions, records/processing, reconciliation, reports, and Insights is recorded with sample data only and linked in README
@@ -45,3 +50,13 @@
 - [x] BPS-232 | Shipped on: 2026-11-04 | Notes: Shop register tables in Admin → Database (amounts in pesos); backup to Google Sheets through an Apps Script link, by button and after End of day (DEC-048).
 - [x] BPS-233 | Shipped on: 2026-11-04 | Notes: Load discount per GCash/Maya account (Maya 3%) with an optional "Deducted by the app" amount per load; wallet balances and load income use what was deducted (DEC-049).
 - [x] BPS-234 | Shipped on: 2026-11-05 | Notes: Personal transactions for admins (bills, shop sales, loads, GCash/Maya): no service charge or fees, paid by the admin or from shop funds; shop-funded ones bring no money in and are listed separately in Summary and End of day (DEC-050).
+- [x] BPS-235 | Shipped on: 2026-11-06 | Notes: Cash-out with the fee included in the amount sent (customer sends ₱6,120 to get ₱6,000); amounts with no exact fit are refused with the nearest total that works.
+- [x] BPS-236 | Shipped on: 2026-11-07 | Notes: Cash collected to the whole peso (under 50 centavos down, 50 and up up) for bills and shop sales (DEC-051).
+- [x] BPS-237 | Shipped on: 2026-11-08 | Notes: Bills payment tab in the register: several bills in one payment, saved to the bills records like the entry form; receipts print as one job (fixed nothing printing); mode of payment required (DEC-052).
+- [x] BPS-238 | Shipped on: 2026-11-08 | Notes: The same account and amount is refused twice in one month, any biller (DEC-053).
+- [x] BPS-239 | Shipped on: 2026-11-08 | Notes: Bills in the register Summary: charges, modes of payment, billers, payouts; counted in income, drawer, wallets and per cashier (DEC-054).
+- [x] BPS-240 | Shipped on: 2026-11-08 | Notes: Everything in one shop sale: CASH-IN, CASH-OUT and BILL items with services and loads, one total, one payment (cash, GCash/Maya, BDO/BPI), each part in its own records (DEC-055).
+- [x] BPS-241 | Shipped on: 2026-11-08 | Notes: Part paid by GCash/Maya, the rest in cash, in the shop sale (DEC-056).
+- [x] BPS-242 | Shipped on: 2026-11-10 | Notes: No reprint of voided transactions: greyed-out Reprint in Sales, voided receipts refused.
+- [x] BPS-243 | Shipped on: 2026-11-10 | Notes: Bill receipts show the one payment (paid together, GCash/Maya/bank reference, cash and change); a sale of only bills prints just the bills' receipts; Bills tab checkouts saved as bills-only sales (DEC-057).
+- [x] BPS-244 | Shipped on: 2026-11-10 | Notes: The register keeps unsaved work in the browser and restores it after a brownout or closed tab (DEC-058).
