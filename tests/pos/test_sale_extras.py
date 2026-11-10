@@ -61,7 +61,8 @@ def test_cash_in_with_id_picture_and_lamination(shop):
 
     # Voiding the sale voids the cash-in with it.
     assert client.post(f"/pos/api/sales/{sale['id']}/void", json={"reason": "wrong", "admin_pin": ADMIN_PIN}).status_code == 200
-    assert "(VOIDED)" in client.get(f"/pos/receipt/sale/{sale['id']}").text
+    assert client.get(f"/pos/receipt/sale/{sale['id']}").status_code == 409
+    assert client.get("/pos/sales").text.count("badge-void") == 2  # the sale and its cash-in
     assert not client.get("/pos/api/wallet-txns/claimed?reference=GC123").json()["claimed"]
 
 

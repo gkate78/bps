@@ -1,3 +1,4 @@
+import html
 import time
 from datetime import date
 from typing import Optional
@@ -320,6 +321,15 @@ async def _cashier_name(db: AsyncSession, user_id: int) -> str:
     return found.first_name if found else ""
 
 
+def _voided_page(no: str) -> HTMLResponse:
+    """A voided transaction's receipt is not reprinted (it would look like a valid receipt)."""
+    return HTMLResponse(
+        f"<!doctype html><meta charset='utf-8'><title>Voided</title>"
+        f"<p style='font-family:sans-serif;padding:16px'>{html.escape(no or '')} was voided. Its receipt can't be reprinted.</p>",
+        status_code=409,
+    )
+
+
 @router.get("/receipt/sale/{sale_id}", response_class=HTMLResponse, include_in_schema=False)
 async def sale_receipt(
     request: Request, sale_id: int, user: User = Depends(page_user), db: AsyncSession = Depends(get_db)
@@ -327,6 +337,8 @@ async def sale_receipt(
     sale, lines = await sales.get_sale(db, sale_id)
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
+    if sale.status == "voided":
+        return _voided_page(sale.sale_no)
     # Bills, cash-ins and cash-outs paid together with the sale; the cash-out of "Amount sent" is shown on its own.
     bills = await sales.linked_bills(db, sale.id)
     # Cash-in/cash-out items are only in cash sales; a GCash/Maya-paid sale's cash-out is its "Amount sent" extra.
@@ -367,6 +379,8 @@ async def wallet_receipt(
     txn = await sales.get_wallet_txn(db, txn_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    if txn.status == "voided":
+        return _voided_page(txn.txn_no)
     return templates.TemplateResponse(
         request,
         "pos/receipt_wallet.html",
@@ -383,6 +397,8 @@ async def payment_receipt(
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     sale, lines = await sales.get_sale(db, payment.sale_id)
+    if payment.status == "voided" or sale.status == "voided":
+        return _voided_page(payment.payment_no if payment.status == "voided" else sale.sale_no)
     return templates.TemplateResponse(
         request,
         "pos/receipt_payment.html",

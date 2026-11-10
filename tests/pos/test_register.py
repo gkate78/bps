@@ -254,7 +254,9 @@ def test_sale_paid_by_gcash_with_a_cash_out_in_the_same_transfer(shop):
     # voiding the sale voids its cash-out too
     r = client.post(f"/pos/api/sales/{sale['id']}/void", json={"reason": "wrong amount", "admin_pin": ADMIN_PIN})
     assert r.status_code == 200, r.text
-    assert "VOIDED" in client.get(f"/pos/receipt/wallet/{sale['cash_out']['txn_no'][2:].lstrip('0')}").text
+    # a voided receipt isn't reprinted
+    r = client.get(f"/pos/receipt/wallet/{sale['cash_out']['txn_no'][2:].lstrip('0')}")
+    assert r.status_code == 409 and "was voided" in r.text
 
 
 def test_mobile_suggestions_include_bill_customers(shop):
@@ -341,7 +343,10 @@ def test_only_admins_void_and_voids_drop_from_totals(shop):
     assert "Approved by KATE TEST" in s
     listing = client.get("/pos/sales").text
     assert "VOIDED" in listing
-    assert "VOIDED" in client.get(f"/pos/receipt/sale/{sale['id']}").text
+    # no reprint of a voided sale: the button is disabled and the receipt refused
+    assert f'href="/pos/receipt/sale/{sale["id"]}"' not in listing and "Voided: no reprint" in listing
+    r = client.get(f"/pos/receipt/sale/{sale['id']}")
+    assert r.status_code == 409 and sale["sale_no"] in r.text and "can't be reprinted" in r.text
 
 
 def test_fee_settings_change_applies(shop):
