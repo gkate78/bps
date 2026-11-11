@@ -4,7 +4,7 @@ Build a demo database with synthetic data for presentations and videos. No real 
 
     venv/bin/python scripts/make_demo_data.py                 # creates ~/bps-demo
     venv/bin/python scripts/make_demo_data.py --dir ~/bps-demo --days 120 --force
-    BPS_DATA_DIR=~/bps-demo ./scripts/run_local.sh            # run BPS on the demo data
+    PORT=8002 BPS_DATA_DIR=~/bps-demo ./scripts/run_local.sh  # run BPS on the demo data: http://localhost:8002
 
 It writes:
   <dir>/bills_admin.db           users, biller rules, ~N days of bill payments, two weeks of register sales
@@ -283,7 +283,8 @@ def main() -> None:
     print("Sign in (synthetic accounts):")
     for first, last, ph, pin, role in DEMO_USERS:
         print(f"  {role:<8} {first} {last}: phone {ph}, PIN {pin}")
-    print(f"Run it with: BPS_DATA_DIR={target} ./scripts/run_local.sh")
+    print(f"Run it with: PORT=8002 BPS_DATA_DIR={target} ./scripts/run_local.sh")
+    print("Then open http://localhost:8002/auth/signin (port 8000 stays free for the live app)")
 
 
 if __name__ == "__main__":

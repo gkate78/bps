@@ -54,10 +54,10 @@ Requires Python 3.12+ (tested on 3.12 and 3.14). `sqlmodel` is pinned to 0.0.44:
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --reload
+uvicorn main:app --reload --port 8001
 ```
 
-Open locally: `http://127.0.0.1:8000/auth/signin`
+Open locally: `http://localhost:8001/auth/signin`. Port 8000 is left for everyday use (`run_local.sh`, below), so both can run at once. Use `localhost` for testing and `127.0.0.1` for everyday use: the browser keeps their sign-ins apart (on the same host, signing in on one port signs you out of the other).
 
 ### Everyday local use (Linux/WSL)
 Keep real data separate from development so code changes and test imports never touch it:
@@ -68,7 +68,8 @@ Keep real data separate from development so code changes and test imports never 
 ```
 
 - Data lives in `~/bps-data/` (override with `BPS_DATA_DIR`): `bills_admin.db`, `.env` (generated with a random `SESSION_SECRET`), and `backups/` (last 30 kept, set `BPS_BACKUP_KEEP` to change).
-- For development, run `uvicorn main:app --reload --port 8001`; it uses the throwaway `bills_admin.db` in the project folder.
+- For development, run `uvicorn main:app --reload --port 8001` and open `http://localhost:8001`; it uses the throwaway `bills_admin.db` in the project folder.
+- `PORT` changes the port, e.g. `PORT=8002 ./scripts/run_local.sh`.
 - To restore, stop the app and copy a file from `~/bps-data/backups/` over `~/bps-data/bills_admin.db`.
 - New model columns are not added to existing databases automatically: add an `ALTER TABLE` step in `init_db()` in `app/database.py` for each one.
 
@@ -93,7 +94,7 @@ Run from the project root with `venv/bin/python`. Data-changing scripts are dry 
 | `scripts/clean_phone_numbers.py --db <path>` | Normalize stored phone numbers (blank `NA`, restore dropped leading 0) and fill customers' missing phones |
 | `scripts/apply_file_amounts.py --db <path>` | Put the import file's own amounts back on records imported before file amounts were kept, flagging differences for review |
 | `scripts/db_view.py` | Read-only database preview |
-| `scripts/make_demo_data.py [--dir ~/bps-demo] [--days 120] [--force]` | Build a separate demo database with synthetic bills, register sales, demo accounts and a messy CSV for the import demo; run it with `BPS_DATA_DIR=~/bps-demo ./scripts/run_local.sh`. Refuses `~/bps-data` and the project folder |
+| `scripts/make_demo_data.py [--dir ~/bps-demo] [--days 120] [--force]` | Build a separate demo database with synthetic bills, register sales, demo accounts and a messy CSV for the import demo; run it with `PORT=8002 BPS_DATA_DIR=~/bps-demo ./scripts/run_local.sh` and open `http://localhost:8002`. Refuses `~/bps-data` and the project folder |
 | `scripts/import_cashreg.py --from <cashreg.db> --db <path>` | One-time move of the standalone shop register's data into BPS (users matched by phone; backs up first; refuses if BPS already has register sales) |
 
 ### Windows (PowerShell) quickstart
