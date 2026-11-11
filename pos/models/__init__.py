@@ -1,4 +1,5 @@
 from pos.models.audit import PosAuditLog
+from pos.models.draft import PosDraft
 from pos.models.eod import PosCashMovement, PosDayClose, PosDayWallet, PosDrawerHandover
 from pos.models.parked import PosParkedTxn
 from pos.models.sale import PosSale, PosSaleBill, PosSaleLine, PosSalePayment
@@ -10,6 +11,7 @@ __all__ = [
     "PosCashMovement",
     "PosDayClose",
     "PosDayWallet",
+    "PosDraft",
     "PosDrawerHandover",
     "PosFeeBracket",
     "PosNetwork",
