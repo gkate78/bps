@@ -12,6 +12,7 @@ from pos.auth_adapter import User, display_name, get_current_user, page_admin, p
 from app.auth import is_business_owner
 from app.controllers.bill_controller import get_distinct_billers
 from pos.controllers import bill_checkout_controller as bills
+from pos.controllers import draft_controller as drafts
 from pos.controllers import parked_controller as parked
 from pos.controllers import sale_controller as sales
 from pos.controllers import suggest_controller as suggest
@@ -146,6 +147,7 @@ async def create_sale(data: SaleIn, user: User = Depends(get_current_user), db: 
         sale = await sales.create_sale(db, data, user)
     except sales.PosError as exc:
         raise _bad_request(exc)
+    await drafts.clear(db, user, "sale")  # saved: its unsaved copy mustn't come back
     cash_out = await sales.linked_cash_out(db, sale.id)
     linked = [] if sale.payment_method == "wallet" else await sales.linked_wallet_txns(db, sale.id)
     bills = await sales.linked_bills(db, sale.id)
@@ -185,9 +187,11 @@ async def bill_quote(
 async def checkout_bills(data: BillsCheckoutIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Several bills paid together; each is saved to bill_records like one from the entry form."""
     try:
-        return await bills.checkout(db, data, user)
+        result = await bills.checkout(db, data, user)
     except sales.PosError as exc:
         raise _bad_request(exc)
+    await drafts.clear(db, user, "bills")
+    return result
 
 
 @router.post("/api/wallet-txns")
@@ -198,7 +202,29 @@ async def create_wallet_txn(
         txn = await sales.create_wallet_txn(db, data, user)
     except sales.PosError as exc:
         raise _bad_request(exc)
+    await drafts.clear(db, user, "wallet")
     return {"id": txn.id, "txn_no": txn.txn_no, "change_cents": txn.change_cents, "give_cents": txn.give_cents}
+
+
+@router.get("/api/drafts")
+async def list_drafts(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """This cashier's unsaved work, to put back on the screen when the register opens again."""
+    return await drafts.list_drafts(db, user)
+
+
+@router.put("/api/drafts")
+async def keep_draft(data: ParkIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        await drafts.keep(db, data, user)
+    except parked.ParkError as exc:
+        raise _bad_request(exc)
+    return {"ok": True}
+
+
+@router.delete("/api/drafts/{kind}")
+async def clear_draft(kind: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await drafts.clear(db, user, kind)
+    return {"ok": True}
 
 
 @router.get("/api/parked")
@@ -212,6 +238,7 @@ async def park(data: ParkIn, user: User = Depends(get_current_user), db: AsyncSe
         row = await parked.park(db, data, user)
     except parked.ParkError as exc:
         raise _bad_request(exc)
+    await drafts.clear(db, user, data.kind)  # parked instead
     return {"id": row.id, "label": row.label}
 
 

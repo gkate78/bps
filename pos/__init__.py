@@ -23,6 +23,7 @@ DATABASE_VIEW_TABLES = {
     "pos_sale_payments": "Shop Job Order Payments",
     "pos_wallet_txns": "Shop GCash/Maya Cash-in/out",
     "pos_parked_txns": "Shop Parked (unpaid)",
+    "pos_drafts": "Shop Unsaved (being rung up)",
     "pos_day_closes": "End of Day",
     "pos_day_wallets": "End of Day GCash/Maya",
     "pos_cash_movements": "Cash Movements",

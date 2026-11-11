@@ -1248,49 +1248,94 @@
         loadParked();
     });
 
-    // ---------- Unsaved work kept in this browser (a brownout or a closed tab doesn't lose it) ----------
-    // What's being rung up (the same data as parking) is copied to localStorage as it changes and
-    // filled back in when the register opens again. It's removed once the transaction is saved,
-    // parked or cleared. Per cashier, on this computer only.
+    // ---------- Unsaved work kept on the server (a brownout or a closed browser doesn't lose it) ----------
+    // What's being rung up (the same data as parking) is sent to the server a moment after each change,
+    // one copy per cashier for the shop sale, the GCash/Maya transaction and the bills, and filled back in
+    // when the register opens again. The server removes a copy when its transaction is saved or parked;
+    // clearing the screen removes it too. A copy also stays in this browser, for when the server can't
+    // be reached.
     const DRAFT_KEY = `pos-draft:${document.body.dataset.user || ""}`;
-    let lastDraft = null;
+    const DRAFT_KINDS = ["sale", "wallet", "bills"];
+    const sent = {}; // kind -> what the server has (JSON text), or null for nothing
+    let draftQueue = Promise.resolve(); // one request at a time, in order: a late copy never overwrites a removal
+    let draftsReady = false; // nothing is sent until the saved copies have been put back on the screen
+    function currentDrafts() {
+        return {
+            sale: saleInProgress() ? saleParking() : null,
+            wallet: walletInProgress() ? walletParking() : null,
+            bills: window.registerBills?.inProgress() ? window.registerBills.parking() : null,
+        };
+    }
     function keepDraft() {
-        const drafts = {};
-        if (saleInProgress()) drafts.sale = saleParking();
-        if (walletInProgress()) drafts.wallet = walletParking();
-        if (window.registerBills?.inProgress()) drafts.bills = window.registerBills.parking();
-        const text = Object.keys(drafts).length ? JSON.stringify({ at: new Date().toISOString(), drafts }) : null;
-        if (text === lastDraft) return;
-        lastDraft = text;
+        if (!draftsReady) return;
+        const drafts = currentDrafts();
+        const local = Object.fromEntries(Object.entries(drafts).filter(([, d]) => d));
         try {
-            if (text) localStorage.setItem(DRAFT_KEY, text);
+            if (Object.keys(local).length) localStorage.setItem(DRAFT_KEY, JSON.stringify({ at: new Date().toISOString(), drafts: local }));
             else localStorage.removeItem(DRAFT_KEY);
         } catch {
-            // storage blocked or full: nothing more to do
+            // storage blocked or full: the server copy still works
+        }
+        for (const kind of DRAFT_KINDS) {
+            const text = drafts[kind] ? JSON.stringify(drafts[kind]) : null;
+            if (text === (sent[kind] ?? null)) continue;
+            sent[kind] = text;
+            draftQueue = draftQueue
+                .then(() =>
+                    fetch(text ? "/pos/api/drafts" : `/pos/api/drafts/${kind}`, {
+                        method: text ? "PUT" : "DELETE",
+                        headers: { "Content-Type": "application/json" },
+                        body: text || undefined,
+                        keepalive: true, // still sent when the page is closing
+                    }),
+                )
+                .then((response) => {
+                    if (!response.ok) throw new Error(String(response.status));
+                })
+                .catch(() => {
+                    if (sent[kind] === text) delete sent[kind]; // try again on the next check
+                });
+        }
+    }
+    async function savedDrafts() {
+        try {
+            const rows = await getJson("/pos/api/drafts");
+            const at = rows.map((row) => row.at).sort().pop();
+            return { at, drafts: Object.fromEntries(rows.map((row) => [row.kind, row])) };
+        } catch {
+            // server not reachable: what this browser kept
+            try {
+                return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null") || { drafts: {} };
+            } catch {
+                return { drafts: {} };
+            }
         }
     }
     async function restoreDraft() {
-        let saved = null;
-        try {
-            saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
-        } catch {
-            saved = null;
-        }
-        const drafts = saved?.drafts || {};
+        const saved = await savedDrafts();
+        const drafts = saved.drafts || {};
         const kinds = ["bills", "wallet", "sale"].filter((kind) => drafts[kind]); // the shop sale's tab last
-        if (!kinds.length) return;
-        for (const kind of kinds) await restore(drafts[kind]);
+        for (const kind of kinds) {
+            sent[kind] = JSON.stringify(drafts[kind]);
+            try {
+                await restore(drafts[kind]);
+            } catch (err) {
+                console.error(`Couldn't restore the unsaved ${kind}`, err);
+            }
+        }
+        draftsReady = true;
+        if (!kinds.length) return keepDraft();
         const names = { sale: "shop sale", wallet: "GCash/Maya transaction", bills: "bills" };
         say(
-            `Restored the unsaved ${kinds.map((kind) => names[kind]).join(" and ")} from ${parkedTime(saved.at)}. ` +
-                "If the register lost power or the tab closed while saving, check History first so it isn't saved twice.",
+            `Restored the unsaved ${kinds.map((kind) => names[kind]).join(" and ")}` +
+                (saved.at ? ` from ${parkedTime(saved.at)}` : "") +
+                ". If the register lost power or the tab closed while saving, check Sales first so it isn't saved twice.",
             "warn",
         );
-        lastDraft = null;
         keepDraft();
     }
     ["input", "change", "click"].forEach((type) => document.addEventListener(type, () => setTimeout(keepDraft, 0)));
-    setInterval(keepDraft, 3000); // also catches changes made by code (quotes, a resumed transaction)
+    setInterval(keepDraft, 2000); // also catches changes made by code (quotes, a resumed transaction)
     window.addEventListener("pagehide", keepDraft);
     restoreDraft();
 
