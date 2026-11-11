@@ -60,3 +60,4 @@
 - [x] BPS-242 | Shipped on: 2026-11-10 | Notes: No reprint of voided transactions: greyed-out Reprint in Sales, voided receipts refused.
 - [x] BPS-243 | Shipped on: 2026-11-10 | Notes: Bill receipts show the one payment (paid together, GCash/Maya/bank reference, cash and change); a sale of only bills prints just the bills' receipts; Bills tab checkouts saved as bills-only sales (DEC-057).
 - [x] BPS-244 | Shipped on: 2026-11-10 | Notes: The register keeps unsaved work in the browser and restores it after a brownout or closed tab (DEC-058).
+- [x] BPS-249 | Shipped on: 2026-11-11 | Notes: `scripts/make_demo_data.py` builds a separate demo database (synthetic bills, register sales, GCash/Maya, demo accounts, a messy CSV for the import demo) for presentations and videos; refuses `~/bps-data` and the project folder.
