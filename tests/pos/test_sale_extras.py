@@ -282,3 +282,24 @@ def test_bill_rung_up_with_services_points_to_the_sale_receipt(shop):
     assert r.status_code == 200, r.text
     page = shop.client.get(f"/pos/receipt/sale/{r.json()['id']}").text
     assert page.count(f"PAID WITH SALE {r.json()['sale_no']}") == 2
+
+
+def test_deleted_bill_frees_its_sale_even_when_the_next_bill_gets_its_id(shop):
+    """A bill deleted in Bills records and entered again: SQLite gives the new bill the same id, so the
+    old sale's link must go with the deleted bill, or the old sale can't be voided (S-000430)."""
+    rules(shop)
+    client = shop.client
+    first = client.post("/pos/api/sales", json={"lines": [bill()], "cash": "1300"}).json()
+    with Session(shop.engine) as session:
+        old_id = session.exec(select(BillRecord)).one().id
+    assert client.delete(f"/api/records/{old_id}").status_code == 204
+
+    second = client.post("/pos/api/sales", json={"lines": [bill()], "cash": "1300"}).json()
+    with Session(shop.engine) as session:
+        assert session.exec(select(BillRecord)).one().id == old_id  # the same id again
+
+    r = client.post(f"/pos/api/sales/{first['id']}/void", json={"reason": "bill entered again", "admin_pin": ADMIN_PIN})
+    assert r.status_code == 200, r.text
+    # The new sale still has its bill.
+    r = client.post(f"/pos/api/sales/{second['id']}/void", json={"reason": "wrong", "admin_pin": ADMIN_PIN})
+    assert r.status_code == 400 and "Bills records first" in r.json()["detail"]

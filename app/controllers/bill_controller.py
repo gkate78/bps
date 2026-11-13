@@ -10,7 +10,7 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import and_, asc, desc, func, or_
+from sqlalchemy import and_, asc, desc, func, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -736,6 +736,13 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
 
 async def delete_record(db: AsyncSession, record_id: int) -> None:
     record = await get_record(db, record_id)
+    # The register's link from a sale to this bill goes too. SQLite can give the next new bill the same id
+    # (when the newest one is deleted), and a link left behind would then point the old sale at that bill.
+    has_links = (
+        await db.execute(text("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pos_sale_bills'"))
+    ).first()
+    if has_links:
+        await db.execute(text("DELETE FROM pos_sale_bills WHERE bill_record_id = :id"), {"id": record_id})
     await db.delete(record)
     await db.commit()
 
