@@ -130,6 +130,8 @@ async def init_db() -> None:
         # Lightweight migration: add per-method system charges for biller rules.
         biller_columns = (await conn.execute(text("PRAGMA table_info(biller_rules)"))).fetchall()
         biller_col_names = {row[1] for row in biller_columns}
+        if "late_charge_rate" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN late_charge_rate FLOAT NOT NULL DEFAULT 0"))
         if "system_charge_cash" not in biller_col_names:
             await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN system_charge_cash FLOAT NOT NULL DEFAULT 0"))
         if "system_charge_gcash" not in biller_col_names:

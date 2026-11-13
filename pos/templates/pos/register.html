@@ -64,6 +64,7 @@
                 <label>Mobile no. <input type="tel" id="loadMobile" maxlength="11" inputmode="numeric" placeholder="09XXXXXXXXX" required></label>
                 <label>Load amount ₱ <input type="text" id="loadAmount" inputmode="numeric" required></label>
             </div>
+            <p class="muted small" id="loadNetworkHint" role="status"></p>
             <div class="row2">
                 <label class="check"><input type="checkbox" id="loadPromo"> Promo <span class="muted">(price rounds up to the next ₱10)</span></label>
                 <label>Promo name <span class="muted">(optional)</span> <input type="text" id="loadDesc" maxlength="160"></label>
@@ -299,6 +300,9 @@
             <label>Due date <input type="date" id="bDue" required></label>
             <label>Bill amount ₱ <input type="text" id="bAmount" inputmode="decimal" required></label>
         </div>
+        <label id="bLateField" hidden>Late charge ₱ <span class="muted">(overdue: type the penalty printed on the bill; leave empty for <span id="bLateRule">the biller rule's</span>)</span>
+            <input type="text" id="bLate" inputmode="decimal">
+        </label>
         <label>Payment reference <span class="muted">(optional, from the biller if paid right away)</span>
             <input type="text" id="bPayRef" maxlength="120">
         </label>

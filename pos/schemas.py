@@ -93,6 +93,7 @@ class BillIn(BaseModel):
     due_date: Optional[date] = None
     bill_amt: Optional[str] = None
     payment_reference: Optional[str] = None  # from the biller, if it's paid to the biller right away
+    late_charge: Optional[str] = None  # typed from the printed bill when overdue; empty = the biller rule's
 
 
 class BillsCheckoutIn(BaseModel):

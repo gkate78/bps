@@ -167,7 +167,8 @@ def _normalized_biller_key(value: str) -> str:
     return str(value or "").strip().upper()
 
 
-async def _get_biller_rule_maps(db: AsyncSession) -> tuple[dict[str, float], dict[str, float]]:
+async def _get_biller_rule_maps(db: AsyncSession) -> tuple[dict[str, float], dict[str, tuple[float, float]]]:
+    """Service charge, and late charge as (fixed pesos, percent of the bill), for each active biller."""
     result = await db.execute(select(BillerRule).where(BillerRule.is_active == True))  # noqa: E712
     rules = result.scalars().all()
 
@@ -177,7 +178,7 @@ async def _get_biller_rule_maps(db: AsyncSession) -> tuple[dict[str, float], dic
         if str(item.biller or "").strip()
     }
     late_map = {
-        str(item.biller or "").strip().upper(): round(float(item.late_charge or 0), 2)
+        str(item.biller or "").strip().upper(): (round(float(item.late_charge or 0), 2), float(item.late_charge_rate or 0))
         for item in rules
         if str(item.biller or "").strip()
     }
@@ -226,7 +227,7 @@ async def get_biller_charges(db: AsyncSession) -> dict[str, float]:
     return charge_map
 
 
-async def get_biller_late_charges(db: AsyncSession) -> dict[str, float]:
+async def get_biller_late_charges(db: AsyncSession) -> dict[str, tuple[float, float]]:
     _, late_map = await _get_biller_rule_maps(db)
     return late_map
 
@@ -342,18 +343,29 @@ def _compute_charge(biller: str, bill_amount: float, charge_map: dict[str, float
     return round(float(computed), 2)
 
 
+def late_charge_for(rule: tuple[float, float], bill_amt: float) -> float:
+    """The rule's late charge for an overdue bill: fixed pesos plus a percent of the bill (to the centavo)."""
+    fixed, rate = rule
+    return round(float(fixed or 0) + float(bill_amt or 0) * float(rate or 0) / 100 + 1e-9, 2)
+
+
 def _compute_late_charge(
     biller: str,
     due_date: Optional[date],
-    late_map: dict[str, float],
+    late_map: dict[str, tuple[float, float]],
     ref_date: Optional[date] = None,
+    bill_amt: float = 0,
+    typed: Optional[float] = None,
 ) -> float:
+    """Zero unless overdue; then the amount the cashier typed from the bill, else the biller rule's."""
     if due_date is None:
         return 0.0
     basis_date = ref_date or date.today()
     if due_date >= basis_date:
         return 0.0
-    return round(float(late_map.get(biller.strip().upper(), 0.0)), 2)
+    if typed is not None:
+        return round(max(float(typed), 0.0), 2)
+    return late_charge_for(late_map.get(biller.strip().upper(), (0.0, 0.0)), bill_amt)
 
 
 def cash_to_collect(total: float, payment_method: Optional[str] = None) -> float:
@@ -365,11 +377,15 @@ def cash_to_collect(total: float, payment_method: Optional[str] = None) -> float
     return float((cents + 50) // 100)
 
 
-def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: dict[str, float]) -> dict:
+def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: dict) -> dict:
     bill_amt = round(float(payload.get("bill_amt", 0) or 0), 2)
     due_date = payload.get("due_date")
     txn_date = payload.get("txn_date")
-    late_charge = _compute_late_charge(str(payload.get("biller", "") or ""), due_date, late_map, txn_date)
+    # A late charge typed from the printed bill (e.g. a water district's penalty) replaces the rule's.
+    typed = payload.pop("late_charge_typed", None)
+    late_charge = _compute_late_charge(
+        str(payload.get("biller", "") or ""), due_date, late_map, txn_date, bill_amt=bill_amt, typed=typed
+    )
     cash = round(float(payload.get("cash", 0) or 0), 2)
     biller = str(payload.get("biller", "") or "").strip()
 
@@ -403,7 +419,7 @@ def _apply_file_amounts(
     payload: dict,
     file_amounts: dict[str, Optional[float]],
     charge_map: dict[str, float],
-    late_map: dict[str, float],
+    late_map: dict,
 ) -> tuple[dict, Optional[dict]]:
     """Keep the amounts recorded in an import file (what was actually collected), filling blanks from the
     biller rules. Returns the payload and an amount review note when the file disagrees with the rules
@@ -490,12 +506,15 @@ async def _generate_reference(db: AsyncSession, txn_date: date) -> str:
 
 
 async def quote_bill(
-    db: AsyncSession, *, biller: str, bill_amt: float, due_date: Optional[date], personal: Optional[str] = None
+    db: AsyncSession, *, biller: str, bill_amt: float, due_date: Optional[date], personal: Optional[str] = None,
+    late_charge_typed: Optional[float] = None,
 ) -> dict:
-    """Late charge, service charge and total for a new bill today, from the active biller rules."""
+    """Late charge, service charge and total for a new bill today, from the active biller rules
+    (or the late charge typed from the bill)."""
     charge_map, late_map = await _get_biller_rule_maps(db)
     amounts = _apply_computations(
-        {"biller": biller, "bill_amt": bill_amt, "due_date": due_date, "txn_date": date.today(), "personal": personal},
+        {"biller": biller, "bill_amt": bill_amt, "due_date": due_date, "txn_date": date.today(), "personal": personal,
+         "late_charge_typed": late_charge_typed},
         charge_map,
         late_map,
     )
@@ -686,6 +705,9 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
     # Set only at entry; kept so recomputed amounts stay without a service charge.
     updates["personal"] = record.personal
     if _amount_inputs_changed(record, updates):
+        # A late charge changed by hand (to the one printed on the bill) is kept; otherwise the rule's applies.
+        if abs(float(updates.get("late_charge") or 0) - float(record.late_charge or 0)) >= 0.005:
+            updates["late_charge_typed"] = updates["late_charge"]
         updates = _apply_computations(updates, charge_map, late_map)
         # Amounts now follow the biller rules, so any import review note no longer applies.
         updates["amount_review"] = None

@@ -487,3 +487,18 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Alternatives considered: keeping the browser copy only (lost in a sudden power cut); auto-parking (fills the Parked bar and needs a resume step); keeping the copy until the receipt prints (the owner chose removal on save: a saved sale reprints from Sales, and a kept copy risks ringing it up twice).
 - Follow-up: The same cashier with the register open in two tabs or on two computers at once shares one copy; the last change wins.
 
+- Date: 2026-11-13
+- ID: DEC-060
+- Related task: BPS-252
+- Decision: In the Load form the network follows the mobile no. From the fourth digit the prefix picks the network family's main brand (GLOBE for Globe/TM/GOMO prefixes, SMART for Smart/TNT/Sun, DITO), matched by name against the active networks; an unknown prefix clears the choice and asks the cashier to choose. Once all 11 digits are in, a number loaded here before takes the network of its last completed load (from the existing mobile suggestions). A note under the field says which it used. A network the cashier clicks is kept until the number is cleared or the load is added; an edited line keeps its saved network. The prefix list is in `register.js`.
+- Why: The owner asked for the network to be recognised from the number. The prefix can't tell TM from Globe or TNT from Smart, and ported numbers keep their old prefix, so the number's own history comes first and the cashier can always override.
+- Alternatives considered: the prefix only (wrong for TM/TNT and ported numbers); learning each prefix's usual brand from past loads (more code for little gain over the per-number history).
+- Follow-up: New prefixes are assigned from time to time; add them to `NETWORK_PREFIXES` when a number isn't recognised.
+
+- Date: 2026-11-13
+- ID: DEC-061
+- Related task: BPS-253
+- Decision: Biller rules get `late_charge_rate` (percent of the bill amount, 0–100) besides the fixed `late_charge`; an overdue bill's late charge is fixed + rate% of the bill, to the centavo (half up). STA MARIA WATER is set to 10%. Because the printed penalty can differ, an overdue bill can carry the late charge typed from the bill (`late_charge_typed` on new records; `late_charge` on register bills and the bill quote), which replaces the rule's; it is ignored when the bill isn't overdue. In the register a Late charge field shows for any overdue bill (whatever the rule, so a penalty can be typed for a biller with no late charge rule), with the rule's amount as its placeholder, and the quote marks a typed one "(from the bill)". On the entry form the Late Charge box becomes typeable when overdue. Editing a record keeps a late charge changed by hand; other amount changes still recompute from the rule. Set in Admin Settings (Late Charge - % of Bill Amount) or the rules CSV (optional LATE_CHARGE_RATE).
+- Why: The owner asked for a 10% late payment charge on the water bill. Past STA MARIA WATER penalties were 9.6–9.8% of the amount entered (the district takes 10% of its water charge only, before added fees: ₱411.25 → ₱39.85), so a fixed 10% alone would overcharge by up to a few pesos; the cashier has the printed amount.
+- Alternatives considered: 10% of the bill with no override (overcharges slightly); typing the late charge only (no default); estimating the water charge from the bill (the added fees vary).
+- Follow-up: Amounts to review (imports) compares against the rule, so a typed penalty imported from a file shows as differing from the rule.
