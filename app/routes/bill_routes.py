@@ -188,6 +188,8 @@ class RecordCreate(BaseModel):
     payment_channel: Optional[str] = None
     # Admin only: own bill without a service charge; "shop" = paid from shop funds.
     personal: Optional[Literal["paid", "shop"]] = None
+    # The late charge printed on an overdue bill, typed by the cashier; replaces the biller rule's.
+    late_charge_typed: Optional[float] = Field(default=None, ge=0)
 
 
 class RecordUpdate(BaseModel):
@@ -782,6 +784,7 @@ async def upsert_biller_rule(
     system_charge_bpi_cc: float = Form(0),
     system_charge_bpi: float = Form(0),
     late_charge: float = Form(0),
+    late_charge_rate: float = Form(0),
     account_digits: Optional[int] = Form(None),
     account_format: str = Form("NUMERIC"),
     is_active: Optional[str] = Form(None),
@@ -801,8 +804,9 @@ async def upsert_biller_rule(
         or system_charge_bpi_cc < 0
         or system_charge_bpi < 0
         or late_charge < 0
+        or not 0 <= late_charge_rate <= 100
     ):
-        return RedirectResponse(url="/admin/settings?error=Charges+must+not+be+negative", status_code=303)
+        return RedirectResponse(url="/admin/settings?error=Charges+must+not+be+negative+(late+charge+%+up+to+100)", status_code=303)
     if account_digits is not None and account_digits <= 0:
         return RedirectResponse(url="/admin/settings?error=Account+digits+must+be+greater+than+zero", status_code=303)
     existing = await db.execute(select(BillerRule).where(BillerRule.biller == cleaned_biller))
@@ -818,6 +822,7 @@ async def upsert_biller_rule(
             system_charge_bpi_cc=round(float(system_charge_bpi_cc), 2),
             system_charge_bpi=round(float(system_charge_bpi), 2),
             late_charge=round(float(late_charge), 2),
+            late_charge_rate=round(float(late_charge_rate), 4),
             account_digits=int(account_digits) if account_digits else None,
             account_format=account_format,
             is_active=is_active is not None,
@@ -831,6 +836,7 @@ async def upsert_biller_rule(
         rule.system_charge_bpi_cc = round(float(system_charge_bpi_cc), 2)
         rule.system_charge_bpi = round(float(system_charge_bpi), 2)
         rule.late_charge = round(float(late_charge), 2)
+        rule.late_charge_rate = round(float(late_charge_rate), 4)
         rule.account_digits = int(account_digits) if account_digits else None
         rule.account_format = account_format
         rule.is_active = is_active is not None
@@ -888,6 +894,7 @@ async def quick_add_biller_rule(
         "biller": rule.biller,
         "service_charge": rule.service_charge,
         "late_charge": rule.late_charge,
+        "late_charge_rate": rule.late_charge_rate or 0,
         "account_digits": rule.account_digits,
         "account_format": rule.account_format,
     }
@@ -940,6 +947,12 @@ async def import_biller_rules_csv(
         system_charge_bpi_cc = _parse_float(row.get("BPI CREDIT CARD") or row.get("BPI_CC"))
         system_charge_bpi = _parse_float(row.get("BPI"))
         late_charge = _parse_float(row.get("LATE_CHARGE"))
+        # Optional column; when absent, existing rules keep their percent.
+        raw_rate = str(row.get("LATE_CHARGE_RATE") or "").strip()
+        late_charge_rate = _parse_float(raw_rate) if raw_rate else None
+        if raw_rate and (late_charge_rate is None or not 0 <= late_charge_rate <= 100):
+            skipped += 1
+            continue
         if (
             service_charge is None
             or system_charge_cash is None
@@ -986,6 +999,7 @@ async def import_biller_rules_csv(
                 system_charge_bpi_cc=system_charge_bpi_cc,
                 system_charge_bpi=system_charge_bpi,
                 late_charge=late_charge,
+                late_charge_rate=late_charge_rate or 0,
                 account_digits=account_digits,
                 account_format=normalize_account_format(raw_format),
                 is_active=is_active,
@@ -1000,6 +1014,8 @@ async def import_biller_rules_csv(
             rule.system_charge_bpi_cc = system_charge_bpi_cc
             rule.system_charge_bpi = system_charge_bpi
             rule.late_charge = late_charge
+            if late_charge_rate is not None:
+                rule.late_charge_rate = late_charge_rate
             rule.account_digits = account_digits
             if raw_format:
                 rule.account_format = normalize_account_format(raw_format)

@@ -17,6 +17,8 @@ class BillerRule(SQLModel, table=True):
     system_charge_bpi_cc: float = Field(default=0, nullable=False)
     system_charge_bpi: float = Field(default=0, nullable=False)
     late_charge: float = Field(default=0, nullable=False)
+    # Percent of the bill amount added to the late charge when overdue (e.g. 10 for a water district's 10%).
+    late_charge_rate: float = Field(default=0, nullable=False)
     # Required account length (digits, or letters+numbers for ALPHANUMERIC billers like SSS).
     account_digits: Optional[int] = Field(default=None, nullable=True)
     # NUMERIC: numbers only. ALPHANUMERIC: letters and numbers (e.g. SSS, PhilHealth references).

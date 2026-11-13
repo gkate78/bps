@@ -44,6 +44,7 @@
             personal: String(!!personal()),
         });
         if (bill.due_date) params.set("due_date", bill.due_date);
+        if (bill.late_charge) params.set("late_charge", bill.late_charge);
         const q = await getJson(`/pos/api/quote/bill?${params}`);
         if (q.needs_rule) {
             if (openRule) openRuleDialog(q.biller);
@@ -54,7 +55,7 @@
 
     function quoteText(q) {
         const parts = [`Bill ${peso(q.bill_cents)}`];
-        if (q.late_charge_cents) parts.push(`late charge ${peso(q.late_charge_cents)}`);
+        if (q.late_charge_cents) parts.push(`late charge ${peso(q.late_charge_cents)}${q.late_charge_cents !== q.rule_late_charge_cents ? " (from the bill)" : ""}`);
         parts.push(q.charge_cents ? `service charge ${peso(q.charge_cents)}` : "no service charge");
         return `${escapeHtml(parts.join(" + "))} = <strong>${escapeHtml(peso(q.total_cents))}</strong>`;
     }
@@ -68,7 +69,25 @@
             due_date: $("bDue").value,
             amount: $("bAmount").value.trim(),
             payment_reference: upper($("bPayRef").value),
+            late_charge: $("bLate").value.trim(),
         };
+    }
+
+    // Overdue: the late charge can be typed from the printed bill (a water district's penalty isn't
+    // exactly its percent of the amount entered); empty uses the biller rule's.
+    function isOverdue() {
+        const due = $("bDue").value;
+        if (!due) return false;
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+        return due < today;
+    }
+    function showLateField(q) {
+        const ruleCents = q?.rule_late_charge_cents || 0;
+        // Any overdue bill: the penalty printed on it can be typed, whatever the biller rule says.
+        $("bLateField").hidden = !isOverdue() && !$("bLate").value.trim();
+        $("bLateRule").textContent = ruleCents ? `the rule's ${peso(ruleCents)}` : "none";
+        $("bLate").placeholder = ruleCents ? (ruleCents / 100).toFixed(2) : "";
     }
 
     async function updateQuote() {
@@ -77,12 +96,14 @@
         if (!bill.biller || !bill.amount) {
             box.classList.remove("error");
             box.textContent = "Enter the biller and bill amount.";
+            showLateField(null);
             return;
         }
         const mine = ++quoteSeq;
         try {
             const q = await fetchQuote(bill);
             if (mine !== quoteSeq) return;
+            showLateField(q);
             box.classList.remove("error");
             box.innerHTML = quoteText(q);
         } catch (err) {
@@ -96,7 +117,7 @@
         clearTimeout(quoteTimer);
         quoteTimer = setTimeout(updateQuote, 250);
     };
-    ["bBiller", "bAmount", "bDue", "bAccount"].forEach((id) => {
+    ["bBiller", "bAmount", "bDue", "bAccount", "bLate"].forEach((id) => {
         $(id).addEventListener("input", scheduleQuote);
         $(id).addEventListener("change", scheduleQuote);
     });
@@ -193,10 +214,11 @@
         $("billCancel").hidden = index === null;
     }
 
-    // Ready for the next bill; the same customer often pays several, so name and phone stay.
-    function resetEditor({ keepCustomer = true } = {}) {
-        ["bAccount", "bBiller", "bDue", "bAmount", "bPayRef"].forEach((id) => ($(id).value = ""));
-        if (!keepCustomer) ["bName", "bPhone"].forEach((id) => ($(id).value = ""));
+    // Ready for the next bill: the whole form is cleared, customer included (the same in the Bills tab
+    // and in the shop sale, which will take over from the tab).
+    function resetEditor() {
+        ["bAccount", "bBiller", "bName", "bPhone", "bDue", "bAmount", "bPayRef", "bLate"].forEach((id) => ($(id).value = ""));
+        showLateField(null);
         lookedUp = "";
         $("billQuote").classList.remove("error");
         $("billQuote").textContent = "Enter the biller and bill amount.";
@@ -283,6 +305,7 @@
             $("bDue").value = bill.due_date;
             $("bAmount").value = bill.amount;
             $("bPayRef").value = bill.payment_reference || "";
+            $("bLate").value = bill.late_charge || "";
             lookedUp = bill.account;
             updateQuote();
             $("bAmount").focus();
@@ -322,6 +345,7 @@
         $("bDue").value = bill.due_date;
         $("bAmount").value = bill.amount;
         $("bPayRef").value = bill.payment_reference || "";
+        $("bLate").value = bill.late_charge || "";
         lookedUp = bill.account; // don't overwrite the name typed for this bill
         updateQuote();
         renderBills();
@@ -359,12 +383,13 @@
     });
 
     // Enter moves to the next field (as on the entry form); on the last one it adds the bill.
-    const EDITOR_ORDER = ["bAccount", "bBiller", "bName", "bPhone", "bDue", "bAmount", "bPayRef"];
+    const EDITOR_ORDER = ["bAccount", "bBiller", "bName", "bPhone", "bDue", "bAmount", "bLate", "bPayRef"];
     EDITOR_ORDER.forEach((id, i) =>
         $(id).addEventListener("keydown", (event) => {
             if (event.key !== "Enter" || i === EDITOR_ORDER.length - 1) return;
             event.preventDefault();
-            $(EDITOR_ORDER[i + 1]).focus();
+            const next = EDITOR_ORDER.slice(i + 1).find((n) => !$(n).closest("[hidden]"));
+            $(next || EDITOR_ORDER[EDITOR_ORDER.length - 1]).focus();
         }),
     );
 
@@ -425,7 +450,7 @@
     function clear() {
         bills.length = 0;
         setEditing(null);
-        resetEditor({ keepCustomer: false });
+        resetEditor();
         ["bCash", "bRef"].forEach((id) => ($(id).value = ""));
         setRadio("b_pay", "CASH");
         setRadio("b_personal", "");
@@ -631,6 +656,10 @@
         },
         openInShop,
         hideInShop,
+        // The sale was saved or cleared: nothing of it stays in the bill form for the next customer.
+        clearInShop() {
+            if (inShop) resetEditor();
+        },
         closeInShop,
         quote: fetchQuote, // charges for a bill (uses the sale's Personal while the form is in the sale)
     };

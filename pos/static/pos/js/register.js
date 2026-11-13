@@ -81,6 +81,8 @@
         $("loadDeducted").placeholder = "";
         $("loadPromo").checked = false;
         $("loadQuote").textContent = "Enter the load amount.";
+        networkByHand = false;
+        $("loadNetworkHint").textContent = "";
     }
     function resetCashInForm() {
         $("ciMobile").value = "";
@@ -142,6 +144,7 @@
             showEditor("load");
             document.querySelector(".svc-btn[data-load]")?.classList.add("on");
             setRadio("network", String(line.network_id));
+            networkByHand = true; // keep the network the line was saved with
             setRadio("load_wallet", String(line.wallet_id));
             $("loadMobile").value = line.mobile_no || "";
             $("loadAmount").value = line.amount || "";
@@ -167,8 +170,7 @@
             if (btn.dataset.load) {
                 showEditor("load");
                 btn.classList.add("on");
-                const checked = document.querySelector('input[name="network"]:checked');
-                (checked ? $("loadMobile") : document.querySelector('input[name="network"]'))?.focus();
+                $("loadMobile").focus(); // the network follows the number
                 return;
             }
             if (btn.dataset.bill) {
@@ -252,6 +254,60 @@
             return null;
         }
     }
+    // ---------- Network from the mobile number ----------
+    // The prefix tells the network the number started on. A number loaded here before uses the network it
+    // was loaded on last time (ported numbers, TM vs Globe, TNT vs Smart). A network the cashier picks stays.
+    const NETWORK_PREFIXES = {
+        GLOBE: "0817 0904 0905 0906 0915 0916 0917 0926 0927 0935 0936 0937 0945 0953 0954 0955 0956 0965 0966 0967 0975 0976 0977 0978 0979 0995 0996 0997",
+        SMART: "0813 0907 0908 0909 0910 0911 0912 0913 0914 0918 0919 0920 0921 0922 0923 0924 0925 0928 0929 0930 0931 0932 0933 0934 0938 0939 0940 0941 0942 0943 0944 0946 0947 0948 0949 0950 0951 0968 0969 0970 0981 0989 0998 0999",
+        DITO: "0895 0896 0897 0898 0991 0992 0993 0994",
+    };
+    const NETWORK_FAMILY = { GLOBE: "Globe / TM / GOMO", SMART: "Smart / TNT / Sun", DITO: "DITO" };
+    const prefixNetwork = {};
+    Object.entries(NETWORK_PREFIXES).forEach(([name, list]) => list.split(" ").forEach((p) => (prefixNetwork[p] = name)));
+    let networkByHand = false;
+    const networkInput = (pick) =>
+        Array.from(document.querySelectorAll('input[name="network"]')).find((el) => pick(el));
+    function chooseNetwork(el, hint) {
+        if (!el || networkByHand) return;
+        el.checked = true;
+        $("loadNetworkHint").textContent = hint;
+    }
+    document.querySelectorAll('input[name="network"]').forEach((el) =>
+        el.addEventListener("change", () => {
+            networkByHand = true;
+            $("loadNetworkHint").textContent = "";
+        })
+    );
+    $("loadMobile").addEventListener("input", async () => {
+        const mobile = $("loadMobile").value.replace(/\D/g, "");
+        if (!mobile) {
+            networkByHand = false;
+            $("loadNetworkHint").textContent = "";
+            return;
+        }
+        if (networkByHand) return;
+        const guess = prefixNetwork[mobile.slice(0, 4)];
+        if (mobile.length >= 4) {
+            const el = guess && networkInput((n) => n.dataset.name.toUpperCase() === guess);
+            if (el) chooseNetwork(el, `${NETWORK_FAMILY[guess]} number: change it if the customer says otherwise.`);
+            else {
+                document.querySelectorAll('input[name="network"]').forEach((n) => (n.checked = false));
+                $("loadNetworkHint").textContent = "Couldn't tell the network from the number: choose it.";
+            }
+        }
+        if (!/^09\d{9}$/.test(mobile)) return;
+        try {
+            const match = (await getJson(`/pos/api/suggest/mobile?q=${encodeURIComponent(mobile)}`)).find((m) => m.mobile === mobile);
+            if (match?.network_id && $("loadMobile").value.replace(/\D/g, "") === mobile) {
+                const el = networkInput((n) => n.value === String(match.network_id));
+                chooseNetwork(el, `${el?.dataset.name} as on this number's last load.`);
+            }
+        } catch (err) {
+            /* the prefix guess stays */
+        }
+    });
+
     const updateLoadQuote = debounce(fetchLoadQuote);
     $("loadAmount").addEventListener("input", updateLoadQuote);
     $("loadPromo").addEventListener("change", updateLoadQuote);
@@ -436,6 +492,7 @@
                 due_date: bill.due_date,
                 bill_amt: bill.amount,
                 payment_reference: bill.payment_reference,
+                late_charge: bill.late_charge,
             },
             quote: bill.quote,
             total_cents: bill.quote.total_cents,
@@ -465,6 +522,7 @@
                 personal: String(!!personal()),
             });
             if (line.bill.due_date) params.set("due_date", line.bill.due_date);
+            if (line.bill.late_charge) params.set("late_charge", line.bill.late_charge);
             try {
                 line.quote = await getJson(`/pos/api/quote/bill?${params}`);
                 line.total_cents = line.quote.total_cents;
@@ -763,6 +821,7 @@
         resetLoadForm();
         resetCashInForm();
         resetCashOutForm();
+        window.registerBills?.clearInShop();
         $("splitPay").checked = false;
         ["splitAmount", "splitRef"].forEach((id) => ($(id).value = ""));
         $("splitRefWarn").hidden = true;
@@ -1397,7 +1456,7 @@
         onPick: (m) => {
             $("loadMobile").value = m.mobile;
             const network = m.network_id && document.querySelector(`input[name="network"][value="${m.network_id}"]`);
-            if (network) network.checked = true;
+            if (network) chooseNetwork(network, `${network.dataset.name} as on this number's last load.`);
             $("loadAmount").focus();
         },
     });

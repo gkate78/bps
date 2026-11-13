@@ -106,11 +106,22 @@ function computeCharge(biller, billAmount) {
     return round2(Math.ceil((amount - 3300) / 1000) * 10 + 15);
 }
 
-function computeLateCharge(biller, dueDateValue) {
+// Late charge rule per biller: [fixed pesos, percent of the bill] (e.g. [0, 10] for a water district).
+function ruleLateCharge(biller, billAmt) {
+    const rule = BILLER_LATE_CHARGES[normalizedBillerKey(biller)];
+    const [fixed, rate] = Array.isArray(rule) ? rule : [rule || 0, 0];
+    return round2(Number(fixed || 0) + (Number(billAmt || 0) * Number(rate || 0)) / 100 + 1e-9);
+}
+
+// A late charge typed from the printed bill replaces the rule's (only while the bill is overdue).
+let lateTyped = false;
+
+function computeLateCharge(biller, dueDateValue, billAmt) {
     if (!isOverdue(dueDateValue)) {
         return 0;
     }
-    return round2(BILLER_LATE_CHARGES[normalizedBillerKey(biller)] || 0);
+    if (lateTyped && dom.amt2.value.trim() !== "") return round2(dom.amt2.value);
+    return ruleLateCharge(biller, billAmt);
 }
 
 /** Same rule as the server: numbers only, or letters and numbers (e.g. SSS), with an optional exact length. */
@@ -133,13 +144,19 @@ function recomputeFinancials() {
     const rawCash = (dom.cash.value || "").trim();
 
     const billAmt = round2(rawBillAmt);
-    const lateCharge = computeLateCharge(dom.biller.value, dom.dueDate.value);
+    const lateCharge = computeLateCharge(dom.biller.value, dom.dueDate.value, billAmt);
     const charge = personalMode() ? 0 : computeCharge(dom.biller.value, billAmt);
     const total = round2(billAmt + lateCharge + charge);
     const cash = round2(rawCash);
     const change = round2(cash - cashToCollect(total, dom.paymentMethod?.value));
 
-    dom.amt2.value = rawBillAmt || dom.dueDate.value ? lateCharge.toFixed(2) : "";
+    const overdue = isOverdue(dom.dueDate.value);
+    dom.amt2.readOnly = !overdue;
+    dom.amt2.title = overdue ? "Overdue: type the late charge printed on the bill if it differs" : "";
+    if (!overdue) lateTyped = false;
+    if (document.activeElement !== dom.amt2) { // don't rewrite it while it's being typed
+        dom.amt2.value = rawBillAmt || dom.dueDate.value ? lateCharge.toFixed(2) : "";
+    }
     dom.charge.value = rawBillAmt ? charge.toFixed(2) : "";
     dom.total.value = rawBillAmt ? total.toFixed(2) : "";
     dom.changeAmt.value = rawBillAmt && rawCash ? change.toFixed(2) : "";
@@ -183,6 +200,7 @@ function syncConfirmationReferenceState() {
 
 function clearForm() {
     dom.form.reset();
+    lateTyped = false;
     dom.saveStatus.textContent = "";
     dom.printReceiptBtn.disabled = true;
     lastSavedRecordId = null;
@@ -290,6 +308,7 @@ function payloadFromForm() {
         cp_number: dom.cpNumber.value.trim(),
         bill_amt: round2(dom.billAmt.value),
         late_charge: round2(dom.amt2.value),
+        late_charge_typed: lateTyped && isOverdue(dom.dueDate.value) ? round2(dom.amt2.value) : null,
         charge: round2(dom.charge.value),
         total: round2(dom.total.value),
         cash: round2(dom.cash.value),
@@ -500,6 +519,12 @@ if (dom.personal) {
     el.addEventListener("input", recomputeFinancials);
     el.addEventListener("change", recomputeFinancials);
 });
+dom.amt2.addEventListener("input", () => {
+    if (dom.amt2.readOnly) return;
+    lateTyped = dom.amt2.value.trim() !== ""; // emptied: back to the biller rule's
+    recomputeFinancials();
+});
+dom.amt2.addEventListener("blur", recomputeFinancials);
 
 /* Lookup only when user leaves the account field (blur), not while typing */
 dom.account.addEventListener("blur", lookupAccountDetails);
@@ -756,7 +781,7 @@ async function saveBillerRule(event) {
             return;
         }
         BILLER_CHARGES[data.biller] = data.service_charge;
-        BILLER_LATE_CHARGES[data.biller] = data.late_charge;
+        BILLER_LATE_CHARGES[data.biller] = [data.late_charge, data.late_charge_rate || 0];
         if (data.account_digits) BILLER_ACCOUNT_DIGITS[data.biller] = data.account_digits;
         BILLER_ACCOUNT_FORMATS[data.biller] = data.account_format;
         addBillerOption(data.biller);

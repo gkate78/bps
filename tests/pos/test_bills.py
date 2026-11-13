@@ -141,7 +141,7 @@ def test_bill_quote(shop):
     client = shop.client
     q = client.get("/pos/api/quote/bill?biller=meralco&amount=1000&due_date=" + (TODAY - timedelta(days=1)).isoformat()).json()
     assert q == {"needs_rule": False, "biller": "MERALCO", "bill_cents": 100_000, "late_charge_cents": 5_000,
-                 "charge_cents": 1_500, "total_cents": 106_500}
+                 "rule_late_charge_cents": 5_000, "charge_cents": 1_500, "total_cents": 106_500}
     assert client.get("/pos/api/quote/bill?biller=MERALCO&amount=1000&personal=true").json()["charge_cents"] == 0
     assert client.get("/pos/api/quote/bill?biller=NEW&amount=1000").json() == {"needs_rule": True, "biller": "NEW"}
     r = client.get("/pos/api/quote/bill?biller=MERALCO&account=12AB&amount=1000")

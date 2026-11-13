@@ -173,12 +173,15 @@ async def bill_quote(
     amount: str = Query(""),
     due_date: Optional[date] = Query(None),
     personal: bool = Query(False),
+    late_charge: str = Query(""),
     _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Charges for one bill before it goes on the list; needs_rule when the biller has no rule yet."""
     try:
-        return await bills.quote(db, biller=biller, account=account, amount=amount, due_date=due_date, personal=personal)
+        return await bills.quote(
+            db, biller=biller, account=account, amount=amount, due_date=due_date, personal=personal, late_charge=late_charge
+        )
     except sales.PosError as exc:
         raise _bad_request(exc)
 

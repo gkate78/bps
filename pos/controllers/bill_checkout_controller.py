@@ -47,8 +47,16 @@ def _detail(exc: HTTPException) -> str:
     return exc.detail if isinstance(exc.detail, str) else "please check the details"
 
 
+def _typed_late(value: Optional[str], label: str = "Late charge") -> Optional[float]:
+    """The late charge typed from the bill, in pesos; None when left empty (the biller rule's applies)."""
+    if value is None or not str(value).strip():
+        return None
+    return _money(value, label) / 100
+
+
 async def quote(
-    db: AsyncSession, *, biller: str, account: str, amount: str, due_date: Optional[date], personal: bool
+    db: AsyncSession, *, biller: str, account: str, amount: str, due_date: Optional[date], personal: bool,
+    late_charge: Optional[str] = None,
 ) -> dict:
     """Charges for one bill before it's added to the list, with the checks the save makes."""
     key = clean_text(biller, 120)
@@ -67,12 +75,17 @@ async def quote(
     existing = account_key and await find_monthly_duplicate(db, account=account_key, bill_amt=cents / 100)
     if existing:
         raise PosError(monthly_duplicate_message(account_key, cents / 100, existing))
-    amounts = await quote_bill(db, biller=key, bill_amt=cents / 100, due_date=due_date, personal="paid" if personal else None)
+    amounts = await quote_bill(
+        db, biller=key, bill_amt=cents / 100, due_date=due_date, personal="paid" if personal else None,
+        late_charge_typed=_typed_late(late_charge),
+    )
+    rule = await quote_bill(db, biller=key, bill_amt=cents / 100, due_date=due_date)
     return {
         "needs_rule": False,
         "biller": key,
         "bill_cents": peso_cents(amounts["bill_amt"]),
         "late_charge_cents": peso_cents(amounts["late_charge"]),
+        "rule_late_charge_cents": peso_cents(rule["late_charge"]),  # before any typed amount
         "charge_cents": peso_cents(amounts["charge"]),
         "total_cents": peso_cents(amounts["total"]),
     }
@@ -96,6 +109,7 @@ async def prepare_bills(
         if not account or not biller or not clean_text(bill.customer_name, 160):
             raise PosError(f"{label}: enter the account, biller and customer name")
         amount = _money(bill.bill_amt, f"{label} amount")
+        late_typed = _typed_late(bill.late_charge, f"{label} late charge")
         if not await has_active_biller_rule(db, biller):
             raise PosError(f"{label}: {biller} has no biller rule yet. Add it first.")
         if (account, amount) in seen:
@@ -114,6 +128,7 @@ async def prepare_bills(
                 confirmation_reference=reference,
                 payment_reference=clean_text(bill.payment_reference, 120),
                 personal=personal,
+                late_charge_typed=late_typed,
             )
             payload = await prepare_new_record(db, record_in, user)
         except ValidationError as exc:
@@ -123,7 +138,9 @@ async def prepare_bills(
         existing = await find_monthly_duplicate(db, account=account, bill_amt=amount / 100, txn_date=now.date())
         if existing:
             raise PosError(f"{label}: {monthly_duplicate_message(account, amount / 100, existing)}")
-        amounts = await quote_bill(db, biller=biller, bill_amt=amount / 100, due_date=bill.due_date, personal=personal)
+        amounts = await quote_bill(
+            db, biller=biller, bill_amt=amount / 100, due_date=bill.due_date, personal=personal, late_charge_typed=late_typed
+        )
         prepared.append((label, payload, peso_cents(amounts["total"])))
     return prepared
 
