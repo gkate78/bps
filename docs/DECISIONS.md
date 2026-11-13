@@ -502,3 +502,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: The owner asked for a 10% late payment charge on the water bill. Past STA MARIA WATER penalties were 9.6–9.8% of the amount entered (the district takes 10% of its water charge only, before added fees: ₱411.25 → ₱39.85), so a fixed 10% alone would overcharge by up to a few pesos; the cashier has the printed amount.
 - Alternatives considered: 10% of the bill with no override (overcharges slightly); typing the late charge only (no default); estimating the water charge from the bill (the added fees vary).
 - Follow-up: Amounts to review (imports) compares against the rule, so a typed penalty imported from a file shows as differing from the rule.
+
+- Date: 2026-11-13
+- ID: DEC-062
+- Related task: BPS-254
+- Decision: Deleting a bill record also deletes its `pos_sale_bills` links (when that table exists), in the same commit. The one stale link in the live data (S-000430 → bill 3070) was removed after a backup (`~/bps-data/backups/bills_admin-before-link-fix-*.db`).
+- Why: `bill_records.id` has no AUTOINCREMENT, so SQLite reuses the id of the newest bill once it's deleted. A bill deleted and entered again in a new sale got the same id, and the old sale's leftover link pointed at the new bill, so the old sale refused to void ("This sale includes 1 bill (REF-20261113-E040FD)") and would have reprinted the wrong bill.
+- Alternatives considered: rebuilding `bill_records` with AUTOINCREMENT (a table rebuild of live data for the same effect); checking bill creation time against the sale (timestamps are in different zones).
+- Follow-up: Audit log entries are by record id too, so a reused id shows both bills' history together.
