@@ -473,7 +473,7 @@ async def admin_records_payment_sheet(
     for record, amount in zip(rows, amounts):
         balance -= int(round(amount * 100))
         lines.append({"account": _sheet_account(record.account), "name": record.customer_name, "amount": amount,
-                      "balance": balance / 100, "due_date": record.due_date})
+                      "balance": balance / 100})
     profile = (await db.execute(select(BusinessProfile).order_by(BusinessProfile.id).limit(1))).scalar_one_or_none()
     return templates.TemplateResponse(
         "records_payment_sheet.html",

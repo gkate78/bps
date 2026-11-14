@@ -26,39 +26,39 @@
 <body>
 <div class="toolbar"><button type="button" onclick="window.print()">Print</button> <button type="button" onclick="window.close()">Close</button></div>
 <table>
-    <colgroup><col style="width:5%"><col style="width:15%"><col style="width:33%"><col style="width:13%"><col style="width:11%"><col style="width:12%"><col style="width:11%"></colgroup>
+    <colgroup><col style="width:5%"><col style="width:17%"><col style="width:38%"><col style="width:14%"><col style="width:12%"><col style="width:14%"></colgroup>
     <tbody class="head">
         <tr>
             <td></td>
             <td colspan="2" class="center">{{ business | upper }} BILLS PAYMENT</td>
             <td class="label">CASH:</td>
             <td class="label">CHANGE:</td>
-            <td colspan="2"></td>
+            <td></td>
         </tr>
         <tr>
             <td></td>
             <td colspan="2" class="center">{{ phone }}</td>
             <td class="num label">{{ "{:,.2f}".format(cash) }}</td>
             <td class="num">{{ "{:,.2f}".format(change) }}</td>
-            <td colspan="2"></td>
+            <td></td>
         </tr>
         <tr>
             <td></td>
             <td colspan="2" class="center">{{ biller }}</td>
             <td class="label">TOTAL:</td>
-            <td colspan="3"></td>
+            <td colspan="2"></td>
         </tr>
         <tr>
             <td></td>
             <td colspan="2" class="center" style="font-weight: normal">{{ day.strftime("%m/%d/%Y") }}</td>
             <td class="num label">{{ "{:,.2f}".format(total) }}</td>
-            <td colspan="3"></td>
+            <td colspan="2"></td>
         </tr>
-        <tr><td colspan="7"></td></tr>
+        <tr><td colspan="6"></td></tr>
     </tbody>
 </table>
 <table>
-    <colgroup><col style="width:5%"><col style="width:15%"><col style="width:33%"><col style="width:13%"><col style="width:11%"><col style="width:12%"><col style="width:11%"></colgroup>
+    <colgroup><col style="width:5%"><col style="width:17%"><col style="width:38%"><col style="width:14%"><col style="width:12%"><col style="width:14%"></colgroup>
     <thead class="cols">
         <tr>
             <th></th>
@@ -67,7 +67,6 @@
             <th class="num">AMOUNT</th>
             <th class="center or">O.R. NO.</th>
             <th class="num">BALANCE</th>
-            <th class="center">DUE DATE</th>
         </tr>
     </thead>
     <tbody>
@@ -79,10 +78,9 @@
             <td class="num">{{ "{:,.2f}".format(line.amount) }}</td>
             <td class="or"></td>
             <td class="num">{{ "{:,.2f}".format(line.balance) }}</td>
-            <td class="center">{{ line.due_date.strftime("%m/%d/%Y") if line.due_date else "" }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="7">No bills match these filters.</td></tr>
+        <tr><td colspan="6">No bills match these filters.</td></tr>
         {% endfor %}
     </tbody>
 </table>
