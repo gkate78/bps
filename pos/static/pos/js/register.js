@@ -848,6 +848,9 @@
         $("splitRefWarn").hidden = true;
         cart.length = 0;
         setRadio("personal", "");
+        // The next customer's load goes out from the default account again (Maya).
+        const loadDefault = document.querySelector('input[name="load_wallet"][data-default]');
+        if (loadDefault) loadDefault.checked = true;
         if ($("jobField")) $("jobField").hidden = false;
         ["cashIn", "payRef", "paySent", "payMobile", "custName", "custPhone", "birNo", "downPayment", "promisedDate"].forEach((id) => ($(id).value = ""));
         $("payCashOut").hidden = true;

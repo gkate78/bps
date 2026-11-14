@@ -30,6 +30,7 @@ from app.controllers.bill_controller import (
     get_biller_account_digits,
     create_record,
     datatable_query,
+    records_for_print,
     delete_record,
     find_latest_by_account,
     get_biller_charges,
@@ -377,6 +378,119 @@ async def admin_records_page(
     )
 
 
+@router.get("/admin/records/print", response_class=HTMLResponse, include_in_schema=False)
+async def admin_records_print(
+    request: Request,
+    search: str = Query(default=""),
+    biller: Optional[str] = Query(default=None),
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    status: Optional[Literal["pending", "processed"]] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
+    """A printable list of the bills the Bills records table shows with these filters, with the totals."""
+    if not current_user:
+        return RedirectResponse(url="/auth/signin", status_code=303)
+    if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
+        return RedirectResponse(url="/customer/dashboard", status_code=303)
+    rows, totals = await records_for_print(
+        db, search=search.strip(), biller=biller or None, from_date=from_date, to_date=to_date,
+        due_status=due_status or None, due_from=due_from, due_to=due_to, status=status,
+    )
+    due_labels = {"overdue": "Overdue", "due_today": "Due today", "upcoming": "Upcoming",
+                  "urgent": "Urgent (overdue + 3 days)", "no_due_date": "No due date"}
+    scope = [
+        f"Biller {biller}" if biller else "",
+        f"Txn date {from_date or '…'} to {to_date or '…'}" if from_date or to_date else "",
+        f"Due status: {due_labels.get(due_status, due_status)}" if due_status else "",
+        f"Due date {due_from or '…'} to {due_to or '…'}" if due_from or due_to else "",
+        f"Status: {status.capitalize()}" if status else "",
+        f'Search "{search.strip()}"' if search.strip() else "",
+    ]
+    return templates.TemplateResponse(
+        "records_print.html",
+        {
+            "request": request,
+            "rows": rows,
+            "totals": totals,
+            "scope": [part for part in scope if part] or ["All records"],
+            "truncated": totals["count"] > len(rows),
+            "printed_at": datetime.now(),
+            "printed_by": " ".join(filter(None, [current_user.first_name, current_user.last_name])),
+        },
+    )
+
+
+def _sheet_account(account: str) -> str:
+    """Water district account numbers as printed on their bills: 20190593594 → 201905-93594."""
+    value = str(account or "").strip()
+    return f"{value[:6]}-{value[6:]}" if len(value) == 11 and value.isdigit() else value
+
+
+def _sheet_phone(phone: str) -> str:
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    return f"{digits[:4]}-{digits[4:7]}-{digits[7:]}" if len(digits) == 11 else str(phone or "")
+
+
+@router.get("/admin/records/payment-sheet", response_class=HTMLResponse, include_in_schema=False)
+async def admin_records_payment_sheet(
+    request: Request,
+    search: str = Query(default=""),
+    biller: Optional[str] = Query(default=None),
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    status: Optional[Literal["pending", "processed"]] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
+    """
+    The sheet taken to the biller to pay bills there in cash: one biller, each bill's original amount
+    (no late charge or service charge), a blank O.R. no. to write in, and the balance left from the cash
+    brought (the total rounded up to the next peso).
+    """
+    if not current_user:
+        return RedirectResponse(url="/auth/signin", status_code=303)
+    if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
+        return RedirectResponse(url="/customer/dashboard", status_code=303)
+    if not biller:
+        return HTMLResponse("<p>Choose a biller in the filters first: a payment sheet is for one biller.</p>", status_code=400)
+    rows, _ = await records_for_print(
+        db, search=search.strip(), biller=biller, from_date=from_date, to_date=to_date,
+        due_status=due_status or None, due_from=due_from, due_to=due_to, status=status,
+    )
+    amounts = [round(float(r.bill_amt or 0), 2) for r in rows]  # the bill's own amount, as the owner's sheet
+    total_cents = sum(int(round(a * 100)) for a in amounts)
+    cash_cents = -(-total_cents // 100) * 100  # rounded up to the next peso
+    balance = cash_cents
+    lines = []
+    for record, amount in zip(rows, amounts):
+        balance -= int(round(amount * 100))
+        lines.append({"account": _sheet_account(record.account), "name": record.customer_name, "amount": amount,
+                      "balance": balance / 100, "due_date": record.due_date})
+    profile = (await db.execute(select(BusinessProfile).order_by(BusinessProfile.id).limit(1))).scalar_one_or_none()
+    return templates.TemplateResponse(
+        "records_payment_sheet.html",
+        {
+            "request": request,
+            "business": (profile.business_name if profile else "") or "",
+            "phone": _sheet_phone(profile.business_phone if profile else ""),
+            "biller": biller,
+            "day": date.today(),
+            "lines": lines,
+            "total": total_cents / 100,
+            "cash": cash_cents / 100,
+            "change": (cash_cents - total_cents) / 100,
+        },
+    )
+
+
 @router.get("/admin/processing", include_in_schema=False)
 async def admin_processing_redirect(
     db: AsyncSession = Depends(get_db),
@@ -609,6 +723,9 @@ async def get_records_kpis(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    status: Optional[Literal["pending", "processed"]] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
 ):
@@ -618,6 +735,9 @@ async def get_records_kpis(
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
     )
 
 
@@ -1106,6 +1226,9 @@ async def records_datatable(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    status: Optional[Literal["pending", "processed"]] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
 ):
@@ -1136,6 +1259,9 @@ async def records_datatable(
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
     )
 
 
@@ -1350,6 +1476,9 @@ async def batch_mark_cash_export_endpoint(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    status: Optional[Literal["pending", "processed"]] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: UserAccount = Depends(require_owner_or_admin),
 ):
@@ -1359,6 +1488,9 @@ async def batch_mark_cash_export_endpoint(
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
     )
     await _log_record_audit(
         db,
@@ -1368,7 +1500,8 @@ async def batch_mark_cash_export_endpoint(
         channel="web",
         detail=(
             f"rows={result['row_count']}, updated={result['updated_count']}, "
-            f"biller={biller or '-'}, from={from_date or '-'}, to={to_date or '-'}, due_status={due_status or '-'}"
+            f"biller={biller or '-'}, from={from_date or '-'}, to={to_date or '-'}, due_status={due_status or '-'}, "
+            f"due_from={due_from or '-'}, due_to={due_to or '-'}, status={status or '-'}"
         ),
     )
     today_tag = date.today().strftime("%Y%m%d")

@@ -55,8 +55,10 @@
             <div class="field">
                 <span class="field-label">Send from</span>
                 <div class="choice" id="loadWallets">
+                    {# Loads are sent from Maya by default (its load discount), else the first account. #}
+                    {% set load_default = (wallets | selectattr("provider", "equalto", "MAYA") | first) or (wallets | first) %}
                     {% for w in wallets %}
-                    <label class="pill"><input type="radio" name="load_wallet" value="{{ w.id }}" data-name="{{ w.name }}" {{ 'checked' if loop.first }}> {{ w.name }}</label>
+                    <label class="pill"><input type="radio" name="load_wallet" value="{{ w.id }}" data-name="{{ w.name }}" {{ 'checked data-default' if load_default and w.id == load_default.id }}> {{ w.name }}</label>
                     {% endfor %}
                 </div>
             </div>

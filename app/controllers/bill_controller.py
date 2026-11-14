@@ -1455,12 +1455,15 @@ def _build_record_filters(
     from_date: Optional[date],
     to_date: Optional[date],
     due_status: Optional[str],
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    status: Optional[str] = None,
     apply_default_month_when_empty: bool = False,
 ) -> list:
     filters = []
     today = date.today()
 
-    if apply_default_month_when_empty and not any([biller, from_date, to_date, due_status]):
+    if apply_default_month_when_empty and not any([biller, from_date, to_date, due_status, due_from, due_to, status]):
         month_start = today.replace(day=1)
         filters.append(func.date(BillRecord.txn_datetime) >= month_start)
         filters.append(func.date(BillRecord.txn_datetime) <= today)
@@ -1487,6 +1490,18 @@ def _build_record_filters(
     elif due_status == "no_due_date":
         filters.append(BillRecord.due_date.is_(None))
 
+    if due_from:
+        filters.append(BillRecord.due_date >= due_from)
+    if due_to:
+        filters.append(BillRecord.due_date <= due_to)
+
+    # Pending: not paid to the biller yet (no payment reference); processed: it has one.
+    has_reference = and_(BillRecord.payment_reference.is_not(None), func.trim(BillRecord.payment_reference) != "")
+    if status == "pending":
+        filters.append(~has_reference)
+    elif status == "processed":
+        filters.append(has_reference)
+
     return filters
 
 
@@ -1497,12 +1512,18 @@ async def records_kpi_summary(
     from_date: Optional[date],
     to_date: Optional[date],
     due_status: Optional[str],
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    status: Optional[str] = None,
 ) -> dict:
     filters = _build_record_filters(
         biller=biller,
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
         apply_default_month_when_empty=True,
     )
     stmt = select(BillRecord.id, BillRecord.payment_reference, BillRecord.due_date)
@@ -1529,7 +1550,7 @@ async def records_kpi_summary(
         "processed_records": processed,
         "pending_records": pending,
         "urgent_records": urgent,
-        "default_scope": not any([biller, from_date, to_date, due_status]),
+        "default_scope": not any([biller, from_date, to_date, due_status, due_from, due_to, status]),
     }
 
 
@@ -1540,12 +1561,18 @@ async def batch_mark_cash_and_export(
     from_date: Optional[date],
     to_date: Optional[date],
     due_status: Optional[str],
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    status: Optional[str] = None,
 ) -> dict:
     filters = _build_record_filters(
         biller=biller,
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
         apply_default_month_when_empty=False,
     )
     if not filters:
@@ -1610,12 +1637,18 @@ async def datatable_query(
     from_date: Optional[date],
     to_date: Optional[date],
     due_status: Optional[str],
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    status: Optional[str] = None,
 ) -> dict:
     base_filters = _build_record_filters(
         biller=biller,
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
         apply_default_month_when_empty=False,
     )
 
@@ -1624,21 +1657,10 @@ async def datatable_query(
 
     filtered_filters = list(base_filters)
     if search:
-        like = f"%{search}%"
-        filtered_filters.append(
-            or_(
-                BillRecord.account.ilike(like),
-                BillRecord.biller.ilike(like),
-                BillRecord.customer_name.ilike(like),
-                BillRecord.cp_number.ilike(like),
-                BillRecord.reference.ilike(like),
-            )
-        )
+        filtered_filters.append(_records_search(search))
 
-    filtered_stmt = select(func.count()).select_from(BillRecord)
-    if filtered_filters:
-        filtered_stmt = filtered_stmt.where(*filtered_filters)
-    filtered_count = (await db.execute(filtered_stmt)).scalar_one()
+    totals = await _records_totals(db, filtered_filters)
+    filtered_count = totals["count"]
 
     order_map = {
         "txn_datetime": BillRecord.txn_datetime,
@@ -1710,7 +1732,71 @@ async def datatable_query(
         "recordsTotal": total_count,
         "recordsFiltered": filtered_count,
         "data": data,
+        "totals": totals,
     }
+
+
+def _records_search(search: str):
+    like = f"%{search}%"
+    return or_(
+        BillRecord.account.ilike(like),
+        BillRecord.biller.ilike(like),
+        BillRecord.customer_name.ilike(like),
+        BillRecord.cp_number.ilike(like),
+        BillRecord.reference.ilike(like),
+    )
+
+
+async def _records_totals(db: AsyncSession, filters: list) -> dict:
+    """Count and amounts of all the records matching the filters (every page, not just the one shown)."""
+    stmt = select(
+        func.count(),
+        func.coalesce(func.sum(BillRecord.bill_amt), 0),
+        func.coalesce(func.sum(BillRecord.late_charge), 0),
+        func.coalesce(func.sum(BillRecord.charge), 0),
+        func.coalesce(func.sum(BillRecord.total), 0),
+    ).select_from(BillRecord)
+    if filters:
+        stmt = stmt.where(*filters)
+    count, bill_amt, late, charge, total = (await db.execute(stmt)).one()
+    return {
+        "count": int(count or 0),
+        "bill_amt": round(float(bill_amt), 2),
+        "late_charge": round(float(late), 2),
+        "charge": round(float(charge), 2),
+        "total": round(float(total), 2),
+    }
+
+
+PRINT_LIMIT = 3000
+
+
+async def records_for_print(
+    db: AsyncSession,
+    *,
+    search: str = "",
+    biller: Optional[str] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    due_status: Optional[str] = None,
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    status: Optional[str] = None,
+) -> tuple[list[BillRecord], dict]:
+    """The records the Bills records table shows with these filters and search, oldest first, with totals."""
+    filters = _build_record_filters(
+        biller=biller, from_date=from_date, to_date=to_date, due_status=due_status,
+        due_from=due_from, due_to=due_to, status=status,
+    )
+    if search:
+        filters.append(_records_search(search))
+    totals = await _records_totals(db, filters)
+    stmt = select(BillRecord)
+    if filters:
+        stmt = stmt.where(*filters)
+    stmt = stmt.order_by(BillRecord.txn_datetime.asc(), BillRecord.id.asc()).limit(PRINT_LIMIT)
+    rows = list((await db.execute(stmt)).scalars().all())
+    return rows, totals
 
 
 IMPORT_SKIP_DETAIL_LIMIT = 50

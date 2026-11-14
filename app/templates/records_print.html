@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bills records</title>
+<style>
+    body { font-family: Arial, sans-serif; font-size: 11px; color: #000; background: #fff; margin: 16px; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    .meta { margin: 0 0 10px; color: #333; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #999; padding: 3px 5px; vertical-align: top; }
+    th { background: #eee; text-align: left; }
+    .num { text-align: right; white-space: nowrap; }
+    tfoot th { background: #f5f5f5; }
+    .warn { font-weight: bold; margin: 0 0 8px; }
+    .toolbar { margin-bottom: 10px; }
+    @page { size: landscape; margin: 10mm; }
+    @media print { .toolbar { display: none; } body { margin: 0; } thead { display: table-header-group; } tr { page-break-inside: avoid; } }
+</style>
+</head>
+<body>
+<div class="toolbar"><button type="button" onclick="window.print()">Print</button> <button type="button" onclick="window.close()">Close</button></div>
+<h1>Bills records</h1>
+<p class="meta">{{ scope | join(" · ") }}<br>{{ totals.count }} bill{{ '' if totals.count == 1 else 's' }} · printed {{ printed_at.strftime("%m/%d/%Y %I:%M %p") }}{% if printed_by %} by {{ printed_by }}{% endif %}</p>
+{% if truncated %}<p class="warn">Only the first {{ rows | length }} of {{ totals.count }} bills are listed; the totals are for all {{ totals.count }}. Narrow the filters to print them all.</p>{% endif %}
+<table>
+    <thead>
+        <tr>
+            <th>#</th><th>Txn date</th><th>Account</th><th>Biller</th><th>Name</th><th>Due date</th>
+            <th class="num">Bill amt</th><th class="num">Late</th><th class="num">Charge</th><th class="num">Total</th>
+            <th>Status</th><th>Reference</th><th>Payment ref</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        {% set processed = r.payment_reference and r.payment_reference.strip() %}
+        <tr>
+            <td class="num">{{ loop.index }}</td>
+            <td>{{ r.txn_datetime.strftime("%m/%d/%Y %I:%M %p") if r.txn_datetime else r.txn_date }}</td>
+            <td>{{ r.account }}</td>
+            <td>{{ r.biller }}</td>
+            <td>{{ r.customer_name }}</td>
+            <td>{{ r.due_date or "-" }}</td>
+            <td class="num">{{ "{:,.2f}".format(r.bill_amt or 0) }}</td>
+            <td class="num">{{ "{:,.2f}".format(r.late_charge or 0) }}</td>
+            <td class="num">{{ "{:,.2f}".format(r.charge or 0) }}</td>
+            <td class="num">{{ "{:,.2f}".format(r.total or 0) }}</td>
+            <td>{{ "Processed" if processed else "Pending" }}</td>
+            <td>{{ r.reference or "" }}</td>
+            <td>{{ r.payment_reference or "" }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="13">No bills match these filters.</td></tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr>
+            <th colspan="6">Total ({{ totals.count }})</th>
+            <th class="num">{{ "{:,.2f}".format(totals.bill_amt) }}</th>
+            <th class="num">{{ "{:,.2f}".format(totals.late_charge) }}</th>
+            <th class="num">{{ "{:,.2f}".format(totals.charge) }}</th>
+            <th class="num">{{ "{:,.2f}".format(totals.total) }}</th>
+            <th colspan="3"></th>
+        </tr>
+    </tfoot>
+</table>
+<script>window.addEventListener("load", () => setTimeout(() => window.print(), 300));</script>
+</body>
+</html>

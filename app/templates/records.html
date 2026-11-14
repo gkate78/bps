@@ -75,8 +75,29 @@
             </select>
         </div>
 
+        <div class="field">
+            <label for="dueFromFilter">Due Date From</label>
+            <input type="date" id="dueFromFilter">
+        </div>
+
+        <div class="field">
+            <label for="dueToFilter">Due Date To</label>
+            <input type="date" id="dueToFilter">
+        </div>
+
+        <div class="field">
+            <label for="statusFilter">Status</label>
+            <select id="statusFilter">
+                <option value="">All</option>
+                <option value="pending">Pending (not paid to the biller yet)</option>
+                <option value="processed">Processed</option>
+            </select>
+        </div>
+
         <div class="field field-actions">
             <button type="button" class="btn btn-secondary" id="clearFiltersBtn">Clear Filters</button>
+            <button type="button" class="btn btn-secondary" id="paymentSheetBtn" title="For one biller: the sheet taken to the biller to pay these bills in cash (amount, O.R. no., balance)">Payment Sheet</button>
+            <button type="button" class="btn btn-secondary" id="printRecordsBtn" title="Print every bill matching the filters and search, with the totals">Print</button>
             <button type="button" class="btn btn-primary" id="batchCashExportBtn">Mark Cash + Download</button>
         </div>
     </div>
@@ -114,6 +135,7 @@
             </thead>
         </table>
     </div>
+    <p class="status-text records-totals" id="recordsTotals" role="status"></p>
 </section>
 
 <section class="panel">
