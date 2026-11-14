@@ -534,3 +534,32 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Alternatives considered: End of day "Cash added" (cash only, not linked to the bill, the reminder can't tell it was paid back); a service line (would count as income); stopping the reminder at the next bill (a bill saved without the payback would lose the reminder).
 - Follow-up: The earlier extra payment to the biller is only in the bill's note, not in End of day; a GCash/Maya double payment showed as a wallet shortfall that day.
 
+- Date: 2026-11-14
+- ID: DEC-066
+- Related task: BPS-259
+- Decision: The Load form's "Send from" starts on the first active Maya account (else the first account, as before), and returns to it when the sale is saved or cleared; within a sale the last choice stays.
+- Why: The owner asked for Maya as the default for loads (Maya's 3% load discount makes it the cheaper account to send from).
+- Alternatives considered: a setting for the default account (not needed with one Maya account).
+
+- Date: 2026-11-14
+- ID: DEC-067
+- Related task: BPS-260
+- Decision: The Bills records Data Controls get Due Date From / To (on `due_date`) and Status: Pending (no payment reference, or only spaces) or Processed (has one), the same rule the Pending and Processed KPIs use. They are query parameters `due_from`, `due_to`, `status` on the records table, the KPIs and Mark Cash + Download (shared `_build_record_filters`), and count as a filter (scope shows Filtered; Mark Cash + Download accepts them as its required filter). Clear Filters resets them.
+- Why: The owner asked for due date and pending filters to find bills still to pay to billers by when they're due.
+- Alternatives considered: adding Pending as a Due Status option (one dropdown couldn't combine "pending" with "overdue").
+
+- Date: 2026-11-14
+- ID: DEC-068
+- Related task: BPS-261
+- Decision: The records table's data request (`/api/records/datatable`) also returns `totals` (count and sums of bill amount, late charge, service charge and total) for all records matching the filters and search, not just the page shown; the page shows them under the table. Print opens `/admin/records/print` with the same filters and search: a plain landscape A4 list (txn date, account, biller, name, due date, amounts, Pending/Processed, reference, payment reference), oldest first, with the filters used, who printed it and when, and the totals; it prints itself on open. At most 3,000 rows are listed (totals still cover all, with a note). Admin or business owner only, like the Records page.
+- Why: The owner asked for the total amount of the filtered data and a print option, e.g. to print the pending bills to pay billers.
+- Alternatives considered: totals of the current page only (misleading with 10 per page); the browser's print of the Records page (only the page shown, with buttons and controls).
+
+- Date: 2026-11-14
+- ID: DEC-069
+- Related task: BPS-262
+- Decision: A Payment Sheet (`/admin/records/payment-sheet`, same filters and search as the table, a biller required) reproduces the owner's spreadsheet for paying bills at the biller in cash. Header: business profile name + "BILLS PAYMENT", its phone (0908-918-9558), the biller, today's date; CASH = the total rounded up to the next peso, CHANGE = CASH − TOTAL, TOTAL = sum of amounts. Rows, oldest first: number, ID NUMBER (11-digit numeric accounts shown 6-5 with a dash, as on water bills), NAME, AMOUNT = the bill's original amount only (no late charge or service charge; the owner's choice, 2026-11-14), O.R. NO. left blank to write in, BALANCE = cash minus the amounts so far, DUE DATE. A4 portrait; it prints itself on open.
+- Why: The owner showed the sheet they print for STA MARIA WATER bills paid onsite in cash and asked for it from BPS.
+- Alternatives considered: making Print use this layout when a biller is chosen (the general list is still wanted for other uses).
+- Follow-up: The due date is filled in (the owner's sheet had the column empty); the O.R. numbers written on it are typed into each bill's payment reference afterwards.
+

@@ -192,7 +192,12 @@ const filters = {
     fromDate: document.getElementById("fromDateFilter"),
     toDate: document.getElementById("toDateFilter"),
     dueStatus: document.getElementById("dueStatusFilter"),
+    dueFrom: document.getElementById("dueFromFilter"),
+    dueTo: document.getElementById("dueToFilter"),
+    status: document.getElementById("statusFilter"),
 };
+// Filter inputs sent as query parameters (the same for the table, the KPIs and Mark Cash + Download).
+const EXTRA_FILTER_PARAMS = { dueFrom: "due_from", dueTo: "due_to", status: "status" };
 const batchCashExportBtn = document.getElementById("batchCashExportBtn");
 
 const kpis = {
@@ -292,6 +297,10 @@ const table = new DataTable("#recordsTable", {
             } else {
                 delete d.due_status;
             }
+            Object.entries(EXTRA_FILTER_PARAMS).forEach(([key, param]) => {
+                if (filters[key]?.value) d[param] = filters[key].value;
+                else delete d[param];
+            });
         },
     },
     columns: [
@@ -324,6 +333,37 @@ const table = new DataTable("#recordsTable", {
     order: [[1, "desc"]],
 });
 
+// Totals of everything matching the filters and search (all pages), sent with each page of the table.
+const recordsTotals = document.getElementById("recordsTotals");
+table.on("xhr", (event, settings, json) => {
+    const t = json?.totals;
+    if (!recordsTotals || !t) return;
+    recordsTotals.innerHTML =
+        `<strong>Total of ${t.count.toLocaleString()} filtered bill${t.count === 1 ? "" : "s"}:</strong> ` +
+        `bill amount ₱${currency(t.bill_amt)} · late charges ₱${currency(t.late_charge)} · ` +
+        `service charges ₱${currency(t.charge)} · <strong>total ₱${currency(t.total)}</strong>`;
+});
+
+// Payment sheet: the bills of one biller to pay at the biller in cash (choose the biller, usually Status: Pending).
+document.getElementById("paymentSheetBtn")?.addEventListener("click", async () => {
+    if (!filters.biller?.value) {
+        await showMessage("Choose a biller first: a payment sheet is for one biller (e.g. STA MARIA WATER, Status: Pending).", "Payment Sheet");
+        return;
+    }
+    const params = buildFilterParams();
+    const search = table.search();
+    if (search) params.set("search", search);
+    window.open(`/admin/records/payment-sheet?${params}`, "_blank");
+});
+
+// Print: every bill matching the filters and search (not just this page), with the totals.
+document.getElementById("printRecordsBtn")?.addEventListener("click", () => {
+    const params = buildFilterParams();
+    const search = table.search();
+    if (search) params.set("search", search);
+    window.open(`/admin/records/print${params.toString() ? `?${params}` : ""}`, "_blank");
+});
+
 async function updateRecordsKpis() {
     if (kpiAbortController) {
         kpiAbortController.abort();
@@ -334,6 +374,7 @@ async function updateRecordsKpis() {
     if (filters.fromDate?.value) params.set("from_date", filters.fromDate.value);
     if (filters.toDate?.value) params.set("to_date", filters.toDate.value);
     if (filters.dueStatus?.value) params.set("due_status", filters.dueStatus.value);
+    Object.entries(EXTRA_FILTER_PARAMS).forEach(([key, param]) => filters[key]?.value && params.set(param, filters[key].value));
     const url = `/api/admin/records/kpis${params.toString() ? `?${params.toString()}` : ""}`;
 
     try {
@@ -784,6 +825,7 @@ function buildFilterParams() {
     if (filters.fromDate?.value) params.set("from_date", filters.fromDate.value);
     if (filters.toDate?.value) params.set("to_date", filters.toDate.value);
     if (filters.dueStatus?.value) params.set("due_status", filters.dueStatus.value);
+    Object.entries(EXTRA_FILTER_PARAMS).forEach(([key, param]) => filters[key]?.value && params.set(param, filters[key].value));
     return params;
 }
 
@@ -867,6 +909,7 @@ document.getElementById("clearFiltersBtn").addEventListener("click", () => {
     filters.fromDate.value = "";
     filters.toDate.value = "";
     filters.dueStatus.value = "";
+    Object.keys(EXTRA_FILTER_PARAMS).forEach((key) => filters[key] && (filters[key].value = ""));
     table.search("").draw();
 });
 if (batchCashExportBtn) {
