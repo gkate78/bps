@@ -50,7 +50,6 @@ from app.controllers.bill_controller import (
     normalize_cp_number,
     ImportFormatError,
     NoActiveBillerRulesError,
-    batch_mark_cash_and_export,
     reconciliation_report_summary,
     reconciliation_by_user_summary,
     reconciliation_summary,
@@ -59,7 +58,9 @@ from app.controllers.bill_controller import (
     upsert_customer_from_record,
 )
 from app.database import get_db
-from app.models import BillerRule, BusinessProfile, RecordAuditLog, UserAccount
+from app.models import BillerRule, BillRecord, BusinessProfile, RecordAuditLog, UserAccount
+from app.controllers import smwd_controller as smwd
+from app.controllers.bill_controller import _stamp_settled as stamp_settled
 from app.services import get_confirmation_service
 
 router = APIRouter(tags=["bills"])
@@ -489,6 +490,71 @@ async def admin_records_payment_sheet(
             "change": (cash_cents - total_cents) / 100,
         },
     )
+
+
+class SmwdApplyItem(BaseModel):
+    id: int
+    reference: str
+
+
+class SmwdApplyIn(BaseModel):
+    items: list[SmwdApplyItem] = Field(default_factory=list)
+    channel: Optional[Literal["CASH", "GCASH", "MAYA", "BAYAD", "BPI_CC", "BPI"]] = "CASH"
+
+
+@router.post("/api/records/smwd/preview")
+async def smwd_preview(
+    search: str = Query(default=""),
+    biller: Optional[str] = Query(default=None),
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_owner_or_admin),
+):
+    """The pending water bills matching the filters, each with SMWD's latest payment. Nothing is saved."""
+    if not smwd.is_smwd_biller(biller):
+        raise HTTPException(status_code=400, detail=f"Choose the biller {smwd.BILLERS[0]} in the filters first.")
+    bills, totals = await records_for_print(
+        db, search=search.strip(), biller=biller, from_date=from_date, to_date=to_date,
+        due_status=due_status or None, due_from=due_from, due_to=due_to, status="pending",
+    )
+    items = await smwd.preview(db, bills)
+    return {"items": items, "pending": totals["count"], "checked": len(items), "limit": smwd.MAX_BILLS}
+
+
+@router.post("/api/records/smwd/apply")
+async def smwd_apply(
+    payload: SmwdApplyIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_owner_or_admin),
+):
+    """Put SMWD's references on the chosen bills that are still pending (others are left as they are)."""
+    applied, skipped = [], []
+    for item in payload.items:
+        record = (await db.execute(select(BillRecord).where(BillRecord.id == item.id))).scalar_one_or_none()
+        try:
+            reference = smwd.checked_reference(item.reference)
+        except smwd.SmwdError:
+            skipped.append(item.id)
+            continue
+        if not record or not smwd.is_smwd_biller(record.biller) or str(record.payment_reference or "").strip():
+            skipped.append(item.id)  # gone, not a water bill, or already has a reference
+            continue
+        record.payment_reference = reference
+        record.payment_channel = payload.channel
+        stamp_settled(record, had_payment_reference=False)
+        record.updated_at = datetime.utcnow()
+        db.add(record)
+        applied.append(record.reference)
+        await _log_record_audit(
+            db, action="smwd_reference", status="success", current_user=current_user, channel="web",
+            record_id=record.id, detail=f"reference={record.reference}, payment_reference={reference}, channel={payload.channel or '-'}",
+        )
+    await db.commit()
+    return {"applied": len(applied), "skipped": len(skipped)}
 
 
 @router.get("/admin/processing", include_in_schema=False)
@@ -1468,53 +1534,6 @@ async def lookup_by_account(
         "cp_number": record.cp_number,
         "due_date": record.due_date.isoformat() if record.due_date else "",
     }
-
-
-@router.post("/api/records/batch/mark-cash-export")
-async def batch_mark_cash_export_endpoint(
-    biller: Optional[str] = Query(default=None),
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    due_status: Optional[str] = Query(default=None),
-    due_from: Optional[date] = Query(default=None),
-    due_to: Optional[date] = Query(default=None),
-    status: Optional[Literal["pending", "processed"]] = Query(default=None),
-    db: AsyncSession = Depends(get_db),
-    current_user: UserAccount = Depends(require_owner_or_admin),
-):
-    result = await batch_mark_cash_and_export(
-        db,
-        biller=biller,
-        from_date=from_date,
-        to_date=to_date,
-        due_status=due_status,
-        due_from=due_from,
-        due_to=due_to,
-        status=status,
-    )
-    await _log_record_audit(
-        db,
-        action="batch_mark_cash_export",
-        status="success",
-        current_user=current_user,
-        channel="web",
-        detail=(
-            f"rows={result['row_count']}, updated={result['updated_count']}, "
-            f"biller={biller or '-'}, from={from_date or '-'}, to={to_date or '-'}, due_status={due_status or '-'}, "
-            f"due_from={due_from or '-'}, due_to={due_to or '-'}, status={status or '-'}"
-        ),
-    )
-    today_tag = date.today().strftime("%Y%m%d")
-    filename = f"batch_cash_export_{today_tag}.csv"
-    return Response(
-        content=result["csv_bytes"],
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Updated-Count": str(result["updated_count"]),
-            "X-Row-Count": str(result["row_count"]),
-        },
-    )
 
 
 @router.get("/api/records/mine")

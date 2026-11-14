@@ -563,3 +563,18 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Alternatives considered: making Print use this layout when a biller is chosen (the general list is still wanted for other uses).
 - Follow-up: The DUE DATE column of the owner's sheet was dropped at the owner's request (2026-11-14); the O.R. numbers written on it are typed into each bill's payment reference afterwards.
 
+- Date: 2026-11-14
+- ID: DEC-070
+- Related task: BPS-263
+- Decision: Bills records gets "Get SMWD References" for STA MARIA WATER. `POST /api/records/smwd/preview` (same filters and search as the table, always pending bills, up to 100) posts each bill's ID number (6-5 with a dash) to SMWD's Billing Inquiry (`https://smwdbulacan.gov.ph/?page_id=4971`, field `IDNoVal`), half a second apart, and reads the statement's Payment Details (Reference No., Amount Paid, Date Paid) plus Total Amount Due and Penalty (10%) (`app/controllers/smwd_controller.py`). A bill is matched when SMWD's latest payment is on or after the bill's date, its amount equals the bill amount (or the bill plus its late charge, or plus SMWD's penalty), and the reference isn't already another bill's payment reference; with two pending bills for one account the newest gets it. Otherwise the reason is shown (no payment yet, paid before this bill, amount differs, reference already used, site unreachable). Nothing is saved until `POST /api/records/smwd/apply`, which puts the checked references on bills that are still pending only (never over a reference already typed, the owner's choice), with one settlement channel for the batch (Cash by default), stamps settled now, and audit-logs each (`smwd_reference`).
+- Why: The owner pays water bills at the SMWD office (and some by GCash) and wanted the references from SMWD's site instead of typing each. Checked with two IDs the owner gave: an office cash payment shows the 8-digit O.R. number (04961602, ₱1,180 = ₱1,075.10 + ₱104.90 penalty); a GCash payment shows SMWD's own code (E8E0A4A2F0A2), not the GCash reference.
+- Alternatives considered: replacing references already typed (the owner chose pending only); looking up every bill automatically (sends more ID numbers than needed; a button the owner presses keeps it to the bills in question).
+- Follow-up: The page shows only the latest payment per ID number. It depends on SMWD's page layout; if they change it, lookups come back as "No payment found" until the parser is updated. Customers' ID numbers are sent to SMWD's site (the owner agreed). SMWD's exact penalty could later replace the 10% estimate.
+
+- Date: 2026-11-14
+- ID: DEC-071
+- Related task: BPS-264
+- Decision: Remove Mark Cash + Download (button, `POST /api/records/batch/mark-cash-export`, `batch_mark_cash_and_export`). Past `batch_mark_cash_export` audit entries stay.
+- Why: For every filtered bill it set the customer's payment mode to CASH (turning GCash/Maya/bank bills into cash, which End of day would expect in the drawer), the settlement channel to BRANCH_MANUAL (not taken out of the drawer or a wallet), and gave pending bills BPS's own REF- number as the payment reference, so Get SMWD References would skip them and their real O.R. numbers would never be recorded. Its CSV (account, name, bill amount) is what the Payment Sheet prints, without changing anything. The owner agreed.
+- Alternatives considered: keeping a download-only CSV (the Payment Sheet covers it).
+

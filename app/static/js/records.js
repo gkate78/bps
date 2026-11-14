@@ -196,9 +196,8 @@ const filters = {
     dueTo: document.getElementById("dueToFilter"),
     status: document.getElementById("statusFilter"),
 };
-// Filter inputs sent as query parameters (the same for the table, the KPIs and Mark Cash + Download).
+// Filter inputs sent as query parameters (the same for the table, the KPIs, Print, Payment Sheet and SMWD references).
 const EXTRA_FILTER_PARAMS = { dueFrom: "due_from", dueTo: "due_to", status: "status" };
-const batchCashExportBtn = document.getElementById("batchCashExportBtn");
 
 const kpis = {
     visible: document.getElementById("kpiVisibleRecords"),
@@ -342,6 +341,95 @@ table.on("xhr", (event, settings, json) => {
         `<strong>Total of ${t.count.toLocaleString()} filtered bill${t.count === 1 ? "" : "s"}:</strong> ` +
         `bill amount ₱${currency(t.bill_amt)} · late charges ₱${currency(t.late_charge)} · ` +
         `service charges ₱${currency(t.charge)} · <strong>total ₱${currency(t.total)}</strong>`;
+});
+
+// SMWD references: look up the pending STA MARIA WATER bills on SMWD's Billing Inquiry, preview, then apply.
+const smwd = {
+    dialog: document.getElementById("smwdDialog"),
+    body: document.getElementById("smwdBody"),
+    status: document.getElementById("smwdStatus"),
+    apply: document.getElementById("smwdApplyBtn"),
+    channel: document.getElementById("smwdChannel"),
+    items: [],
+};
+const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+function renderSmwd() {
+    smwd.body.innerHTML = smwd.items
+        .map((item, i) => `<tr>
+            <td>${item.smwd_reference ? `<input type="checkbox" data-smwd="${i}" ${item.matched ? "checked" : ""} aria-label="Apply ${escapeText(item.smwd_reference)}">` : ""}</td>
+            <td>${escapeText(item.id_number)}</td>
+            <td>${escapeText(item.customer_name)}<div class="status-text">${escapeText(item.reference)} · ${escapeText(item.txn_date)}</div></td>
+            <td class="align-right">${currency(item.bill_amt)}</td>
+            <td>${escapeText(item.smwd_reference || "")}</td>
+            <td class="align-right">${item.amount_paid == null ? "" : currency(item.amount_paid)}</td>
+            <td>${escapeText((item.date_paid || "").replace("T", " "))}</td>
+            <td>${item.matched ? "<strong>✓ Matched</strong>" : escapeText(item.reason)}</td>
+        </tr>`)
+        .join("") || '<tr><td colspan="8">No pending STA MARIA WATER bills match the filters.</td></tr>';
+    updateSmwdApply();
+}
+function smwdChecked() {
+    return Array.from(smwd.body.querySelectorAll("[data-smwd]:checked")).map((el) => smwd.items[Number(el.dataset.smwd)]);
+}
+function updateSmwdApply() {
+    const count = smwdChecked().length;
+    smwd.apply.disabled = !count;
+    smwd.apply.textContent = count ? `Apply ${count} reference${count === 1 ? "" : "s"}` : "Apply checked references";
+}
+smwd.body?.addEventListener("change", updateSmwdApply);
+document.getElementById("smwdCloseBtn")?.addEventListener("click", () => smwd.dialog.close());
+document.getElementById("smwdRefsBtn")?.addEventListener("click", async () => {
+    if (!/STA MARIA WATER/i.test(filters.biller?.value || "")) {
+        await showMessage("Choose the biller STA MARIA WATER in the filters first. Only its pending bills are looked up.", "SMWD References");
+        return;
+    }
+    const params = buildFilterParams();
+    params.delete("status"); // always the pending ones
+    const search = table.search();
+    if (search) params.set("search", search);
+    smwd.items = [];
+    smwd.body.innerHTML = "";
+    smwd.apply.disabled = true;
+    smwd.status.textContent = "Checking each pending bill on SMWD's Billing Inquiry… this can take a minute.";
+    smwd.dialog.showModal();
+    try {
+        const response = await fetch(`/api/records/smwd/preview?${params}`, { method: "POST" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Couldn't check SMWD");
+        smwd.items = data.items || [];
+        const matched = smwd.items.filter((i) => i.matched).length;
+        smwd.status.textContent =
+            `${matched} of ${smwd.items.length} pending bill${smwd.items.length === 1 ? "" : "s"} matched a payment at SMWD.` +
+            (data.pending > data.checked ? ` Only the first ${data.checked} of ${data.pending} were checked; run it again after applying.` : "") +
+            " Matched ones are checked; nothing is saved until you apply.";
+        renderSmwd();
+    } catch (err) {
+        smwd.status.textContent = err.message;
+    }
+});
+smwd.apply?.addEventListener("click", async () => {
+    const items = smwdChecked().map((item) => ({ id: item.id, reference: item.smwd_reference }));
+    if (!items.length) return;
+    smwd.apply.disabled = true;
+    try {
+        const response = await fetch("/api/records/smwd/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items, channel: smwd.channel.value }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Couldn't save the references");
+        smwd.dialog.close();
+        table.ajax.reload(null, false);
+        await showMessage(
+            `${data.applied} bill${data.applied === 1 ? "" : "s"} now processed with SMWD's reference.` +
+                (data.skipped ? ` ${data.skipped} skipped (no longer pending).` : ""),
+            "SMWD References",
+        );
+    } catch (err) {
+        smwd.status.textContent = err.message;
+        updateSmwdApply();
+    }
 });
 
 // Payment sheet: the bills of one biller to pay at the biller in cash (choose the biller, usually Status: Pending).
@@ -829,70 +917,6 @@ function buildFilterParams() {
     return params;
 }
 
-function extractFilename(contentDisposition) {
-    const raw = String(contentDisposition || "");
-    const match = raw.match(/filename=\"?([^\";]+)\"?/i);
-    return match ? match[1] : "batch_cash_export.csv";
-}
-
-async function batchMarkCashAndDownload() {
-    const params = buildFilterParams();
-    const hasAnyFilter = Array.from(params.keys()).length > 0;
-    if (!hasAnyFilter) {
-        await showMessage("Please apply at least one filter before batch cash processing.", "Batch Processing");
-        return;
-    }
-    const confirmed = await showConfirm(
-        "Mark all currently filtered rows as paid in CASH and download CSV copy?",
-        "Batch Cash Processing"
-    );
-    if (!confirmed) {
-        return;
-    }
-
-    const originalLabel = batchCashExportBtn ? batchCashExportBtn.textContent : "";
-    if (batchCashExportBtn) {
-        batchCashExportBtn.disabled = true;
-        batchCashExportBtn.textContent = "Processing...";
-    }
-    try {
-        const response = await fetch(`/api/records/batch/mark-cash-export?${params.toString()}`, {
-            method: "POST",
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            await showMessage(err.detail || "Batch processing failed.", "Batch Processing");
-            return;
-        }
-
-        const blob = await response.blob();
-        const filename = extractFilename(response.headers.get("Content-Disposition"));
-        const updatedCount = Number(response.headers.get("X-Updated-Count") || 0);
-        const rowCount = Number(response.headers.get("X-Row-Count") || 0);
-
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-
-        await showMessage(
-            `Batch complete. Updated ${updatedCount} of ${rowCount} filtered rows and downloaded CSV.`,
-            "Batch Processing"
-        );
-        table.ajax.reload(null, false);
-        updateRecordsKpis();
-    } finally {
-        if (batchCashExportBtn) {
-            batchCashExportBtn.disabled = false;
-            batchCashExportBtn.textContent = originalLabel || "Mark Cash + Download";
-        }
-    }
-}
-
 const openCreateBtn = document.getElementById("openCreateBtn");
 if (openCreateBtn) {
     openCreateBtn.addEventListener("click", openCreate);
@@ -912,9 +936,6 @@ document.getElementById("clearFiltersBtn").addEventListener("click", () => {
     Object.keys(EXTRA_FILTER_PARAMS).forEach((key) => filters[key] && (filters[key].value = ""));
     table.search("").draw();
 });
-if (batchCashExportBtn) {
-    batchCashExportBtn.addEventListener("click", batchMarkCashAndDownload);
-}
 
 Object.values(filters).forEach((el) => {
     el.addEventListener("change", () => table.ajax.reload());

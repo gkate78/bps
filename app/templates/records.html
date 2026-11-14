@@ -96,9 +96,9 @@
 
         <div class="field field-actions">
             <button type="button" class="btn btn-secondary" id="clearFiltersBtn">Clear Filters</button>
+            <button type="button" class="btn btn-secondary" id="smwdRefsBtn" title="STA MARIA WATER: look up the pending bills' payments on SMWD's Billing Inquiry and fill in their references">Get SMWD References</button>
             <button type="button" class="btn btn-secondary" id="paymentSheetBtn" title="For one biller: the sheet taken to the biller to pay these bills in cash (amount, O.R. no., balance)">Payment Sheet</button>
             <button type="button" class="btn btn-secondary" id="printRecordsBtn" title="Print every bill matching the filters and search, with the totals">Print</button>
-            <button type="button" class="btn btn-primary" id="batchCashExportBtn">Mark Cash + Download</button>
         </div>
     </div>
 </section>
@@ -198,6 +198,38 @@
             <button type="submit" class="btn btn-primary">Save User</button>
         </div>
     </form>
+</dialog>
+
+<dialog id="smwdDialog" class="record-dialog">
+    <div class="dialog-head">
+        <h3>SMWD payment references</h3>
+        <button type="button" class="btn btn-ghost" id="smwdCloseBtn">Close</button>
+    </div>
+    <p class="status-text" id="smwdStatus" role="status"></p>
+    <div class="table-scroll">
+        <table class="display smwd-table" style="width:100%">
+            <thead>
+                <tr>
+                    <th></th><th>ID Number</th><th>Name</th><th class="align-right">Bill Amt</th>
+                    <th>SMWD Reference</th><th class="align-right">Amount Paid</th><th>Date Paid</th><th>Result</th>
+                </tr>
+            </thead>
+            <tbody id="smwdBody"></tbody>
+        </table>
+    </div>
+    <div class="topbar-actions" style="margin-top:12px; align-items:center; gap:8px;">
+        <label>Settlement channel
+            <select id="smwdChannel">
+                <option value="CASH">Cash (paid at the SMWD office)</option>
+                <option value="GCASH">GCash</option>
+                <option value="MAYA">Maya</option>
+                <option value="BAYAD">Bayad</option>
+                <option value="BPI_CC">BPICC</option>
+                <option value="BPI">BPI</option>
+            </select>
+        </label>
+        <button type="button" class="btn btn-primary" id="smwdApplyBtn" disabled>Apply checked references</button>
+    </div>
 </dialog>
 
 <dialog id="recordDialog" class="record-dialog">
