@@ -10,7 +10,7 @@ from sqlmodel import select
 
 from pos.auth_adapter import User, display_name, get_current_user, page_admin, page_user, pin_matches
 from app.auth import is_business_owner
-from app.controllers.bill_controller import get_distinct_billers
+from app.controllers.bill_controller import double_payment_reminders, get_distinct_billers
 from pos.controllers import bill_checkout_controller as bills
 from pos.controllers import draft_controller as drafts
 from pos.controllers import parked_controller as parked
@@ -164,6 +164,19 @@ async def create_sale(data: SaleIn, user: User = Depends(get_current_user), db: 
         "cash_out": {"txn_no": cash_out.txn_no, "amount_cents": cash_out.amount_cents, "fee_cents": cash_out.fee_cents,
                      "give_cents": cash_out.give_cents} if cash_out else None,
     }
+
+
+@router.get("/api/bills/reminders")
+async def bill_reminders(
+    account: str = Query(""),
+    phone: str = Query(""),
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Earlier bills paid twice to the biller for this account or CP number, not yet paid back by the customer."""
+    items = await double_payment_reminders(db, account=account, phone=phone)
+    done = await sales.paid_back_references(db, [r["reference"] for r in items if r["reference"]])
+    return [r for r in items if r["reference"] not in done]
 
 
 @router.get("/api/quote/bill")

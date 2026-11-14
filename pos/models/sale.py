@@ -94,7 +94,7 @@ class PosSaleLine(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     sale_id: int = Field(index=True, foreign_key="pos_sales.id")
-    kind: str = Field(max_length=12)  # service | load
+    kind: str = Field(max_length=12)  # service | load | payback (a double payment paid back; reference = the bill's)
     service_id: Optional[int] = Field(default=None, index=True)
     service_name: str = Field(max_length=60)
     description: Optional[str] = Field(default=None, max_length=160)

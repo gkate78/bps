@@ -47,6 +47,14 @@ function cashToCollect(total, paymentMethod) {
     return Math.floor((Math.round(round2(total) * 100) + 50) / 100);
 }
 
+// Cash is collected to the whole peso (₱328.90 → ₱329). Bills saved before that rule (2026-11-08) hold the
+// exact total as cash; editing one (e.g. adding the payment reference) keeps the exact total, with no change.
+function cashExpected(total, cash, paymentMethod) {
+    const wholePeso = cashToCollect(total, paymentMethod);
+    const exact = round2(total);
+    return dom.recordId.value && cash < wholePeso && cash >= exact ? exact : wholePeso;
+}
+
 function formatStatusPill(value) {
     const status = String(value || "").toLowerCase();
     const cls = status === "success" ? "status-success" : "status-failed";
@@ -223,7 +231,7 @@ function recomputeFinancials() {
     const charge = computeCharge(dom.biller.value, billAmt);
     const total = round2(billAmt + lateCharge + charge);
     const cash = round2(dom.cash.value);
-    const change = round2(cash - cashToCollect(total, dom.paymentMethod?.value));
+    const change = round2(cash - cashExpected(total, cash, dom.paymentMethod?.value));
 
     dom.charge.value = charge.toFixed(2);
     dom.total.value = total.toFixed(2);
@@ -643,7 +651,7 @@ function validatePayload(payload) {
         return false;
     }
 
-    const toCollect = cashToCollect(payload.total, payload.payment_method);
+    const toCollect = cashExpected(payload.total, payload.cash, payload.payment_method);
     if (payload.cash < toCollect) {
         showMessage(`Cash must be at least ${toCollect.toFixed(2)}.`, "Validation");
         return false;

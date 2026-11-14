@@ -169,6 +169,7 @@
             if (data.biller) $("bBiller").value = upper(data.biller);
             if (data.customer_name) $("bName").value = upper(data.customer_name);
             if (data.phone) $("bPhone").value = String(data.phone).replace(/\D/g, "").slice(0, 11);
+            scheduleReminders();
             fetchKnownAccounts();
             updateQuote();
             if (!$("bDue").value) $("bDue").focus();
@@ -176,6 +177,64 @@
             /* the cashier types the details */
         }
     });
+
+    // ---------- Reminder: an earlier bill of this account or CP number was paid twice to the biller ----------
+    // (noted "DOUBLE PAYMENT ..." in Bills records). Shown until the account's next bill is saved.
+    let reminderSeq = 0;
+    let reminders = [];
+    // In the shop sale the customer pays it back with this sale (in full); the Bills tab only reminds.
+    function renderReminders() {
+        const box = $("billReminder");
+        const added = window.registerPaybacks?.() || [];
+        box.innerHTML = reminders
+            .map((r, i) => {
+                const amount = peso(Math.round(r.bill_amt * 100));
+                const action = !inShop
+                    ? `<div class="small">To collect it, ring up this customer in the Sale tab and add it there.</div>`
+                    : added.includes(r.reference)
+                      ? `<div class="small"><strong>✓ ${escapeHtml(amount)} paid back is in this sale.</strong></div>`
+                      : `<button type="button" class="btn btn-secondary btn-small" data-payback="${i}">Add ${escapeHtml(amount)} paid back to this sale</button>`;
+                return `<div>⚠ <strong>Paid twice before:</strong> ${escapeHtml(r.biller)} ${escapeHtml(r.account)} (${escapeHtml(r.customer_name)}),
+                    bill of ${escapeHtml(amount)} on ${escapeHtml(r.txn_date || "")} (${escapeHtml(r.reference || "")}).
+                    Note: ${escapeHtml(r.notes || "")}. Collect it back from the customer.${action}</div>`;
+            })
+            .join("");
+        box.hidden = !reminders.length;
+    }
+    $("billReminder").addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-payback]");
+        if (!btn) return;
+        window.dispatchEvent(new CustomEvent("pos:payback", { detail: reminders[Number(btn.dataset.payback)] }));
+        renderReminders();
+    });
+    window.addEventListener("pos:cart-changed", () => reminders.length && renderReminders());
+    async function checkReminders() {
+        const account = upper($("bAccount").value);
+        const phone = $("bPhone").value.replace(/\D/g, "");
+        const box = $("billReminder");
+        const mine = ++reminderSeq;
+        if (!account && phone.length !== 11) {
+            reminders = [];
+            box.hidden = true;
+            return;
+        }
+        try {
+            const items = await getJson(`/pos/api/bills/reminders?${new URLSearchParams({ account, phone })}`);
+            if (mine !== reminderSeq) return;
+            reminders = items;
+            renderReminders();
+        } catch (err) {
+            /* a reminder only */
+        }
+    }
+    let reminderTimer;
+    const scheduleReminders = () => {
+        clearTimeout(reminderTimer);
+        reminderTimer = setTimeout(checkReminders, 300);
+    };
+    $("bAccount").addEventListener("blur", scheduleReminders);
+    $("bPhone").addEventListener("input", scheduleReminders);
+    $("bAccount").addEventListener("change", scheduleReminders);
 
     // ---------- List of bills ----------
     const billTotal = (bill) => bill.quote?.total_cents || 0;
@@ -218,6 +277,9 @@
     // and in the shop sale, which will take over from the tab).
     function resetEditor() {
         ["bAccount", "bBiller", "bName", "bPhone", "bDue", "bAmount", "bPayRef", "bLate"].forEach((id) => ($(id).value = ""));
+        $("billReminder").hidden = true;
+        reminders = [];
+        reminderSeq++; // a lookup still under way doesn't show it again
         showLateField(null);
         lookedUp = "";
         $("billQuote").classList.remove("error");
@@ -307,6 +369,7 @@
             $("bPayRef").value = bill.payment_reference || "";
             $("bLate").value = bill.late_charge || "";
             lookedUp = bill.account;
+            scheduleReminders();
             updateQuote();
             $("bAmount").focus();
         } else {
@@ -346,6 +409,7 @@
         $("bAmount").value = bill.amount;
         $("bPayRef").value = bill.payment_reference || "";
         $("bLate").value = bill.late_charge || "";
+        scheduleReminders();
         lookedUp = bill.account; // don't overwrite the name typed for this bill
         updateQuote();
         renderBills();

@@ -10,7 +10,8 @@ class SaleLineIn(BaseModel):
     # cash_in: a GCash/Maya cash-in (wallet_id, mobile_no, amount; reference once it's sent).
     # cash_out: a GCash/Maya cash-out (wallet_id it was received in, mobile_no, amount, fee_mode, reference).
     # bill: a bill (BPS bill_records).
-    kind: Literal["service", "load", "cash_in", "cash_out", "bill"]
+    # payback: the customer pays back a bill the shop paid twice to the biller (reference = that bill's BPS reference).
+    kind: Literal["service", "load", "cash_in", "cash_out", "bill", "payback"]
     # service lines
     service_id: Optional[int] = None
     description: Optional[str] = None

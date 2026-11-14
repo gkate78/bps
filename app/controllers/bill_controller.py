@@ -747,6 +747,44 @@ async def delete_record(db: AsyncSession, record_id: int) -> None:
     await db.commit()
 
 
+async def double_payment_reminders(db: AsyncSession, *, account: str = "", phone: str = "") -> list[dict]:
+    """
+    Bills noted as paid twice to the biller ("DOUBLE PAYMENT ..." in the notes) for this account or CP number,
+    so the cashier collects it back from the customer. The register leaves out the ones already paid back.
+    """
+    account = str(account or "").strip().upper()
+    phone = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    who = []
+    if account:
+        who.append(BillRecord.account == account)
+    if len(phone) == 11:
+        who.append(BillRecord.cp_number == phone)
+    if not who:
+        return []
+    flagged = (
+        await db.execute(
+            select(BillRecord)
+            .where(or_(*who), func.upper(BillRecord.notes).like("%DOUBLE%"))
+            .order_by(BillRecord.txn_datetime.desc())
+            .limit(10)
+        )
+    ).scalars().all()
+    reminders = []
+    for bill in flagged:
+        reminders.append({
+            "reference": bill.reference,
+            "biller": bill.biller,
+            "account": bill.account,
+            "customer_name": bill.customer_name,
+            "cp_number": bill.cp_number,
+            "txn_date": bill.txn_date.isoformat() if bill.txn_date else None,
+            "bill_amt": round(float(bill.bill_amt or 0), 2),
+            "payment_reference": bill.payment_reference,
+            "notes": bill.notes,
+        })
+    return reminders
+
+
 async def get_distinct_billers(db: AsyncSession) -> list[str]:
     records_result = await db.execute(select(BillRecord.biller).distinct().order_by(BillRecord.biller.asc()))
     record_billers = {row[0] for row in records_result.all() if row[0]}
