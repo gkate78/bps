@@ -510,3 +510,27 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Why: `bill_records.id` has no AUTOINCREMENT, so SQLite reuses the id of the newest bill once it's deleted. A bill deleted and entered again in a new sale got the same id, and the old sale's leftover link pointed at the new bill, so the old sale refused to void ("This sale includes 1 bill (REF-20261113-E040FD)") and would have reprinted the wrong bill.
 - Alternatives considered: rebuilding `bill_records` with AUTOINCREMENT (a table rebuild of live data for the same effect); checking bill creation time against the sale (timestamps are in different zones).
 - Follow-up: Audit log entries are by record id too, so a reused id shows both bills' history together.
+
+- Date: 2026-11-13
+- ID: DEC-063
+- Related task: BPS-256
+- Decision: In the Records edit form, an existing bill whose cash is at least its exact total but below the whole-peso amount is accepted, with the exact total as what was collected (change ₱0.00). New bills and other edits keep the whole-peso rule (DEC on cash rounding, 2026-11-08). Only the Records form checked this; the server never did.
+- Why: 324 bills entered before 2026-11-08 hold the exact total as cash. Adding a payment reference to one (3 were still pending) was refused with "Cash must be at least 329.00", and the form's change would have become -₱0.10.
+- Alternatives considered: rewriting old bills' cash to the whole peso (changes what was actually recorded); dropping the check on edits (would let real under-collection through).
+
+- Date: 2026-11-14
+- ID: DEC-064
+- Related task: BPS-257
+- Decision: A bill whose notes contain "DOUBLE" (the shop writes "DOUBLE PAYMENT VIA <channel> <reference>" when a bill was paid to the biller twice) is a reminder. The register's bill form (shop sale and Bills tab) asks `GET /pos/api/bills/reminders?account=&phone=` when the account is entered or looked up and when an 11-digit CP number is typed, and shows a warning with the biller, account, customer, bill amount, date, BPS reference and the note, telling the cashier to remind the customer of the balance. The reminder stopped once a later bill for the same account and biller was saved; superseded by DEC-065 (it stays until paid back).
+- Why: The owner noted two MERALCO bills paid twice (11-04) and wants the cashier reminded on the customer's next transaction. Using the note keeps it to what the shop already writes, with no new field to fill.
+- Alternatives considered: a separate "paid twice" flag or balance amount on the bill (another field to keep up; can be added if the note proves too loose); showing every note as a reminder (old notes like "15.00" aren't reminders).
+- Follow-up: Only notes containing "DOUBLE" count, so write it that way. Shop sales without a bill (e.g. loads for the same number) don't show it.
+
+- Date: 2026-11-14
+- ID: DEC-065
+- Related task: BPS-258
+- Decision: The customer pays back a double payment in a shop sale. The bill form's reminder (shop sale only; the Bills tab says to use the Sale tab) has a button that adds a `payback` sale line: "DOUBLE PAYMENT PAID BACK", description biller, account and BPS reference, amount the earlier bill's full bill amount (set by the server from the bill, not the page), `reference` = that bill's BPS reference. The server refuses it for a bill not found or not noted DOUBLE, one already paid back in a completed sale (or twice in one sale), personal sales and job orders. It is part of the sale's total, so it counts as cash/GCash/Maya/bank received like the rest of the sale, but not as income: Summary lists "Double payments paid back" separately. The reminder (`/pos/api/bills/reminders`) leaves out bills paid back in a completed sale, so it now stays until paid back, and voiding that sale brings it back.
+- Why: The owner's practice is to message the customer, who then pays the double payment back in full on top of the month's bill; the shop pays the biller only the bill. Recording it as a sale line keeps one total and one receipt, puts the money in the drawer or wallet count, and keeps it out of income (the double payment was the shop's own money).
+- Alternatives considered: End of day "Cash added" (cash only, not linked to the bill, the reminder can't tell it was paid back); a service line (would count as income); stopping the reminder at the next bill (a bill saved without the payback would lose the reminder).
+- Follow-up: The earlier extra payment to the biller is only in the bill's note, not in End of day; a GCash/Maya double payment showed as a wallet shortfall that day.
+

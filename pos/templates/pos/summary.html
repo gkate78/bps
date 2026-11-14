@@ -36,6 +36,9 @@
         <small>cash-in and cash-out</small>
     </div>
 </section>
+{% if s.payback_count %}
+<p class="alert alert-warn">Double payments paid back by customers: {{ s.payback_count }}, {{ s.payback_cents | peso }}. In the shop sales' cash and GCash/Maya received, but not income (the shop had paid these bills to the biller twice).</p>
+{% endif %}
 {% if s.personal_shop_count %}
 <p class="alert alert-warn">Personal (admin) from shop funds: {{ s.personal_shop_count }} transaction{{ '' if s.personal_shop_count == 1 else 's' }}, {{ s.personal_shop_cents | peso }}. Not counted as income or cash received; loads and cash-ins still lower the GCash/Maya balances. Includes bills paid from shop funds.</p>
 {% endif %}

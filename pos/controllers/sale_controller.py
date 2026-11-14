@@ -124,6 +124,44 @@ async def linked_wallet_txns(db: AsyncSession, sale_id: int) -> list[PosWalletTx
 
 
 EXTRA_KINDS = ("cash_in", "cash_out", "bill")  # paid together with the sale, saved in their own records
+PAYBACK_NAME = "DOUBLE PAYMENT PAID BACK"
+
+
+async def paid_back_references(db: AsyncSession, references: list[str]) -> set[str]:
+    """Bills (by BPS reference) whose double payment was already paid back in a sale that wasn't voided."""
+    if not references:
+        return set()
+    rows = await db.execute(
+        select(PosSaleLine.reference)
+        .join(PosSale, PosSale.id == PosSaleLine.sale_id)
+        .where(PosSaleLine.kind == "payback", PosSaleLine.reference.in_(references), PosSale.status == "completed")
+    )
+    return {ref for ref in rows.scalars().all() if ref}
+
+
+async def _payback_line(db: AsyncSession, reference: Optional[str], seen: set[str]) -> PosSaleLine:
+    """The customer pays back, in full, a bill the shop paid twice to the biller (noted DOUBLE PAYMENT)."""
+    ref = clean_text(reference, 60)
+    bill = ref and (await db.execute(select(BillRecord).where(BillRecord.reference == ref))).scalars().first()
+    if not bill:
+        raise PosError(f"Paid back: bill {ref or '?'} not found in Bills records")
+    if "DOUBLE" not in (bill.notes or "").upper():
+        raise PosError(f"Paid back: bill {ref} isn't noted as a double payment")
+    if ref in seen or await paid_back_references(db, [ref]):
+        raise PosError(f"Paid back: the double payment on {ref} was already paid back")
+    seen.add(ref)
+    amount = int(round(float(bill.bill_amt or 0) * 100))
+    if amount <= 0:
+        raise PosError(f"Paid back: bill {ref} has no amount")
+    return PosSaleLine(
+        kind="payback",
+        service_name=PAYBACK_NAME,
+        description=clean_text(f"{bill.biller} {bill.account} ({ref})", 160),
+        qty=1,
+        unit_price_cents=amount,
+        line_total_cents=amount,
+        reference=ref,
+    )
 BANKS = ("BDO", "BPI")
 MAX_SALE_BILLS = 20
 
@@ -184,9 +222,17 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
         raise PosError(f"At most {MAX_SALE_BILLS} bills in one sale")
     schedule = await get_fee_schedule(db)
     lines: list[PosSaleLine] = []
+    paid_back: set[str] = set()
     for line in data.lines:
         if line.kind in EXTRA_KINDS:
             continue  # checked below; saved in their own records
+        if line.kind == "payback":
+            if data.personal:
+                raise PosError("A double payment paid back can't be in a personal sale")
+            if data.is_job_order:
+                raise PosError("A double payment paid back can't be in a job order. Ring it up separately.")
+            lines.append(await _payback_line(db, line.reference, paid_back))
+            continue
         if line.kind == "service":
             service = await _get_active(db, PosService, line.service_id, "service")
             if not (1 <= line.qty <= MAX_QTY):
@@ -935,6 +981,8 @@ class DaySummary:
     bills_by_biller: dict = field(default_factory=lambda: defaultdict(lambda: [0, 0]))  # biller -> [count, total]
     bill_cash_cents: int = 0  # into the drawer (cash collected to the whole peso)
     bills_settled: dict = field(default_factory=lambda: defaultdict(lambda: [0, 0]))  # channel -> [count, to biller]
+    payback_count: int = 0  # double payments to billers paid back by customers (in the sales' totals, not income)
+    payback_cents: int = 0
 
     @property
     def load_income_cents(self) -> int:
@@ -990,6 +1038,10 @@ async def day_summary(
                 out.load_by_network[line.network_name][1] += line.load_cents
                 out.wallet_deltas[line.wallet_name] -= line.cost_cents
                 out.wallet_parts[line.wallet_name]["loads"] -= line.cost_cents
+            elif line.kind == "payback":
+                # Money the shop gets back for a bill it paid twice: received, but not income.
+                out.payback_count += 1
+                out.payback_cents += line.line_total_cents
             else:
                 out.service_totals[line.service_name] += line.line_total_cents
                 out.service_sales_cents += line.line_total_cents

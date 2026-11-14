@@ -506,6 +506,25 @@
         renderCart();
     });
 
+    // ---------- A double payment paid back (from the bill form's reminder; the full bill amount) ----------
+    window.registerPaybacks = () => cart.filter((l) => l.kind === "payback").map((l) => l.reference);
+    window.addEventListener("pos:payback", (event) => {
+        const r = event.detail;
+        if (!r?.reference) return;
+        if (cart.some((l) => l.kind === "payback" && l.reference === r.reference)) return say("It's already in this sale", "error");
+        cart.push({
+            kind: "payback",
+            name: "DOUBLE PAYMENT PAID BACK",
+            description: `${r.biller} ${r.account} (${r.reference})`,
+            reference: r.reference,
+            qty: 1,
+            total_cents: Math.round(r.bill_amt * 100),
+        });
+        if (!$("custName").value.trim()) $("custName").value = r.customer_name || "";
+        renderCart();
+        say(`Added ${peso(Math.round(r.bill_amt * 100))} paid back for ${r.reference}`, "success");
+    });
+
     function billDetail(line) {
         const q = line.quote || {};
         const charges = [q.late_charge_cents ? `late ${peso(q.late_charge_cents)}` : "", q.charge_cents ? `service ${peso(q.charge_cents)}` : ""].filter(Boolean);
@@ -614,16 +633,18 @@
                                 : "";
                     const desc = line.description ? ` · ${line.description}` : "";
                     const editing = i === editingIndex;
+                    const editBtn = line.kind === "payback" ? "" : `<button type="button" class="btn btn-ghost btn-small" data-edit="${i}" aria-label="Edit ${escapeHtml(line.name)}" title="Edit">✎</button>`;
                     return `<tr class="${editing ? "editing" : ""}">
                         <td><strong>${escapeHtml(line.name)}</strong>${escapeHtml(desc)}${sub ? `<div class="muted small">${escapeHtml(sub)}</div>` : ""}${editing ? '<div class="muted small">Editing…</div>' : ""}</td>
                         <td class="num">${line.qty}</td>
                         <td class="num">${escapeHtml(peso(lineTotal(line)))}</td>
-                        <td class="line-actions"><button type="button" class="btn btn-ghost btn-small" data-edit="${i}" aria-label="Edit ${escapeHtml(line.name)}" title="Edit">✎</button><button type="button" class="btn btn-ghost btn-small" data-remove="${i}" aria-label="Remove ${escapeHtml(line.name)}" title="Remove">✕</button></td>
+                        <td class="line-actions">${editBtn}<button type="button" class="btn btn-ghost btn-small" data-remove="${i}" aria-label="Remove ${escapeHtml(line.name)}" title="Remove">✕</button></td>
                     </tr>`;
                 })
                 .join("");
         }
         $("cartTotal").textContent = peso(cartTotal());
+        window.dispatchEvent(new Event("pos:cart-changed"));
         renderCashInRefs();
         updateJob();
         updateChange();
@@ -839,6 +860,7 @@
     // What the server needs for each item (the rest is for the screen).
     function linePayload(line) {
         if (line.kind === "bill") return { kind: "bill", bill: line.bill };
+        if (line.kind === "payback") return { kind: "payback", reference: line.reference };
         if (line.kind === "cash_in" || line.kind === "cash_out") {
             const { kind, wallet_id, mobile_no, amount, reference, fee_mode } = line;
             return { kind, wallet_id, mobile_no, amount, reference, fee_mode: fee_mode || "deducted" };
