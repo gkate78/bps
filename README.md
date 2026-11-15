@@ -58,10 +58,10 @@ Requires Python 3.12+ (tested on 3.12 and 3.14). `sqlmodel` is pinned to 0.0.44:
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8001
+POS_ENABLED=1 uvicorn main:app --reload --port 8001
 ```
 
-Open locally: `http://localhost:8001/auth/signin`. Port 8000 is left for everyday use (`run_local.sh`, below), so both can run at once. Use `localhost` for testing and `127.0.0.1` for everyday use: the browser keeps their sign-ins apart (on the same host, signing in on one port signs you out of the other).
+Open locally: `http://localhost:8001/auth/signin`. `POS_ENABLED=1` turns on the shop register (`/pos`); leave it out to test the bills-only version that runs online. This uses the throwaway `bills_admin.db` in the project folder (test data only, never your real data). Port 8000 is left for everyday use (`run_local.sh`, below), so both can run at once. Use `localhost` for testing and `127.0.0.1` for everyday use: the browser keeps their sign-ins apart (on the same host, signing in on one port signs you out of the other).
 
 ### Everyday local use (Linux/WSL)
 Keep real data separate from development so code changes and test imports never touch it:
@@ -72,7 +72,7 @@ Keep real data separate from development so code changes and test imports never 
 ```
 
 - Data lives in `~/bps-data/` (override with `BPS_DATA_DIR`): `bills_admin.db`, `.env` (generated with a random `SESSION_SECRET`), and `backups/` (last 30 kept, set `BPS_BACKUP_KEEP` to change).
-- For development, run `uvicorn main:app --reload --port 8001` and open `http://localhost:8001`; it uses the throwaway `bills_admin.db` in the project folder.
+- For development, run `POS_ENABLED=1 uvicorn main:app --reload --port 8001` and open `http://localhost:8001`; it uses the throwaway `bills_admin.db` in the project folder.
 - `PORT` changes the port, e.g. `PORT=8002 ./scripts/run_local.sh`.
 - To restore, stop the app and copy a file from `~/bps-data/backups/` over `~/bps-data/bills_admin.db`.
 - New model columns are not added to existing databases automatically: add an `ALTER TABLE` step in `init_db()` in `app/database.py` for each one.
