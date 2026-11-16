@@ -212,7 +212,7 @@
     </form>
 </dialog>
 
-<dialog id="smwdDialog" class="record-dialog">
+<dialog id="smwdDialog" class="record-dialog record-dialog-padded">
     <div class="dialog-head">
         <h3>SMWD payment references</h3>
         <button type="button" class="btn btn-ghost" id="smwdCloseBtn">Close</button>
@@ -229,7 +229,7 @@
             <tbody id="smwdBody"></tbody>
         </table>
     </div>
-    <div class="topbar-actions" style="margin-top:12px; align-items:center; gap:8px;">
+    <div class="topbar-actions dialog-actions-sticky" style="margin-top:12px; align-items:center; gap:8px;">
         <label>Settlement channel
             <select id="smwdChannel">
                 <option value="CASH">Cash (paid at the SMWD office)</option>
@@ -244,7 +244,7 @@
     </div>
 </dialog>
 
-<dialog id="sheetRefsDialog" class="record-dialog">
+<dialog id="sheetRefsDialog" class="record-dialog record-dialog-padded">
     <div class="dialog-head">
         <h3>Payment references from the Google Sheet</h3>
         <button type="button" class="btn btn-ghost" id="sheetRefsCloseBtn">Close</button>
@@ -261,7 +261,7 @@
             <tbody id="sheetRefsBody"></tbody>
         </table>
     </div>
-    <div class="topbar-actions" style="margin-top:12px; align-items:center; gap:8px;">
+    <div class="topbar-actions dialog-actions-sticky" style="margin-top:12px; align-items:center; gap:8px;">
         <label>Channel for rows left blank
             <select id="sheetRefsChannel">
                 <option value="CASH">Cash</option>
