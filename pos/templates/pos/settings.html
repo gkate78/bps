@@ -25,6 +25,7 @@
             Last backup {{ settings.gsheets_last_at.strftime("%m/%d %I:%M %p") }}: {{ settings.gsheets_last_result }}
         </div>
         {% endif %}
+        <p class="muted small">Every backup replaces the tabs, so don't type in them. The <strong>PAYMENT REFERENCES</strong> tab lists the pending bills (txn date/time, account, biller, bill amount, due date, BPS reference); type the <strong>payment reference</strong> and <strong>channel</strong> beside them (e.g. from home). Backups keep what you type there, and <strong>Records → Get Sheet References</strong> puts them on the bills and marks the rows DONE. Script set up before 11/16/2026? Paste the script below again, then Deploy → Manage deployments → Edit → Version: <strong>New version</strong> → Deploy (the link stays the same).</p>
         <details {{ 'open' if not settings.gsheets_url }}>
             <summary>Set up (once)</summary>
             <ol class="small">

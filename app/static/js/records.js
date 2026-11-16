@@ -432,6 +432,95 @@ smwd.apply?.addEventListener("click", async () => {
     }
 });
 
+// Sheet references: rows typed in the Google Sheet's PAYMENT REFERENCES tab (the backup never replaces it).
+const sheetRefs = {
+    dialog: document.getElementById("sheetRefsDialog"),
+    body: document.getElementById("sheetRefsBody"),
+    status: document.getElementById("sheetRefsStatus"),
+    apply: document.getElementById("sheetRefsApplyBtn"),
+    channel: document.getElementById("sheetRefsChannel"),
+    items: [],
+};
+const SHEET_CHANNEL_NAMES = { CASH: "Cash", GCASH: "GCash", MAYA: "Maya", BAYAD: "Bayad", BPI_CC: "BPICC", BPI: "BPI" };
+function renderSheetRefs() {
+    sheetRefs.body.innerHTML = sheetRefs.items
+        .map((item, i) => {
+            const canApply = item.state === "ready" || item.state === "warn";
+            const result = item.state === "ready" ? "<strong>✓ Ready</strong>" : escapeText(item.reason);
+            const bill = item.id ? `${escapeText(item.customer_name)}<div class="status-text">${escapeText(item.biller)} · ${escapeText(item.account)} · ${escapeText(item.txn_date)}</div>` : "";
+            return `<tr>
+                <td>${canApply ? `<input type="checkbox" data-sheet-ref="${i}" ${item.state === "ready" ? "checked" : ""} aria-label="Apply row ${item.row}">` : ""}</td>
+                <td>${item.row}</td>
+                <td>${escapeText(item.bps_reference)}</td>
+                <td>${bill}</td>
+                <td class="align-right">${item.bill_amt == null ? "" : currency(item.bill_amt)}</td>
+                <td>${escapeText(item.payment_reference)}</td>
+                <td>${item.channel ? escapeText(SHEET_CHANNEL_NAMES[item.channel] || item.channel) : escapeText(item.channel_typed) || '<span class="status-text">(chosen below)</span>'}</td>
+                <td>${result}</td>
+            </tr>`;
+        })
+        .join("") || '<tr><td colspan="8">No new rows in the PAYMENT REFERENCES tab.</td></tr>';
+    updateSheetRefsApply();
+}
+function sheetRefsChecked() {
+    return Array.from(sheetRefs.body.querySelectorAll("[data-sheet-ref]:checked")).map((el) => sheetRefs.items[Number(el.dataset.sheetRef)]);
+}
+function updateSheetRefsApply() {
+    const count = sheetRefsChecked().length;
+    const done = sheetRefs.items.filter((i) => i.state === "done").length;
+    sheetRefs.apply.disabled = !count && !done;
+    sheetRefs.apply.textContent = count ? `Apply ${count} reference${count === 1 ? "" : "s"}` : done ? "Mark done rows in the sheet" : "Apply checked references";
+}
+sheetRefs.body?.addEventListener("change", updateSheetRefsApply);
+document.getElementById("sheetRefsCloseBtn")?.addEventListener("click", () => sheetRefs.dialog.close());
+document.getElementById("sheetRefsBtn")?.addEventListener("click", async () => {
+    sheetRefs.items = [];
+    sheetRefs.body.innerHTML = "";
+    sheetRefs.apply.disabled = true;
+    sheetRefs.status.textContent = "Reading the PAYMENT REFERENCES tab of your Google Sheet…";
+    sheetRefs.dialog.showModal();
+    try {
+        const response = await fetch("/api/records/sheet-references/preview", { method: "POST" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Couldn't read the Google Sheet");
+        sheetRefs.items = data.items || [];
+        const ready = sheetRefs.items.filter((i) => i.state === "ready").length;
+        sheetRefs.status.textContent = sheetRefs.items.length
+            ? `${ready} of ${sheetRefs.items.length} new row${sheetRefs.items.length === 1 ? "" : "s"} ready. Ready ones are checked; nothing is saved until you apply. Applied rows are marked DONE in the sheet.`
+            : "No new references. In the Google Sheet's PAYMENT REFERENCES tab (it lists the pending bills after each backup), type the payment reference and channel beside each bill; rows marked DONE are skipped.";
+        renderSheetRefs();
+    } catch (err) {
+        sheetRefs.status.textContent = err.message;
+    }
+});
+sheetRefs.apply?.addEventListener("click", async () => {
+    const items = sheetRefsChecked().map(({ row, bps_reference, payment_reference, channel }) => ({ row, bps_reference, payment_reference, channel }));
+    const done_rows = sheetRefs.items.filter((i) => i.state === "done").map(({ row, bps_reference }) => ({ row, bps_reference }));
+    if (!items.length && !done_rows.length) return;
+    sheetRefs.apply.disabled = true;
+    sheetRefs.status.textContent = "Saving…";
+    try {
+        const response = await fetch("/api/records/sheet-references/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items, done_rows, channel: sheetRefs.channel.value }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Couldn't save the references");
+        sheetRefs.dialog.close();
+        table.ajax.reload(null, false);
+        await showMessage(
+            `${data.applied} bill${data.applied === 1 ? "" : "s"} now processed with the sheet's reference.` +
+                (data.skipped ? ` ${data.skipped} skipped (no longer pending).` : "") +
+                (data.sheet_error ? ` The rows couldn't be marked DONE in the sheet (${data.sheet_error}); mark them by hand.` : ""),
+            "Sheet References",
+        );
+    } catch (err) {
+        sheetRefs.status.textContent = err.message;
+        updateSheetRefsApply();
+    }
+});
+
 // Payment sheet: the bills of one biller to pay at the biller in cash (choose the biller, usually Status: Pending).
 document.getElementById("paymentSheetBtn")?.addEventListener("click", async () => {
     if (!filters.biller?.value) {
