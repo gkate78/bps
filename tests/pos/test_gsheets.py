@@ -12,6 +12,9 @@ def fake_google(monkeypatch, fail_on: str = ""):
     sent = []
 
     def post_table(url, payload):
+        if payload.get("action") == "pending_references":
+            sent.append((url, {**payload, "tab": "PAYMENT REFERENCES"}))
+            return {"ok": True, "rows": len(payload["rows"])}
         if payload["tab"] == fail_on:
             raise gsheets.BackupError("Google Sheet said: Wrong password")
         sent.append((url, payload))
@@ -38,13 +41,17 @@ def test_backup_sends_every_tab_without_secrets(shop, monkeypatch):
     assert 'action="/pos/settings/gsheets/backup"' in r.text
 
     page = client.post("/pos/settings/gsheets/backup").text
-    assert "Backed up 13 tabs" in page
+    assert "Backed up 13 tabs" in page and "1 pending bills to PAYMENT REFERENCES" in page
     tabs = {p["tab"]: p for _, p in sent}
-    assert len(tabs) == 13 and all(url == URL for url, _ in sent)
+    assert len(tabs) == 14 and all(url == URL for url, _ in sent)
+    pending = tabs["PAYMENT REFERENCES"]["rows"]
+    assert len(pending) == 1 and pending[0][1:4] == ["1234567890", "MERALCO", 1000.0]
+    assert len(pending[0]) == 6  # the test bill has no BPS reference (index 5)
     everything = json.dumps([p for _, p in sent])
     assert "pin_hash" not in everything and "pin_salt" not in everything and "otp" not in everything
     assert "gsheets_password" not in everything and "TEST-DEPLOYMENT" not in everything
 
+    assert "password" not in json.dumps(pending)
     bills = tabs["BILLS"]
     row = dict(zip(bills["columns"], bills["rows"][0]))
     assert row["cp_number"] == "09181112222" and bills["formats"][bills["columns"].index("cp_number")] == "@"
@@ -83,3 +90,32 @@ def test_backup_is_admin_only(shop):
     shop.sign_in(ENCODER_PHONE, ENCODER_PIN)
     r = shop.client.post("/pos/settings/gsheets/backup", follow_redirects=False)
     assert r.status_code in (303, 403)
+
+
+def test_an_old_script_still_backs_up_the_tabs_and_says_to_update(shop, monkeypatch):
+    def post_table(url, payload):
+        if payload.get("action"):
+            raise gsheets.BackupError("The link didn't answer like the BPS script. Check it's deployed as a Web app with access 'Anyone'.")
+        return {"ok": True, "rows": len(payload["rows"])}
+
+    monkeypatch.setattr(gsheets, "post_table", post_table)
+    shop.client.get("/pos/settings")
+    shop.client.post("/pos/settings/gsheets", data={"url": URL})
+    page = shop.client.post("/pos/settings/gsheets/backup").text
+    assert "The tabs were backed up, but PAYMENT REFERENCES needs the new script" in page
+
+
+def test_pending_rows_are_only_bills_without_a_payment_reference(shop, monkeypatch):
+    sent = fake_google(monkeypatch)
+    shop.add(bill(1015, 15, cp_number="09181112222"))
+    with shop.engine.begin() as conn:
+        conn.exec_driver_sql("UPDATE bill_records SET payment_reference = '  ', due_date = '2026-11-20'")
+    shop.add(bill(615, 15))
+    with shop.engine.begin() as conn:
+        conn.exec_driver_sql("UPDATE bill_records SET payment_reference = 'PAID1' WHERE total = 615")
+    shop.client.get("/pos/settings")
+    shop.client.post("/pos/settings/gsheets", data={"url": URL})
+    shop.client.post("/pos/settings/gsheets/backup")
+    pending = {p["tab"]: p for _, p in sent}["PAYMENT REFERENCES"]["rows"]
+    assert len(pending) == 1 and pending[0][3] == 1000.0 and pending[0][4] == "11/20/2026"
+    assert pending[0][0][2] == "/" and pending[0][0][-2:] in ("AM", "PM")

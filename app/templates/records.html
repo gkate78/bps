@@ -97,6 +97,7 @@
         <div class="field field-actions">
             <button type="button" class="btn btn-secondary" id="clearFiltersBtn">Clear Filters</button>
             <button type="button" class="btn btn-secondary" id="smwdRefsBtn" title="STA MARIA WATER: look up the pending bills' payments on SMWD's Billing Inquiry and fill in their references">Get SMWD References</button>
+            {% if pos_enabled %}<button type="button" class="btn btn-secondary" id="sheetRefsBtn" title="Payment references typed beside the pending bills in the Google Sheet's PAYMENT REFERENCES tab (e.g. from home): preview, then put them on the bills">Get Sheet References</button>{% endif %}
             <button type="button" class="btn btn-secondary" id="paymentSheetBtn" title="For one biller: the sheet taken to the biller to pay these bills in cash (amount, O.R. no., balance)">Payment Sheet</button>
             <button type="button" class="btn btn-secondary" id="printRecordsBtn" title="Print every bill matching the filters and search, with the totals">Print</button>
         </div>
@@ -229,6 +230,38 @@
             </select>
         </label>
         <button type="button" class="btn btn-primary" id="smwdApplyBtn" disabled>Apply checked references</button>
+    </div>
+</dialog>
+
+<dialog id="sheetRefsDialog" class="record-dialog">
+    <div class="dialog-head">
+        <h3>Payment references from the Google Sheet</h3>
+        <button type="button" class="btn btn-ghost" id="sheetRefsCloseBtn">Close</button>
+    </div>
+    <p class="status-text" id="sheetRefsStatus" role="status"></p>
+    <div class="table-scroll">
+        <table class="display smwd-table" style="width:100%">
+            <thead>
+                <tr>
+                    <th></th><th>Row</th><th>BPS Reference</th><th>Bill</th><th class="align-right">Bill Amt</th>
+                    <th>Payment Reference</th><th>Channel</th><th>Result</th>
+                </tr>
+            </thead>
+            <tbody id="sheetRefsBody"></tbody>
+        </table>
+    </div>
+    <div class="topbar-actions" style="margin-top:12px; align-items:center; gap:8px;">
+        <label>Channel for rows left blank
+            <select id="sheetRefsChannel">
+                <option value="CASH">Cash</option>
+                <option value="GCASH">GCash</option>
+                <option value="MAYA">Maya</option>
+                <option value="BAYAD">Bayad</option>
+                <option value="BPI_CC">BPICC</option>
+                <option value="BPI">BPI</option>
+            </select>
+        </label>
+        <button type="button" class="btn btn-primary" id="sheetRefsApplyBtn" disabled>Apply checked references</button>
     </div>
 </dialog>
 

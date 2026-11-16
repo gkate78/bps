@@ -557,6 +557,67 @@ async def smwd_apply(
     return {"applied": len(applied), "skipped": len(skipped)}
 
 
+class SheetRefItem(BaseModel):
+    row: int
+    bps_reference: str
+    payment_reference: str = ""
+    channel: str = ""
+
+
+class SheetRefRow(BaseModel):
+    row: int
+    bps_reference: str
+
+
+class SheetRefApplyIn(BaseModel):
+    items: list[SheetRefItem] = Field(default_factory=list)
+    done_rows: list[SheetRefRow] = Field(default_factory=list)
+    channel: Literal["CASH", "GCASH", "MAYA", "BAYAD", "BPI_CC", "BPI"] = "CASH"
+
+
+def _sheet_refs():
+    """The Google Sheet link lives in the shop register's settings, so this needs the register on."""
+    if not templates.env.globals.get("pos_enabled"):
+        raise HTTPException(status_code=404, detail="The Google Sheet backup is part of the shop register.")
+    from pos.controllers import gsheets_controller as gsheets
+    from pos.controllers import sheet_refs_controller as sheet_refs
+    return gsheets, sheet_refs
+
+
+@router.post("/api/records/sheet-references/preview")
+async def sheet_references_preview(
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_owner_or_admin),
+):
+    """The rows typed in the Google Sheet's PAYMENT REFERENCES tab, each checked against its bill. Nothing is saved."""
+    gsheets, sheet_refs = _sheet_refs()
+    try:
+        rows = await sheet_refs.read_rows(db)
+    except gsheets.BackupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"items": await sheet_refs.preview(db, rows), "limit": sheet_refs.MAX_ROWS}
+
+
+@router.post("/api/records/sheet-references/apply")
+async def sheet_references_apply(
+    payload: SheetRefApplyIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_owner_or_admin),
+):
+    """Put the chosen rows' references on their bills that are still pending, then mark the rows in the sheet."""
+    _, sheet_refs = _sheet_refs()
+
+    async def log(record, reference, channel):
+        await _log_record_audit(
+            db, action="sheet_reference", status="success", current_user=current_user, channel="web",
+            record_id=record.id, detail=f"reference={record.reference}, payment_reference={reference}, channel={channel or '-'}",
+        )
+
+    return await sheet_refs.apply(
+        db, [i.model_dump() for i in payload.items], payload.channel, [d.model_dump() for d in payload.done_rows], log,
+    )
+
+
 @router.get("/admin/processing", include_in_schema=False)
 async def admin_processing_redirect(
     db: AsyncSession = Depends(get_db),

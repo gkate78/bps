@@ -47,11 +47,24 @@ TABLES = (
     ("GCASH MAYA ACCOUNTS", "SELECT * FROM pos_wallets ORDER BY id"),
 )
 
+# Pending bills for the PAYMENT REFERENCES tab, oldest first (the sheet keeps what was typed beside them).
+PENDING_SQL = (
+    "SELECT txn_datetime, account, biller, bill_amt, due_date, reference FROM bill_records"
+    " WHERE TRIM(COALESCE(payment_reference, '')) = '' ORDER BY txn_datetime, id"
+)
+
 _running = asyncio.Lock()
 
 
 class BackupError(Exception):
     pass
+
+
+OLD_SCRIPT = (
+    "The tabs were backed up, but PAYMENT REFERENCES needs the new script: Settings → Backup to Google Sheets → "
+    "Set up (once) → Copy script, paste it in the sheet's Extensions → Apps Script, Save, then Deploy → Manage "
+    "deployments → Edit → Version: New version → Deploy (the link stays the same)."
+)
 
 
 def valid_url(url: str) -> bool:
@@ -98,6 +111,31 @@ async def collect_tables() -> list[dict]:
     return tables
 
 
+def _when(value, fmt: str) -> str:
+    if not value:
+        return ""
+    if isinstance(value, str):
+        for parse in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                value = datetime.strptime(value, parse)
+                break
+            except ValueError:
+                continue
+        else:
+            return value
+    return value.strftime(fmt)
+
+
+async def collect_pending() -> list[list]:
+    async with bps_db.AsyncSessionLocal() as db:
+        rows = (await db.execute(text(PENDING_SQL))).fetchall()
+    return [
+        [_when(txn, "%m/%d/%Y %I:%M %p"), account or "", biller or "", round(float(amount or 0), 2),
+         _when(due, "%m/%d/%Y"), reference or ""]
+        for txn, account, biller, amount, due, reference in rows
+    ]
+
+
 def post_table(url: str, payload: dict) -> dict:
     """POST one table to the Apps Script web app (it answers through a redirect, which urllib follows)."""
     request = urllib.request.Request(
@@ -130,14 +168,22 @@ async def run_backup(trigger: str, user_id: int | None = None) -> str:
         if not url or not password:
             raise BackupError("Set up the Google Sheet link first.")
         sent_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-        error, rows = None, 0
+        error, rows, pending = None, 0, []
         try:
             for table in await collect_tables():
                 await asyncio.to_thread(post_table, url, {**table, "password": password, "sent_at": sent_at})
                 rows += len(table["rows"])
+            pending = await collect_pending()
+            answer = await asyncio.to_thread(
+                post_table, url, {"action": "pending_references", "rows": pending, "password": password, "sent_at": sent_at}
+            )
+            if "rows" not in answer:
+                raise BackupError(OLD_SCRIPT)
         except BackupError as exc:
             error = str(exc)
-        message = error or f"Backed up {len(TABLES)} tabs ({rows:,} rows)"
+            if "didn't answer like the BPS script" in error and rows:
+                error = OLD_SCRIPT  # the tables went; only the new PAYMENT REFERENCES step failed
+        message = error or f"Backed up {len(TABLES)} tabs ({rows:,} rows) and {len(pending):,} pending bills to PAYMENT REFERENCES"
         async with bps_db.AsyncSessionLocal() as db:
             s = await get_settings(db)
             s.gsheets_last_at = datetime.now()
