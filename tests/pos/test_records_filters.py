@@ -81,3 +81,33 @@ def test_payment_sheet_for_one_biller(shop):
     # The bills' original amounts (no late or service charge): 1,298.35 + 600.00 = 1,898.35; cash 1,899.00, change 0.65.
     assert "1,898.35" in page and "1,899.00" in page and "0.65" in page and "623.45" not in page
     assert "600.65" in page  # balance after the first: 1,899 - 1,298.35, then 0.65
+
+
+def test_print_and_payment_sheet_follow_the_table_sort(shop):
+    add(shop, "REF-A001", TODAY + timedelta(days=9))
+    add(shop, "REF-B002", None)
+    add(shop, "REF-C003", TODAY - timedelta(days=3))
+    add(shop, "REF-D004", TODAY + timedelta(days=1))
+    client = shop.client
+
+    def order(page, refs=("REF-A001", "REF-B002", "REF-C003", "REF-D004")):
+        return [r for _, r in sorted((page.index(r), r) for r in refs)]
+
+    page = client.get("/admin/records/print", params={"sort": "due_date", "sort_dir": "asc"}).text
+    assert order(page) == ["REF-C003", "REF-D004", "REF-A001", "REF-B002"]  # no due date last
+    assert "Sorted by due date, soonest first" in page
+    page = client.get("/admin/records/print", params={"sort": "due_date", "sort_dir": "desc"}).text
+    assert order(page) == ["REF-A001", "REF-D004", "REF-C003", "REF-B002"]
+    page = client.get("/admin/records/print").text  # no sort: oldest first, as before
+    assert order(page) == ["REF-A001", "REF-B002", "REF-C003", "REF-D004"] and "Sorted by" not in page
+    assert client.get("/admin/records/print", params={"sort": "nope"}).status_code == 200
+    assert client.get("/admin/records/print", params={"sort_dir": "sideways"}).status_code == 422
+
+    sheet = client.get("/admin/records/payment-sheet", params={"biller": "MERALCO", "sort": "due_date", "sort_dir": "asc"}).text
+    accounts = ["C003", "D004", "A001", "B002"]
+    assert [a for _, a in sorted((sheet.index(f"<td>{a}</td>"), a) for a in accounts)] == accounts
+
+    # The table itself, sorted by due date, also puts bills without one last.
+    r = client.get("/api/records/datatable", params={
+        "draw": 1, "start": 0, "length": 50, "order[0][column]": "6", "order[0][dir]": "asc", "columns[6][data]": "due_date"})
+    assert [row["reference"] for row in r.json()["data"]] == ["REF-C003", "REF-D004", "REF-A001", "REF-B002"]

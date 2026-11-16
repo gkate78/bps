@@ -1554,6 +1554,39 @@ async def records_kpi_summary(
     }
 
 
+# Columns the Bills records table (and its Print and Payment Sheet) can be sorted by.
+RECORD_SORT_COLUMNS = {
+    "txn_datetime": BillRecord.txn_datetime,
+    "txn_date": BillRecord.txn_date,
+    "account": BillRecord.account,
+    "biller": BillRecord.biller,
+    "customer_name": BillRecord.customer_name,
+    "cp_number": BillRecord.cp_number,
+    "bill_amt": BillRecord.bill_amt,
+    "charge": BillRecord.charge,
+    "total": BillRecord.total,
+    "cash": BillRecord.cash,
+    "change_amt": BillRecord.change_amt,
+    "due_date": BillRecord.due_date,
+    "reference": BillRecord.reference,
+    "confirmation_reference": BillRecord.confirmation_reference,
+    "payment_reference": BillRecord.payment_reference,
+    "payment_method": BillRecord.payment_method,
+    "payment_channel": BillRecord.payment_channel,
+    "processed_by_user_id": BillRecord.processed_by_user_id,
+    "id": BillRecord.id,
+}
+
+
+def _record_order(order_column: Optional[str], order_dir: Optional[str]) -> list:
+    """ORDER BY for a table column; bills without a due date go last when sorting by due date."""
+    column = RECORD_SORT_COLUMNS.get(order_column or "", BillRecord.txn_datetime)
+    direction = desc if order_dir == "desc" else asc
+    if column is BillRecord.due_date:
+        return [BillRecord.due_date.is_(None), direction(column)]
+    return [direction(column)]
+
+
 async def datatable_query(
     db: AsyncSession,
     *,
@@ -1592,35 +1625,13 @@ async def datatable_query(
     totals = await _records_totals(db, filtered_filters)
     filtered_count = totals["count"]
 
-    order_map = {
-        "txn_datetime": BillRecord.txn_datetime,
-        "txn_date": BillRecord.txn_date,
-        "account": BillRecord.account,
-        "biller": BillRecord.biller,
-        "customer_name": BillRecord.customer_name,
-        "cp_number": BillRecord.cp_number,
-        "bill_amt": BillRecord.bill_amt,
-        "charge": BillRecord.charge,
-        "total": BillRecord.total,
-        "cash": BillRecord.cash,
-        "change_amt": BillRecord.change_amt,
-        "due_date": BillRecord.due_date,
-        "reference": BillRecord.reference,
-        "confirmation_reference": BillRecord.confirmation_reference,
-        "payment_reference": BillRecord.payment_reference,
-        "payment_method": BillRecord.payment_method,
-        "payment_channel": BillRecord.payment_channel,
-        "processed_by_user_id": BillRecord.processed_by_user_id,
-        "id": BillRecord.id,
-    }
-    sort_col = order_map.get(order_column, BillRecord.txn_datetime)
-    sort = desc(sort_col) if order_dir == "desc" else asc(sort_col)
+    sort = _record_order(order_column, order_dir)
 
     data_stmt = select(BillRecord)
     if filtered_filters:
         data_stmt = data_stmt.where(*filtered_filters)
 
-    data_stmt = data_stmt.order_by(sort, BillRecord.id.desc()).offset(start).limit(length)
+    data_stmt = data_stmt.order_by(*sort, BillRecord.id.desc()).offset(start).limit(length)
     rows = (await db.execute(data_stmt)).scalars().all()
 
     data = [
@@ -1712,8 +1723,13 @@ async def records_for_print(
     due_from: Optional[date] = None,
     due_to: Optional[date] = None,
     status: Optional[str] = None,
+    sort: Optional[str] = None,
+    sort_dir: Optional[str] = None,
 ) -> tuple[list[BillRecord], dict]:
-    """The records the Bills records table shows with these filters and search, oldest first, with totals."""
+    """
+    The records the Bills records table shows with these filters and search, with totals: in the table's sort
+    when given (`sort` is a column name, `sort_dir` asc or desc), otherwise oldest first.
+    """
     filters = _build_record_filters(
         biller=biller, from_date=from_date, to_date=to_date, due_status=due_status,
         due_from=due_from, due_to=due_to, status=status,
@@ -1724,7 +1740,8 @@ async def records_for_print(
     stmt = select(BillRecord)
     if filters:
         stmt = stmt.where(*filters)
-    stmt = stmt.order_by(BillRecord.txn_datetime.asc(), BillRecord.id.asc()).limit(PRINT_LIMIT)
+    order = _record_order(sort, sort_dir) if sort in RECORD_SORT_COLUMNS else [BillRecord.txn_datetime.asc()]
+    stmt = stmt.order_by(*order, BillRecord.id.asc()).limit(PRINT_LIMIT)
     rows = list((await db.execute(stmt)).scalars().all())
     return rows, totals
 
