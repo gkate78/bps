@@ -423,7 +423,8 @@ document.getElementById("smwdRefsBtn")?.addEventListener("click", async () => {
     smwd.items = [];
     smwd.body.innerHTML = "";
     smwd.apply.disabled = true;
-    smwd.status.textContent = "Checking each pending bill on SMWD's Billing Inquiry… this can take a minute.";
+    smwd.apply.textContent = "Checking SMWD…";
+    smwd.status.textContent = "Checking each pending bill on SMWD's Billing Inquiry… this can take a minute or two.";
     smwd.dialog.showModal();
     try {
         const response = await fetch(`/api/records/smwd/preview?${params}`, { method: "POST" });
@@ -438,6 +439,7 @@ document.getElementById("smwdRefsBtn")?.addEventListener("click", async () => {
         renderSmwd();
     } catch (err) {
         smwd.status.textContent = err.message;
+        updateSmwdApply();
     }
 });
 smwd.apply?.addEventListener("click", async () => {
@@ -510,6 +512,7 @@ document.getElementById("sheetRefsBtn")?.addEventListener("click", async () => {
     sheetRefs.items = [];
     sheetRefs.body.innerHTML = "";
     sheetRefs.apply.disabled = true;
+    sheetRefs.apply.textContent = "Reading the sheet…";
     sheetRefs.status.textContent = "Reading the PAYMENT REFERENCES tab of your Google Sheet…";
     sheetRefs.dialog.showModal();
     try {
@@ -524,6 +527,7 @@ document.getElementById("sheetRefsBtn")?.addEventListener("click", async () => {
         renderSheetRefs();
     } catch (err) {
         sheetRefs.status.textContent = err.message;
+        updateSheetRefsApply();
     }
 });
 sheetRefs.apply?.addEventListener("click", async () => {
