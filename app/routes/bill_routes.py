@@ -379,6 +379,23 @@ async def admin_records_page(
     )
 
 
+SORT_LABELS = {
+    "txn_datetime": "txn date/time", "txn_date": "txn date", "account": "account", "biller": "biller",
+    "customer_name": "name", "bill_amt": "bill amount", "due_date": "due date", "reference": "BPS reference",
+    "payment_reference": "payment reference", "id": "ID",
+}
+
+
+def _sort_label(sort: Optional[str], sort_dir: Optional[str]) -> str:
+    if sort not in SORT_LABELS:
+        return ""
+    if sort == "due_date":
+        return "Sorted by due date, " + ("latest first" if sort_dir == "desc" else "soonest first")
+    if sort in ("txn_datetime", "txn_date", "id"):
+        return f"Sorted by {SORT_LABELS[sort]}, " + ("newest first" if sort_dir == "desc" else "oldest first")
+    return f"Sorted by {SORT_LABELS[sort]}" + (" (Z–A / high to low)" if sort_dir == "desc" else "")
+
+
 @router.get("/admin/records/print", response_class=HTMLResponse, include_in_schema=False)
 async def admin_records_print(
     request: Request,
@@ -390,6 +407,8 @@ async def admin_records_print(
     due_from: Optional[date] = Query(default=None),
     due_to: Optional[date] = Query(default=None),
     status: Optional[Literal["pending", "processed"]] = Query(default=None),
+    sort: Optional[str] = Query(default=None),
+    sort_dir: Optional[Literal["asc", "desc"]] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[UserAccount] = Depends(get_current_user_optional),
 ):
@@ -400,7 +419,7 @@ async def admin_records_print(
         return RedirectResponse(url="/customer/dashboard", status_code=303)
     rows, totals = await records_for_print(
         db, search=search.strip(), biller=biller or None, from_date=from_date, to_date=to_date,
-        due_status=due_status or None, due_from=due_from, due_to=due_to, status=status,
+        due_status=due_status or None, due_from=due_from, due_to=due_to, status=status, sort=sort, sort_dir=sort_dir,
     )
     due_labels = {"overdue": "Overdue", "due_today": "Due today", "upcoming": "Upcoming",
                   "urgent": "Urgent (overdue + 3 days)", "no_due_date": "No due date"}
@@ -411,6 +430,7 @@ async def admin_records_print(
         f"Due date {due_from or '…'} to {due_to or '…'}" if due_from or due_to else "",
         f"Status: {status.capitalize()}" if status else "",
         f'Search "{search.strip()}"' if search.strip() else "",
+        _sort_label(sort, sort_dir),
     ]
     return templates.TemplateResponse(
         "records_print.html",
@@ -448,6 +468,8 @@ async def admin_records_payment_sheet(
     due_from: Optional[date] = Query(default=None),
     due_to: Optional[date] = Query(default=None),
     status: Optional[Literal["pending", "processed"]] = Query(default=None),
+    sort: Optional[str] = Query(default=None),
+    sort_dir: Optional[Literal["asc", "desc"]] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: Optional[UserAccount] = Depends(get_current_user_optional),
 ):
@@ -464,7 +486,7 @@ async def admin_records_payment_sheet(
         return HTMLResponse("<p>Choose a biller in the filters first: a payment sheet is for one biller.</p>", status_code=400)
     rows, _ = await records_for_print(
         db, search=search.strip(), biller=biller, from_date=from_date, to_date=to_date,
-        due_status=due_status or None, due_from=due_from, due_to=due_to, status=status,
+        due_status=due_status or None, due_from=due_from, due_to=due_to, status=status, sort=sort, sort_dir=sort_dir,
     )
     amounts = [round(float(r.bill_amt or 0), 2) for r in rows]  # the bill's own amount, as the owner's sheet
     total_cents = sum(int(round(a * 100)) for a in amounts)

@@ -42,7 +42,7 @@
         <h2>Data Controls</h2>
     </div>
 
-    <div class="controls-grid">
+    <div class="controls-grid records-controls">
         <div class="field">
             <label for="billerFilter">Biller</label>
             <select id="billerFilter">
@@ -91,6 +91,17 @@
                 <option value="">All</option>
                 <option value="pending">Pending (not paid to the biller yet)</option>
                 <option value="processed">Processed</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label for="sortOrder">Sort</label>
+            <select id="sortOrder" title="The same as clicking a column header. Print and Payment Sheet print in this order.">
+                <option value="txn_datetime:desc">Newest first</option>
+                <option value="txn_datetime:asc">Oldest first</option>
+                <option value="due_date:asc">Due date (soonest first)</option>
+                <option value="due_date:desc">Due date (latest first)</option>
+                <option value="custom" hidden>By column header</option>
             </select>
         </div>
 

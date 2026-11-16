@@ -332,6 +332,39 @@ const table = new DataTable("#recordsTable", {
     order: [[1, "desc"]],
 });
 
+// Sort: the same as clicking a column header (the two stay in step); Print and Payment Sheet follow it.
+const sortSelect = document.getElementById("sortOrder");
+function tableSort() {
+    // DataTables gives [[column, dir], ...], or [column, dir] right after table.order([column, dir]).
+    const order = table.order();
+    const [column, dir] = (Array.isArray(order[0]) ? order[0] : order.length ? order : null) || [1, "desc"];
+    return { sort: table.column(column).dataSrc(), dir };
+}
+function addSortParams(params) {
+    const { sort, dir } = tableSort();
+    if (typeof sort === "string") {
+        params.set("sort", sort);
+        params.set("sort_dir", dir === "desc" ? "desc" : "asc");
+    }
+    return params;
+}
+function syncSortSelect() {
+    if (!sortSelect) return;
+    const { sort, dir } = tableSort();
+    const value = `${sort}:${dir}`;
+    const known = Array.from(sortSelect.options).some((o) => o.value === value);
+    const custom = sortSelect.querySelector('option[value="custom"]');
+    custom.hidden = known;
+    sortSelect.value = known ? value : "custom";
+}
+sortSelect?.addEventListener("change", () => {
+    const [sort, dir] = sortSelect.value.split(":");
+    const column = table.columns().dataSrc().toArray().indexOf(sort);
+    if (column >= 0) table.order([column, dir]).draw();
+});
+table.on("order", syncSortSelect);
+syncSortSelect();
+
 // Totals of everything matching the filters and search (all pages), sent with each page of the table.
 const recordsTotals = document.getElementById("recordsTotals");
 table.on("xhr", (event, settings, json) => {
@@ -527,18 +560,18 @@ document.getElementById("paymentSheetBtn")?.addEventListener("click", async () =
         await showMessage("Choose a biller first: a payment sheet is for one biller (e.g. STA MARIA WATER, Status: Pending).", "Payment Sheet");
         return;
     }
-    const params = buildFilterParams();
+    const params = addSortParams(buildFilterParams());
     const search = table.search();
     if (search) params.set("search", search);
     window.open(`/admin/records/payment-sheet?${params}`, "_blank");
 });
 
-// Print: every bill matching the filters and search (not just this page), with the totals.
+// Print: every bill matching the filters and search (not just this page), in the table's sort, with the totals.
 document.getElementById("printRecordsBtn")?.addEventListener("click", () => {
-    const params = buildFilterParams();
+    const params = addSortParams(buildFilterParams());
     const search = table.search();
     if (search) params.set("search", search);
-    window.open(`/admin/records/print${params.toString() ? `?${params}` : ""}`, "_blank");
+    window.open(`/admin/records/print?${params}`, "_blank");
 });
 
 async function updateRecordsKpis() {
@@ -1023,6 +1056,7 @@ document.getElementById("clearFiltersBtn").addEventListener("click", () => {
     filters.toDate.value = "";
     filters.dueStatus.value = "";
     Object.keys(EXTRA_FILTER_PARAMS).forEach((key) => filters[key] && (filters[key].value = ""));
+    table.order([1, "desc"]);
     table.search("").draw();
 });
 

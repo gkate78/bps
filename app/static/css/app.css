@@ -159,6 +159,14 @@ body {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
+/* Bills records: the buttons under the filters, one full-width row that wraps, not a narrow column. */
+.records-controls > .field-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
 .field {
     display: flex;
     flex-direction: column;

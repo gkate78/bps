@@ -586,3 +586,11 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Alternatives considered: reading edits from the BILLS tab (any backup erases them first, and it would mean two-way sync); matching rows by account, biller and amount (the earlier BPS-255 plan; the BPS reference is exact); Tailscale or Cloudflare Tunnel for live access from home (parked: cost/terms).
 - Follow-up: A script deployed before this change answers the new actions with an error; the other tabs are still backed up and BPS says to paste the new script and deploy a new version (Manage deployments → Edit → New version keeps the link). Only payment references come back from the sheet; other edits still need the shop PC.
 
+- Date: 2026-11-16
+- ID: DEC-073
+- Related task: BPS-265
+- Decision: Bills records gets a Sort dropdown in Data Controls (Newest first, Oldest first, Due date soonest first, Due date latest first). It sets the table's order, the same as clicking a header; clicking another header shows "By column header". Print and Payment Sheet send the table's current sort (`sort` = the column's data name, `sort_dir` asc/desc) and `records_for_print` orders by it (`RECORD_SORT_COLUMNS`, shared with the table); without `sort` they stay oldest first. Sorting by due date puts bills with no due date last, in the table too. The printed list states the sort. Clear Filters resets the sort to Newest first.
+- Why: The owner wanted to sort by due date and print the filtered bills in that order (e.g. pay the most urgent first).
+- Alternatives considered: a separate print-only sort (two sorts to keep in mind); keeping the Payment Sheet always oldest first (the owner asked for printing to follow the sort).
+- Follow-up: The Payment Sheet now follows the table: with the default Newest first it lists the newest bill first, so choose Oldest first or a due date sort before printing it.
+
