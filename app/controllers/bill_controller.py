@@ -869,7 +869,10 @@ async def upsert_customer_from_record(
                 select(BillRecord.id).where(BillRecord.account == account, BillRecord.txn_date > txn_date).limit(1)
             )
             is_older = newer.scalar_one_or_none() is not None
-        existing_phone = "" if _is_placeholder(existing.phone) else (existing.phone or "")
+        # A saved number that isn't a full mobile number (09 + 9 digits) counts as missing, so a fixed one replaces it.
+        existing_phone = existing.phone or ""
+        if _is_placeholder(existing_phone) or not re.fullmatch(r"09\d{9}", existing_phone):
+            existing_phone = ""
         if is_older:
             existing.biller = existing.biller or biller
             existing.customer_name = existing.customer_name or customer_name
@@ -1337,6 +1340,28 @@ async def insights_summary(
             item["with_due"] += 1
             if r.txn_date > r.due_date:
                 item["late"] += 1
+    # By category (Electricity, Water, ...), from each biller's rule; billers without a rule count as OTHER.
+    from app.biller_categories import guess_category
+
+    rule_categories = {
+        str(name or "").strip().upper(): category
+        for name, category in (await db.execute(select(BillerRule.biller, BillerRule.category))).all()
+    }
+    by_category: dict[str, dict] = {}
+    for item in by_biller.values():
+        category = rule_categories.get(item["biller"]) or guess_category(item["biller"])
+        bucket = by_category.setdefault(
+            category, {"category": category, "transactions": 0, "bill_total": 0.0, "service_income": 0.0, "billers": []}
+        )
+        for key in ("transactions", "bill_total", "service_income"):
+            bucket[key] += item[key]
+        bucket["billers"].append(item["biller"])
+    categories = sorted(by_category.values(), key=lambda x: x["transactions"], reverse=True)
+    for item in categories:
+        item["bill_total"] = round(item["bill_total"], 2)
+        item["service_income"] = round(item["service_income"], 2)
+        item["billers"].sort()
+
     billers = sorted(by_biller.values(), key=lambda x: x["transactions"], reverse=True)
     if len(billers) > INSIGHTS_TOP_BILLERS:
         rest = billers[INSIGHTS_TOP_BILLERS - 1 :]
@@ -1434,6 +1459,7 @@ async def insights_summary(
         "granularity": granularity,
         "trend": list(trend.values()),
         "billers": billers,
+        "categories": categories,
         "heatmap": heatmap,
         "has_times": timed > 0,
         "day_of_month": day_of_month,

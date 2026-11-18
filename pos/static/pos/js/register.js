@@ -1459,7 +1459,8 @@
 
     attachSuggest($("svcDesc"), {
         fetchItems: (q) => getJson(`/pos/api/suggest/service?service_id=${currentService.id}&q=${encodeURIComponent(q)}`),
-        render: (s) => `<strong>${escapeHtml(s.description)}</strong><span class="muted">${escapeHtml(peso(s.price_cents))}</span>`,
+        render: (s) =>
+            `<strong>${escapeHtml(s.description)}</strong><span class="muted">${escapeHtml(peso(s.price_cents))}${s.preset ? "" : " · past sale"}</span>`,
         onPick: (s) => {
             $("svcDesc").value = s.description;
             $("svcPrice").value = pesoInput(s.price_cents);

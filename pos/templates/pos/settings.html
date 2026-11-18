@@ -108,6 +108,42 @@
     </section>
     {% endfor %}
 
+    <section class="panel" id="service-items">
+        <h2>Service items (pick list)</h2>
+        <p class="muted small">What the register suggests first when you type a description, with its usual price, so the same item is always written the same way (e.g. <strong>SHORT B &amp; W</strong>, not B&amp;W or B &amp;W). The price can still be changed on each sale. Hidden items stay on past sales.</p>
+        {% for s in services %}
+        <details {{ 'open' if not service_items.get(s.id) }}>
+            <summary><strong>{{ s.name }}</strong> <span class="muted small">{{ service_items.get(s.id, []) | length }} item{{ '' if service_items.get(s.id, []) | length == 1 else 's' }}</span></summary>
+            <table class="items-table">
+                <tbody>
+                {% for item in service_items.get(s.id, []) %}
+                <tr class="{{ 'off' if not item.is_active }}">
+                    <td>
+                        <form method="post" action="/pos/settings/service-items/{{ item.id }}/save" class="inline-row">
+                            <input type="text" name="name" value="{{ item.name }}" maxlength="120" required aria-label="Item">
+                            <input type="text" name="price" value="{{ item.price_cents | pesos_input }}" inputmode="decimal" size="7" aria-label="Price ₱">
+                            <button type="submit" class="btn btn-ghost btn-small">Save</button>
+                        </form>
+                    </td>
+                    <td>
+                        <form method="post" action="/pos/settings/service-items/{{ item.id }}/toggle" class="inline">
+                            <button type="submit" class="btn btn-ghost btn-small">{{ 'Show' if not item.is_active else 'Hide' }}</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <form method="post" action="/pos/settings/service-items/add" class="inline-row">
+                <input type="hidden" name="service_id" value="{{ s.id }}">
+                <input type="text" name="name" placeholder="New {{ s.name | lower }} item" maxlength="120" required>
+                <input type="text" name="price" placeholder="Price ₱" inputmode="decimal" size="7">
+                <button type="submit" class="btn btn-primary btn-small">Add</button>
+            </form>
+        </details>
+        {% endfor %}
+    </section>
+
     <section class="panel" id="wallets">
         <h2>GCash / Maya accounts</h2>
         <ul class="chips">

@@ -16,7 +16,7 @@ from pos.controllers.settings_controller import (
 )
 from pos.database import get_db
 from pos.fees import FeeError, FeeSchedule, validate_schedule
-from pos.models import PosFeeBracket, PosNetwork, PosService, PosWallet
+from pos.models import PosFeeBracket, PosNetwork, PosService, PosServiceItem, PosWallet
 from pos.money import MoneyError, to_cents
 from pos.templating import templates
 
@@ -56,6 +56,7 @@ async def settings_page(request: Request, user: User = Depends(page_admin), db: 
             "settings": await get_settings(db),
             "brackets": await get_fee_brackets(db),
             "services": await list_services(db),
+            "service_items": await _service_items(db),
             "networks": await list_networks(db),
             "wallets": await list_wallets(db),
             "gsheets_script": gsheets.script_text(await _gsheets_password(db)),
@@ -205,6 +206,103 @@ async def toggle_wallet(
     add_audit(db, "wallet", wallet.id, "enable" if wallet.is_active else "disable", user.id)
     await db.commit()
     return _back(request, message=f"{wallet.name} {'enabled' if wallet.is_active else 'hidden'}", anchor="wallets")
+
+
+# ---------- Service pick lists (DEC-075). Declared before the /{list_name} routes, which would match first. ----------
+
+async def _service_items(db: AsyncSession) -> dict[int, list[PosServiceItem]]:
+    items: dict[int, list[PosServiceItem]] = {}
+    rows = await db.execute(select(PosServiceItem).order_by(PosServiceItem.sort_order, PosServiceItem.name))
+    for item in rows.scalars().all():
+        items.setdefault(item.service_id, []).append(item)
+    return items
+
+
+def _item_name(value: str) -> str:
+    return (clean_text(value, 120) or "").upper()
+
+
+@router.post("/service-items/add", include_in_schema=False)
+async def add_service_item(
+    request: Request,
+    service_id: int = Form(...),
+    name: str = Form(""),
+    price: str = Form(""),
+    user: User = Depends(page_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    service = (await db.execute(select(PosService).where(PosService.id == service_id))).scalar_one_or_none()
+    cleaned = _item_name(name)
+    if not service or not cleaned:
+        return _back(request, error="Choose a service and type the item", anchor="service-items")
+    try:
+        price_cents = to_cents(price or "0", field="Price")
+    except MoneyError as exc:
+        return _back(request, error=str(exc), anchor="service-items")
+    taken = await db.execute(
+        select(PosServiceItem.id).where(PosServiceItem.service_id == service_id, PosServiceItem.name == cleaned)
+    )
+    if taken.first():
+        return _back(request, error=f"{service.name} already has {cleaned}", anchor="service-items")
+    last = (await db.execute(
+        select(PosServiceItem.sort_order).where(PosServiceItem.service_id == service_id)
+        .order_by(PosServiceItem.sort_order.desc()).limit(1)
+    )).scalar_one_or_none()
+    item = PosServiceItem(service_id=service_id, name=cleaned, price_cents=price_cents, sort_order=(last or 0) + 1)
+    db.add(item)
+    await db.flush()
+    add_audit(db, "service_item", item.id, "create", user.id, {"service": service.name, "name": cleaned, "price_cents": price_cents})
+    await db.commit()
+    return _back(request, message=f"{service.name}: {cleaned} added", anchor="service-items")
+
+
+@router.post("/service-items/{item_id}/save", include_in_schema=False)
+async def save_service_item(
+    request: Request,
+    item_id: int,
+    name: str = Form(""),
+    price: str = Form(""),
+    user: User = Depends(page_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Past sales keep the description they were sold with; new sales use the new name and price."""
+    item = (await db.execute(select(PosServiceItem).where(PosServiceItem.id == item_id))).scalar_one_or_none()
+    cleaned = _item_name(name)
+    if not item or not cleaned:
+        return _back(request, error="Type the item", anchor="service-items")
+    try:
+        price_cents = to_cents(price or "0", field="Price")
+    except MoneyError as exc:
+        return _back(request, error=str(exc), anchor="service-items")
+    if cleaned != item.name:
+        taken = await db.execute(
+            select(PosServiceItem.id).where(PosServiceItem.service_id == item.service_id, PosServiceItem.name == cleaned)
+        )
+        if taken.first():
+            return _back(request, error=f"{cleaned} is already in this list", anchor="service-items")
+    before = {"name": item.name, "price_cents": item.price_cents}
+    item.name, item.price_cents = cleaned, price_cents
+    db.add(item)
+    add_audit(db, "service_item", item.id, "update", user.id, {"from": before, "to": {"name": cleaned, "price_cents": price_cents}})
+    await db.commit()
+    return _back(request, message=f"{cleaned} saved", anchor="service-items")
+
+
+@router.post("/service-items/{item_id}/toggle", include_in_schema=False)
+async def toggle_service_item(
+    request: Request,
+    item_id: int,
+    user: User = Depends(page_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    item = (await db.execute(select(PosServiceItem).where(PosServiceItem.id == item_id))).scalar_one_or_none()
+    if not item:
+        return _back(request, error="Not found", anchor="service-items")
+    item.is_active = not item.is_active
+    db.add(item)
+    add_audit(db, "service_item", item.id, "enable" if item.is_active else "disable", user.id)
+    await db.commit()
+    return _back(request, message=f"{item.name} {'shown' if item.is_active else 'hidden'}", anchor="service-items")
 
 
 @router.post("/{list_name}", include_in_schema=False)

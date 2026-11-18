@@ -60,6 +60,22 @@ class PosService(SQLModel, table=True):
     is_active: bool = Field(default=True, nullable=False)
 
 
+class PosServiceItem(SQLModel, table=True):
+    """
+    Pick list under a service (e.g. XEROX → SHORT, LONG BACK TO BACK) with its usual price, so the same item is
+    always written the same way (DEC-075). Shown first in the register's description suggestions.
+    """
+
+    __tablename__ = "pos_service_items"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    service_id: int = Field(foreign_key="pos_services.id", index=True, nullable=False)
+    name: str = Field(max_length=120, nullable=False)
+    price_cents: int = Field(default=0, nullable=False)
+    sort_order: int = Field(default=0, nullable=False)
+    is_active: bool = Field(default=True, nullable=False)
+
+
 class PosNetwork(SQLModel, table=True):
     """Mobile networks for loading. Kept for the record; load is sent from a wallet."""
 

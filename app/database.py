@@ -132,6 +132,12 @@ async def init_db() -> None:
         biller_col_names = {row[1] for row in biller_columns}
         if "late_charge_rate" not in biller_col_names:
             await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN late_charge_rate FLOAT NOT NULL DEFAULT 0"))
+        if "category" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN category VARCHAR(30) NOT NULL DEFAULT ''"))
+        # Billers without a category get a best guess from their name (changed in Admin Settings).
+        from app.biller_categories import guess_category
+        for rule_id, rule_biller in (await conn.execute(text("SELECT id, biller FROM biller_rules WHERE COALESCE(category, '') = ''"))).fetchall():
+            await conn.execute(text("UPDATE biller_rules SET category = :c WHERE id = :id"), {"c": guess_category(rule_biller), "id": rule_id})
         if "system_charge_cash" not in biller_col_names:
             await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN system_charge_cash FLOAT NOT NULL DEFAULT 0"))
         if "system_charge_gcash" not in biller_col_names:
