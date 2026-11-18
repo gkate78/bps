@@ -300,3 +300,11 @@ textarea.code { width: 100%; font-family: ui-monospace, Consolas, monospace; fon
 .items-table td:first-child { width: 100%; }
 .items-table input[name="name"] { flex: 1; min-width: 12rem; }
 .items-table tr.off input { color: #8a93ab; text-decoration: line-through; }
+
+/* Stock page */
+.stock-table input[name="name"] { min-width: 14rem; }
+.stock-table tr.low td { background: #fff4e5; }
+.stock-table tr.off input { color: #8a93ab; }
+.stock-table td.actions { white-space: nowrap; }
+.stock-table td { vertical-align: middle; }
+.stock-table .inline-row { margin: 0; }

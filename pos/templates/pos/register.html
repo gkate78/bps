@@ -8,6 +8,9 @@
 </div>
 
 <div id="notice" class="alert" hidden></div>
+{% if low_stock %}
+<div class="alert alert-warn">Running low: {% for m in low_stock %}<strong>{{ m.name }}</strong> ({{ '%g' % (m.stock_qty | round(2)) }} left){{ ", " if not loop.last }}{% endfor %}.{% if user.role == 'admin' %} <a href="/pos/stock">Stock</a>{% endif %}</div>
+{% endif %}
 
 <!-- On hold: not paid yet, another customer is being served -->
 <section id="parkedBar" class="parked" hidden>
