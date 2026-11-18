@@ -59,6 +59,7 @@ from app.controllers.bill_controller import (
 )
 from app.database import get_db
 from app.models import BillerRule, BillRecord, BusinessProfile, RecordAuditLog, UserAccount
+from app.biller_categories import CATEGORIES as BILLER_CATEGORIES, guess_category, normalize_category
 from app.controllers import smwd_controller as smwd
 from app.controllers.bill_controller import _stamp_settled as stamp_settled
 from app.services import get_confirmation_service
@@ -914,6 +915,7 @@ async def admin_settings_page(
             "receipt_show_business_tin": bool(profile.receipt_show_business_tin) if profile else False,
             "receipt_show_footer": bool(profile.receipt_show_footer) if profile else True,
             "biller_rules": biller_rules,
+            "biller_categories": BILLER_CATEGORIES,
             "error": request.query_params.get("error", "").strip(),
             "success": request.query_params.get("success", "").strip(),
             "show_welcome_guide": show_welcome_guide,
@@ -1056,11 +1058,13 @@ async def upsert_biller_rule(
     late_charge_rate: float = Form(0),
     account_digits: Optional[int] = Form(None),
     account_format: str = Form("NUMERIC"),
+    category: str = Form(""),
     is_active: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
 ):
     cleaned_biller = biller.strip().upper()
+    category = normalize_category(category) or guess_category(cleaned_biller)
     account_format = normalize_account_format(account_format)
     if not cleaned_biller:
         return RedirectResponse(url="/admin/settings?error=Biller+name+is+required", status_code=303)
@@ -1094,6 +1098,7 @@ async def upsert_biller_rule(
             late_charge_rate=round(float(late_charge_rate), 4),
             account_digits=int(account_digits) if account_digits else None,
             account_format=account_format,
+            category=category,
             is_active=is_active is not None,
         )
     else:
@@ -1108,6 +1113,7 @@ async def upsert_biller_rule(
         rule.late_charge_rate = round(float(late_charge_rate), 4)
         rule.account_digits = int(account_digits) if account_digits else None
         rule.account_format = account_format
+        rule.category = category
         rule.is_active = is_active is not None
         rule.updated_at = datetime.utcnow()
 
@@ -1143,6 +1149,7 @@ async def quick_add_biller_rule(
         system_charge_bayad=5.39,
         account_digits=payload.account_digits,
         account_format=normalize_account_format(payload.account_format),
+        category=guess_category(cleaned_biller),
         is_active=True,
     )
     db.add(rule)
@@ -1254,6 +1261,8 @@ async def import_biller_rules_csv(
         is_active = _parse_active(row.get("IS_ACTIVE"))
         # Optional column; when absent, existing rules keep their account format.
         raw_format = str(row.get("ACCOUNT_FORMAT") or "").strip()
+        # Optional column; when absent or not a known category, new rules get a guess and existing ones keep theirs.
+        csv_category = normalize_category(row.get("CATEGORY"))
 
         existing = await db.execute(select(BillerRule).where(BillerRule.biller == biller))
         rule = existing.scalar_one_or_none()
@@ -1271,6 +1280,7 @@ async def import_biller_rules_csv(
                 late_charge_rate=late_charge_rate or 0,
                 account_digits=account_digits,
                 account_format=normalize_account_format(raw_format),
+                category=csv_category or guess_category(biller),
                 is_active=is_active,
             )
             created += 1
@@ -1288,6 +1298,8 @@ async def import_biller_rules_csv(
             rule.account_digits = account_digits
             if raw_format:
                 rule.account_format = normalize_account_format(raw_format)
+            if csv_category:
+                rule.category = csv_category
             rule.is_active = is_active
             rule.updated_at = datetime.utcnow()
             updated += 1

@@ -291,3 +291,12 @@ textarea.code { width: 100%; font-family: ui-monospace, Consolas, monospace; fon
 
 /* A payment option that doesn't apply (e.g. a sale with a cash-out is settled in cash). */
 .pill:has(input:disabled) { opacity: 0.45; cursor: not-allowed; }
+
+/* Settings → Service items (pick list) */
+#service-items details { margin: 0.4rem 0; }
+#service-items summary { cursor: pointer; padding: 0.3rem 0; }
+.items-table { width: 100%; border-collapse: collapse; margin: 0.3rem 0 0.5rem; }
+.items-table td { padding: 2px 4px; vertical-align: middle; }
+.items-table td:first-child { width: 100%; }
+.items-table input[name="name"] { flex: 1; min-width: 12rem; }
+.items-table tr.off input { color: #8a93ab; text-decoration: line-through; }

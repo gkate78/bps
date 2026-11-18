@@ -594,3 +594,26 @@ Track meaningful technical and product decisions so future changes stay consiste
 - Alternatives considered: a separate print-only sort (two sorts to keep in mind); keeping the Payment Sheet always oldest first (the owner asked for printing to follow the sort).
 - Follow-up: The Payment Sheet now follows the table: with the default Newest first it lists the newest bill first, so choose Oldest first or a due date sort before printing it.
 
+- Date: 2026-11-18
+- ID: DEC-074
+- Related task: BPS-268
+- Decision: `biller_rules.category` (VARCHAR 30, NOT NULL, default '') holds one of a fixed list in `app/biller_categories.py`: ELECTRICITY, WATER, INTERNET, MOBILE POSTPAID, GOVERNMENT, CREDIT CARD, TOLL, OTHER. Startup fills empty categories with `guess_category` (name keywords: WATER → Water, MERALCO/ELECTRIC → Electricity, POSTPAID → Mobile postpaid, CONVERGE/PLDT/FIBER/GLOBE AT HOME → Internet, SSS/PHILHEALTH/PAG-IBIG/PSA → Government, BPICC/CARD → Credit card, EASY TRIP/AUTO SWEEP/RFID → Toll, else Other); new rules (Settings form left on "Guess from the name", quick add from the entry form, rules CSV without CATEGORY) get the guess too. Insights returns `categories` (transactions, bill total, service income, billers) and shows a "by category" chart that follows the measure buttons; billers without a rule are guessed.
+- Why: The owner asked to standardize and categorize the data; totals per kind of bill (e.g. all water districts together) weren't possible.
+- Alternatives considered: free-text categories (would drift like the names did); a separate categories table (more screens for a short fixed list).
+
+- Date: 2026-11-18
+- ID: DEC-075
+- Related task: BPS-269
+- Decision: `pos_service_items` (service_id, name, price_cents, sort_order, is_active) is each service's pick list, edited in Register Settings → Service items (add, save name and price, hide; names upper case, unique per service). The register's description suggestions show the active items matching what's typed first (up to 30), then up to 3 past descriptions not in the list, labelled "past sale"; picking one fills the description and price, which can still be changed. `scripts/standardize_service_items.py --db … [--apply]` tidies past descriptions (upper case, single spaces, B&W/B &W → B & W, W/ → WITH, EDITS → EDIT, 1.5 X 3 → 1.5X3, 3R PHOTO PRINT → 3R PHOTO, SHORT - BACK TO BACK → SHORT BACK TO BACK, ATIRE/CHINEESE/VELUM spelled right) and adds every tidied description from completed sales to the pick list at its latest price; preview by default, backup and one `standardize` audit entry on apply; running it again changes nothing.
+- Why: Descriptions were typed by hand and the suggestions repeated past spellings, so one item had several names in sales reports.
+- Alternatives considered: merging COLORED / COLOR / FULL COLOR (they are priced differently, so they stay separate products); a required dropdown with no free text (some jobs are one-offs).
+- Follow-up: The owner can hide pick list items that were one-offs, and rename or reprice items in Settings.
+
+- Date: 2026-11-18
+- ID: DEC-076
+- Related task: BPS-267
+- Decision: Live data cleanup approved by the owner, after a backup (`bills_admin-before-cleanup-20261118-081000.db`), each bill change audit-logged (`data_cleanup`, actor "Data cleanup"): names with double spaces or a trailing comma tidied (bills and customer list); account 200911-11624 → 20091111624; PLDT bills → PLDT FIBER and the PLDT rule switched off (the same accounts were under both); REF-20261110-2E4BB6's payment reference "1000" (its cash amount) cleared so it is pending again; REF-20261110-BD43BB's channel set to BPI_CC (its R79… reference is a BPICC one); 8 accounts' name spellings set to their latest bill's (FAUSTINO/AUSTINO, NEPTALI/NAPTALI, with or without the comma). Accounts whose names differ in person or carry the owner's numbering (KOIDE/MENDOZA, "- (1)") were left.
+- Why: The owner asked to check the database and improve its standardization and categorization.
+- Alternatives considered: rewriting all names to one "SURNAME, GIVEN" style (names follow the printed bill, which varies by biller); filling the 2,933 imported bills' payment references (the real references were never recorded).
+- Follow-up: 9 phone numbers were too short (imported, January–September). The owner fixed some and gave one (2026-11-18); the rest were done after a backup (`bills_admin-before-phone-fix-…`), audit-logged: RAMILO's older bills got the number fixed on the account's 11/04 bill, short numbers with no known correct one were cleared, and the customer list took each account's latest correct number (or blank). `upsert_customer_from_record` now treats a saved number that isn't 09 + 9 digits as missing, so a phone fixed on an older bill reaches the customer list (it used to be kept because only a blank was replaced).
+

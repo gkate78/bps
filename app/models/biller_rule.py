@@ -23,6 +23,8 @@ class BillerRule(SQLModel, table=True):
     account_digits: Optional[int] = Field(default=None, nullable=True)
     # NUMERIC: numbers only. ALPHANUMERIC: letters and numbers (e.g. SSS, PhilHealth references).
     account_format: str = Field(default="NUMERIC", max_length=16, nullable=False)
+    # Kind of bill for reports (ELECTRICITY, WATER, INTERNET, ...); see app/biller_categories.py.
+    category: str = Field(default="", max_length=30, nullable=False)
     is_active: bool = Field(default=True, nullable=False, index=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

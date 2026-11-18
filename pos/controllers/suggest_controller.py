@@ -4,14 +4,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.models import Customer
-from pos.models import PosSale, PosSaleLine, PosWalletTxn
+from pos.models import PosSale, PosSaleLine, PosServiceItem, PosWalletTxn
 
 LIMIT = 8
+PRESET_LIMIT = 30
+HISTORY_AFTER_PRESETS = 3  # past descriptions not in the pick list, shown under it
 
 
 async def service_descriptions(db: AsyncSession, service_id: int, q: str) -> list[dict]:
-    """Descriptions sold before under this service, most-used first, with the last price charged."""
+    """
+    The service's pick list first (its usual price), then other descriptions sold before under this service,
+    most-used first, with the last price charged.
+    """
     needle = " ".join(q.split()).upper()
+    preset_query = (
+        select(PosServiceItem.name, PosServiceItem.price_cents)
+        .where(PosServiceItem.service_id == service_id, PosServiceItem.is_active)
+        .order_by(PosServiceItem.sort_order, PosServiceItem.name)
+        .limit(PRESET_LIMIT)
+    )
+    if needle:
+        preset_query = preset_query.where(PosServiceItem.name.contains(needle, autoescape=True))
+    presets = [{"description": name, "price_cents": price, "preset": True} for name, price in (await db.execute(preset_query)).all()]
+    taken = {p["description"] for p in presets}
+    history = [h for h in await _past_descriptions(db, service_id, needle) if h["description"] not in taken]
+    return presets + history[:HISTORY_AFTER_PRESETS] if presets else history
+
+
+async def _past_descriptions(db: AsyncSession, service_id: int, needle: str) -> list[dict]:
     last_id = func.max(PosSaleLine.id).label("last_id")
     uses = func.count(PosSaleLine.id).label("uses")
     query = (
