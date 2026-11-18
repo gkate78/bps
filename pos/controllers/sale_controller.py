@@ -453,6 +453,11 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
         raise
     for record in records:
         db.add(PosSaleBill(sale_id=sale.id, bill_record_id=record.id))
+    # Materials the services use come off the stock (DEC-077).
+    from pos.controllers import stock_controller
+
+    await db.flush()
+    await stock_controller.use_for_sale(db, sale, lines)
     add_audit(
         db, "sale", sale.id, "create", user.id,
         {"sale_no": sale.sale_no, "total_cents": total, "paid_cents": due, "job_order": data.is_job_order, "personal": data.personal},
@@ -774,6 +779,11 @@ async def void_record(db: AsyncSession, record, entity: str, reason: str, admin:
         for txn in linked:
             if txn.status != "voided":
                 mark(txn)
+    if entity == "sale":
+        # What the sale's services used goes back on the stock.
+        from pos.controllers import stock_controller
+
+        await stock_controller.return_for_void(db, record.id, user.id)
     if entity == "sale" and record.is_job_order:
         # Voiding a job order voids its balance payments too.
         for payment in await sale_payments(db, record.id):

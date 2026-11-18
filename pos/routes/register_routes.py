@@ -15,6 +15,7 @@ from pos.controllers import bill_checkout_controller as bills
 from pos.controllers import draft_controller as drafts
 from pos.controllers import parked_controller as parked
 from pos.controllers import sale_controller as sales
+from pos.controllers import stock_controller
 from pos.controllers import suggest_controller as suggest
 from pos.controllers.settings_controller import get_fee_schedule, get_settings, receipt_business, list_networks, list_services, list_wallets
 from pos.database import get_db
@@ -51,6 +52,7 @@ async def register_page(request: Request, user: User = Depends(page_user), db: A
             "billers": await get_distinct_billers(db),
             # Personal bills: admins and the business owner, as on the entry form.
             "bills_personal": user.role == "admin" or await is_business_owner(db, user.id),
+            "low_stock": await stock_controller.low_stock(db),
         },
     )
 

@@ -4,6 +4,7 @@ from pos.models.eod import PosCashMovement, PosDayClose, PosDayWallet, PosDrawer
 from pos.models.parked import PosParkedTxn
 from pos.models.sale import PosSale, PosSaleBill, PosSaleLine, PosSalePayment
 from pos.models.settings import PosFeeBracket, PosNetwork, PosService, PosServiceItem, PosSettings, PosWallet
+from pos.models.stock import PosItemMaterial, PosMaterial, PosStockMove
 from pos.models.wallet_txn import PosWalletTxn
 
 __all__ = [
@@ -14,6 +15,8 @@ __all__ = [
     "PosDraft",
     "PosDrawerHandover",
     "PosFeeBracket",
+    "PosItemMaterial",
+    "PosMaterial",
     "PosNetwork",
     "PosParkedTxn",
     "PosSale",
@@ -23,6 +26,7 @@ __all__ = [
     "PosService",
     "PosServiceItem",
     "PosSettings",
+    "PosStockMove",
     "PosWallet",
     "PosWalletTxn",
 ]

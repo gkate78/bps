@@ -1,0 +1,169 @@
+{% extends "pos/base.html" %}
+{% block title %}Stock{% endblock %}
+{% block content %}
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+{% if low %}
+<div class="alert alert-warn"><strong>Running low:</strong>
+    {% for m in low %}{{ m.name }} ({{ '%g' % (m.stock_qty | round(2)) }} {{ m.unit | lower }} left){{ ", " if not loop.last }}{% endfor %}
+</div>
+{% endif %}
+
+<section class="panel" id="materials">
+    <h2>Materials</h2>
+    <p class="muted small">Stock goes down when an item that uses a material is sold, and back up if the sale is voided. Record restocks and counts below. Until a material's first restock or count its stock isn't known, so it shows "not counted" and gives no low-stock warning.</p>
+    <form method="post" action="/pos/stock/set-up" class="inline-row">
+        <button type="submit" class="btn {{ 'btn-primary' if not materials else 'btn-secondary btn-small' }}">{{ 'Set up paper and lamination film' if not materials else 'Add any missing suggested materials' }}</button>
+        <span class="muted small">Adds short, long and A4 bond paper, A4 photo paper and lamination film (ID small, ID medium, short, long, A4), and links your pick list items to them: 1 per copy, ID picture packages 1/3 of a photo paper (3 per sheet). You can change it all after{{ "; items you've already set are left as they are" if materials }}.</span>
+    </form>
+    {% if materials %}
+    <div class="table-wrap">
+    <table class="list stock-table">
+        <thead><tr><th>Material</th><th>Unit</th><th class="num">Stock</th><th class="num">Warn at</th><th class="num">Cost per unit ₱</th><th class="num">Stock value</th><th></th></tr></thead>
+        <tbody>
+        {% for m in materials %}
+        <tr class="{{ 'off' if not m.is_active }} {{ 'low' if m in low }}">
+            <td colspan="2">
+                <form method="post" action="/pos/stock/materials/{{ m.id }}/save" class="inline-row" id="mat{{ m.id }}">
+                    <input type="text" name="name" value="{{ m.name }}" maxlength="80" required aria-label="Material">
+                    <input type="text" name="unit" value="{{ m.unit }}" maxlength="20" size="6" aria-label="Unit">
+                </form>
+            </td>
+            <td class="num">{% if m.counted_at %}<strong>{{ '%g' % (m.stock_qty | round(2)) }}</strong>{% else %}<span class="muted">not counted</span>{% endif %}</td>
+            <td class="num"><input form="mat{{ m.id }}" type="text" name="low_stock_at" value="{{ '%g' % m.low_stock_at }}" inputmode="decimal" size="5" aria-label="Warn at"></td>
+            <td class="num"><input form="mat{{ m.id }}" type="text" name="avg_cost" value="{{ '%g' % m.avg_cost }}" inputmode="decimal" size="6" aria-label="Cost per unit"></td>
+            <td class="num">{{ ((m.stock_qty if m.stock_qty > 0 else 0) * m.avg_cost * 100) | round | int | peso }}</td>
+            <td class="actions">
+                <button type="submit" form="mat{{ m.id }}" class="btn btn-ghost btn-small">Save</button>
+                <form method="post" action="/pos/stock/materials/{{ m.id }}/toggle" class="inline">
+                    <button type="submit" class="btn btn-ghost btn-small">{{ 'Show' if not m.is_active else 'Hide' }}</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% endif %}
+    <form method="post" action="/pos/stock/materials" class="inline-row">
+        <input type="text" name="name" placeholder="New material (e.g. PHOTO PAPER A4)" maxlength="80" required>
+        <input type="text" name="unit" placeholder="Unit (SHEET, PC)" maxlength="20" size="10">
+        <input type="text" name="low_stock_at" placeholder="Warn at" inputmode="decimal" size="6">
+        <button type="submit" class="btn btn-primary btn-small">Add</button>
+    </form>
+</section>
+
+{% if materials %}
+<div class="grid2" id="restock">
+    <section class="panel">
+        <h2>Record a restock</h2>
+        <p class="muted small">What you bought, in the material's unit (a ream of 500 sheets = 500), and what it cost in total. The cost per unit becomes the average of what's on hand and what you bought.</p>
+        <form method="post" action="/pos/stock/restock" class="stack">
+            <label>Material
+                <select name="material_id" required>
+                    {% for m in materials if m.is_active %}<option value="{{ m.id }}">{{ m.name }} ({{ m.unit | lower }})</option>{% endfor %}
+                </select>
+            </label>
+            <div class="row3">
+                <label>Quantity <input type="text" name="qty" inputmode="decimal" required placeholder="500"></label>
+                <label>Total cost ₱ <input type="text" name="total_cost" inputmode="decimal" placeholder="250"></label>
+                <label>Date <input type="date" name="day" value="{{ today.isoformat() }}" max="{{ today.isoformat() }}"></label>
+            </div>
+            <label>Supplier <span class="muted">(optional)</span> <input type="text" name="supplier" maxlength="80"></label>
+            <label>Note <span class="muted">(optional)</span> <input type="text" name="note" maxlength="160"></label>
+            <button type="submit" class="btn btn-primary">Save restock</button>
+        </form>
+    </section>
+    <section class="panel">
+        <h2>Record a count</h2>
+        <p class="muted small">What's actually on the shelf. BPS records the difference from what it expected (spoiled sheets, misprints, use not rung up) and uses your count from now on.</p>
+        <form method="post" action="/pos/stock/count" class="stack">
+            <label>Material
+                <select name="material_id" required>
+                    {% for m in materials if m.is_active %}<option value="{{ m.id }}">{{ m.name }} — BPS expects {{ '%g' % (m.stock_qty | round(2)) if m.counted_at else '?' }}</option>{% endfor %}
+                </select>
+            </label>
+            <label>Counted <input type="text" name="counted" inputmode="decimal" required></label>
+            <label>Note <span class="muted">(optional)</span> <input type="text" name="note" maxlength="160"></label>
+            <button type="submit" class="btn btn-primary">Save count</button>
+        </form>
+    </section>
+</div>
+
+<section class="panel" id="uses">
+    <h2>What each item uses</h2>
+    <p class="muted small">Per copy or piece sold (quantity 1); a fraction works too (an ID picture package is <strong>1/3</strong> of an A4 photo paper). Items come from <a href="/pos/settings#service-items">Settings → Service items</a>; a sale only takes stock when its description is one of them. Back to back still uses 1 sheet.</p>
+    {% for s in services %}{% set items = items_by_service.get(s.id, []) %}{% if items %}
+    <details>
+        <summary><strong>{{ s.name }}</strong> <span class="muted small">{{ items | selectattr("id", "in", uses) | list | length }} of {{ items | length }} items use materials</span></summary>
+        <table class="list">
+            <tbody>
+            {% for item in items %}{% set use = (uses.get(item.id) or [None])[0] %}
+            <tr class="{{ 'off' if not item.is_active }}">
+                <td>{{ item.name }}</td>
+                <td>
+                    <form method="post" action="/pos/stock/uses/{{ item.id }}" class="inline-row">
+                        <select name="material_id" aria-label="Material">
+                            <option value="">No material</option>
+                            {% for m in materials if m.is_active or (use and use.material_id == m.id) %}<option value="{{ m.id }}" {{ 'selected' if use and use.material_id == m.id }}>{{ m.name }}</option>{% endfor %}
+                        </select>
+                        <input type="text" name="qty_per_unit" value="{{ use.qty_per_unit | per_unit if use else 1 }}" size="5" aria-label="Uses per unit (e.g. 1 or 1/3)">
+                        <button type="submit" class="btn btn-ghost btn-small">Save</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </details>
+    {% endif %}{% endfor %}
+</section>
+{% endif %}
+
+<section class="panel" id="profit">
+    <h2>Cost and profit</h2>
+    <form method="get" action="/pos/stock#profit" class="inline-row">
+        <label>From <input type="date" name="from_date" value="{{ from_date.isoformat() }}"></label>
+        <label>To <input type="date" name="to_date" value="{{ to_date.isoformat() }}"></label>
+        <button type="submit" class="btn btn-secondary btn-small">Show</button>
+    </form>
+    <p class="muted small">Shop services in completed sales (not personal). Material cost is what the items used, at the cost per unit when sold; services whose items use no material show ₱0 cost.</p>
+    <table class="list">
+        <thead><tr><th>Service</th><th class="num">Sales</th><th class="num">Material cost</th><th class="num">Profit</th></tr></thead>
+        <tbody>
+        {% for s in report.services %}
+        <tr><td>{{ s.service }}</td><td class="num">{{ s.sales_cents | peso }}</td><td class="num">{{ s.material_cents | peso }}</td><td class="num">{{ s.profit_cents | peso }}</td></tr>
+        {% else %}
+        <tr><td colspan="4" class="muted">No shop sales in these dates.</td></tr>
+        {% endfor %}
+        </tbody>
+        {% if report.services %}
+        <tfoot><tr><th>Total</th><th class="num">{{ report.sales_cents | peso }}</th><th class="num">{{ report.material_cents | peso }}</th><th class="num">{{ (report.sales_cents - report.material_cents) | peso }}</th></tr></tfoot>
+        {% endif %}
+    </table>
+    <p class="small">Spent on restocks in these dates: <strong>{{ report.restock_cents | peso }}</strong>.
+        {% if report.spoilage_cents %} Counts found {{ 'less' if report.spoilage_cents < 0 else 'more' }} stock than expected: <strong>{{ (report.spoilage_cents | abs) | peso }}</strong> at cost.{% endif %}</p>
+</section>
+
+<section class="panel" id="moves">
+    <h2>Recent stock changes</h2>
+    <table class="list">
+        <thead><tr><th>When</th><th>Material</th><th>What</th><th class="num">Change</th><th class="num">Stock after</th><th class="num">Cost</th><th>Details</th></tr></thead>
+        <tbody>
+        {% for mv in moves %}{% set m = materials_by_id.get(mv.material_id) %}
+        <tr>
+            <td>{{ mv.created_at.strftime("%m/%d %I:%M %p") }}</td>
+            <td>{{ m.name if m else '?' }}</td>
+            <td>{{ {"sale": "Sold", "void": "Sale voided", "restock": "Restock", "count": "Count", "adjust": "Correction"}.get(mv.kind, mv.kind) }}</td>
+            <td class="num">{{ '%+g' % (mv.qty | round(2)) }}</td>
+            <td class="num">{{ '%g' % (mv.stock_after | round(2)) }}</td>
+            <td class="num">{{ mv.cost_cents | peso if mv.cost_cents else '' }}</td>
+            <td class="small">{% if mv.sale_id %}<a href="/pos/sales?q=S-{{ '%06d' % mv.sale_id }}&start={{ mv.created_at.date().isoformat() }}&end={{ mv.created_at.date().isoformat() }}">S-{{ '%06d' % mv.sale_id }}</a>{% endif %} {{ mv.supplier or '' }} {{ mv.note or '' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">No stock changes yet.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endblock %}
