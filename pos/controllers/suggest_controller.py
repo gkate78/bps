@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.models import Customer
-from pos.models import PosSale, PosSaleLine, PosServiceItem, PosWalletTxn
+from pos.models import PosSale, PosSaleLine, PosService, PosServiceItem, PosWalletTxn
 
 LIMIT = 8
 PRESET_LIMIT = 30
@@ -26,6 +26,13 @@ async def service_descriptions(db: AsyncSession, service_id: int, q: str) -> lis
     if needle:
         preset_query = preset_query.where(PosServiceItem.name.contains(needle, autoescape=True))
     presets = [{"description": name, "price_cents": price, "preset": True} for name, price in (await db.execute(preset_query)).all()]
+    # Tarpaulin: a small size is charged a set price.
+    from pos.controllers.stock_controller import TARP_SERVICE, TARP_SMALL_AREA, TARP_SMALL_PRICE_CENTS, tarp_name, tarp_size
+
+    size = tarp_size(needle)
+    if size and size[0] * size[1] < TARP_SMALL_AREA and tarp_name(*size) not in {p["description"] for p in presets}:
+        if (await db.execute(select(PosService.name).where(PosService.id == service_id))).scalar() == TARP_SERVICE:
+            presets.insert(0, {"description": tarp_name(*size), "price_cents": TARP_SMALL_PRICE_CENTS, "preset": True})
     taken = {p["description"] for p in presets}
     history = [h for h in await _past_descriptions(db, service_id, needle) if h["description"] not in taken]
     return presets + history[:HISTORY_AFTER_PRESETS] if presets else history

@@ -35,7 +35,7 @@ def set_up(shop):
     item(shop, SUPPLIES, "SHORT BOND PAPER", "2")
     item(shop, ids()["PRINTING"], "A4 PHOTO PRINT", "60")
     r = shop.client.post("/pos/stock/set-up")
-    assert "12 materials added, 5 items linked" in r.text
+    assert "13 materials added, 5 items linked" in r.text
 
 
 def test_suggested_materials():
@@ -220,3 +220,10 @@ def test_cashier_records_rejects_by_print_or_material_with_the_sale(shop):
     page = shop.client.get("/pos/stock").text
     assert "Rejects: <strong>₱5.00</strong> at cost (customer reprint ₱5.00, paper jam ₱0.00" in page
     assert "ENCODER" in shop.client.get("/pos/rejects").text  # admins see who recorded it
+
+
+def test_tarpaulin_sizes(shop):
+    """Tarp sizes are read as W X H in feet (the shop's prices and costs are set in Settings)."""
+    from pos.controllers.stock_controller import tarp_size
+
+    assert tarp_size("2x3") == (2, 3) and tarp_size("TARP 2X3") is None

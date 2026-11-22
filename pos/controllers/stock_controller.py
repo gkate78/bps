@@ -27,6 +27,41 @@ def _round(value: float) -> float:
     return round(float(value) + 0.0, 6)
 
 
+# ---------- Tarpaulin sizes ----------
+
+TARP_SERVICE = "TARPAULIN"
+# Tarps are printed by another shop, which charges by the sq ft. The customer's price is the size times a rate plus a
+# layout charge (the owner's price list). The printing is kept as a "material" in sq ft so its cost shows in
+# Cost and profit; it is never counted, so it gives no low-stock warning.
+TARP = "TARPAULIN (SENT OUT)"
+TARP_COST_PER_SQFT = 12
+TARP_SMALL_AREA = 6  # smaller than 2x3 ...
+TARP_SMALL_PRICE_CENTS = 30000  # ... is charged a set price
+TARP_SMALL_COST = 90  # ... and costs a set amount
+TARP_SMALL_SQFT = TARP_SMALL_COST / TARP_COST_PER_SQFT  # the small cost at the cost a sq ft
+
+
+def tarp_size(text: str) -> Optional[tuple[float, float]]:
+    """'1X1.5', '2 x 3', '2X3 FT' → (width, height) in feet; anything else → None."""
+    import re
+
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*[X×]\s*(\d+(?:\.\d+)?)\s*(?:FT|FEET|')?\s*", str(text or "").upper())
+    if not match:
+        return None
+    width, height = float(match.group(1)), float(match.group(2))
+    return (width, height) if 0 < width <= 100 and 0 < height <= 100 else None
+
+
+def tarp_sqft(width: float, height: float) -> float:
+    """Sq ft of printing a tarp costs: its area, but a tarp smaller than 2x3 costs the small cost."""
+    area = width * height
+    return _round(TARP_SMALL_SQFT) if area < TARP_SMALL_AREA else _round(area)
+
+
+def tarp_name(width: float, height: float) -> str:
+    return f"{width:g}X{height:g}"
+
+
 def _clean(value, max_len: int) -> str:
     return " ".join(str(value or "").split()).upper()[:max_len]
 
@@ -100,12 +135,22 @@ async def use_for_sale(db: AsyncSession, sale: PosSale, lines: list[PosSaleLine]
     """Take the materials the sale's service lines use off the stock (lines must have ids). Returns moves made."""
     service_lines = [l for l in lines if l.kind == "service" and l.service_id and l.description]
     recipes = await recipes_for(db, {(l.service_id, l.description) for l in service_lines})
-    if not recipes:
+    # A tarpaulin typed as a size that isn't in the pick list (e.g. 1X1.5) costs the outside printing by its size.
+    tarp_lines = [l for l in service_lines if (l.service_id, l.description) not in recipes and tarp_size(l.description)]
+    tarp = None
+    if tarp_lines:
+        tarp_ids = set((await db.execute(select(PosService.id).where(PosService.name == TARP_SERVICE))).scalars().all())
+        tarp_lines = [l for l in tarp_lines if l.service_id in tarp_ids]
+        tarp = (await db.execute(select(PosMaterial).where(PosMaterial.name == TARP))).scalar_one_or_none() if tarp_lines else None
+    if not recipes and not tarp:
         return 0
     materials = {m.id: m for m in await list_materials(db)}
     made = 0
     for line in service_lines:
-        for material_id, per_unit in recipes.get((line.service_id, line.description), []):
+        uses = recipes.get((line.service_id, line.description), [])
+        if not uses and tarp and line in tarp_lines:
+            uses = [(tarp.id, tarp_sqft(*tarp_size(line.description)))]
+        for material_id, per_unit in uses:
             material = materials.get(material_id)
             if not material or per_unit <= 0:
                 continue
@@ -354,6 +399,9 @@ def suggested_use(service: str, item: str) -> Optional[tuple[str, float]]:
         return PHOTO_PAPER, 1 / ID_PACKAGES_PER_SHEET
     if service == "LAMINATION":
         return (FILM[item], 1) if item in FILM else None
+    if service == TARP_SERVICE:
+        size = tarp_size(item)
+        return (TARP, tarp_sqft(*size)) if size else None
     if service == "SUPPLIES":
         return (item, 1) if item in PAPER.values() else None
     if service in ("XEROX", "PRINTING"):
@@ -383,10 +431,11 @@ async def set_up_suggested(db: AsyncSession, user_id: int) -> tuple[int, int]:
     """Adds paper and lamination film materials and links pick list items that have no materials yet."""
     materials = {m.name: m for m in await list_materials(db)}
     created = 0
-    for name, unit in [(n, "SHEET") for n in PAPER.values()] + [(PHOTO_PAPER, "SHEET"), (PHOTO_3R, "SHEET"), (PHOTO_4R, "SHEET"), (PHOTO_5R, "SHEET")] + [(n, "PC") for n in FILM.values()]:
+    for name, unit in [(n, "SHEET") for n in PAPER.values()] + [(PHOTO_PAPER, "SHEET"), (PHOTO_3R, "SHEET"), (PHOTO_4R, "SHEET"), (PHOTO_5R, "SHEET")] + [(n, "PC") for n in FILM.values()] + [(TARP, "SQ FT")]:
         if name not in materials:
             last = (await db.execute(select(func.max(PosMaterial.sort_order)))).scalar() or 0
-            material = PosMaterial(name=name, unit=unit, sort_order=last + 1)
+            material = PosMaterial(name=name, unit=unit, sort_order=last + 1,
+                                   avg_cost=TARP_COST_PER_SQFT if name == TARP else 0)
             db.add(material)
             await db.flush()
             materials[name] = material
