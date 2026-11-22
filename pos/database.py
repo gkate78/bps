@@ -7,13 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import SQLModel, select
 
 from app import database as bps_db
+from pos.fees import DEFAULT_SCHEDULE
 
 DEFAULT_SERVICES = [
     "PRINTING", "XEROX", "SCAN", "ID PICTURE", "LAMINATION", "TARPAULIN", "INVITATIONS", "SUPPLIES", "OTHER",
 ]
 DEFAULT_NETWORKS = ["GLOBE", "TM", "SMART", "TNT", "DITO", "GOMO"]
 DEFAULT_WALLETS = [("GCASH", "GCASH"), ("MAYA", "MAYA")]
-MAYA_LOAD_DISCOUNT_BP = 0  # a wallet's load discount is set in Settings
 
 
 async def get_db() -> AsyncSession:
@@ -79,9 +79,8 @@ async def init_db() -> None:
         await _add_missing_columns(conn, "pos_sales", (("personal", "VARCHAR(8)"),))
         await _add_missing_columns(conn, "pos_wallet_txns", (("personal", "VARCHAR(8)"),))
         await _add_missing_columns(conn, "pos_wallet_txns", (("sale_id", "INTEGER"),))
-        added = await _add_missing_columns(conn, "pos_wallets", (("load_discount_bp", "INTEGER NOT NULL DEFAULT 0"),))
-        if "load_discount_bp" in added:
-            await conn.execute(text(f"UPDATE pos_wallets SET load_discount_bp = {MAYA_LOAD_DISCOUNT_BP} WHERE provider = 'MAYA'"))
+        # A wallet's discount on loads (set per wallet in Settings).
+        await _add_missing_columns(conn, "pos_wallets", (("load_discount_bp", "INTEGER NOT NULL DEFAULT 0"),))
         await _add_missing_columns(
             conn,
             "pos_settings",
@@ -94,6 +93,16 @@ async def init_db() -> None:
                 ("gsheets_last_result", "VARCHAR(500)"),
             ),
         )
+        await _add_missing_columns(
+            conn,
+            "pos_settings",
+            (
+                ("tarp_cost_sqft_cents", "INTEGER NOT NULL DEFAULT 0"),
+                ("tarp_small_below_sqft", "FLOAT NOT NULL DEFAULT 0"),
+                ("tarp_small_price_cents", "INTEGER NOT NULL DEFAULT 0"),
+                ("tarp_small_cost_cents", "INTEGER NOT NULL DEFAULT 0"),
+            ),
+        )
         # Rejects (DEC-078): why stock was wasted.
         await _add_missing_columns(conn, "pos_stock_moves", (("reason", "VARCHAR(20)"),))
 
@@ -102,8 +111,9 @@ async def init_db() -> None:
         if (await db.execute(select(PosSettings.id).limit(1))).first() is None:
             db.add(PosSettings(id=1))
         if (await db.execute(select(PosFeeBracket.id).limit(1))).first() is None:
-            db.add(PosFeeBracket(min_cents=100, max_cents=49_900, fee_cents=1_500))
-            db.add(PosFeeBracket(min_cents=50_000, max_cents=99_900, fee_cents=2_500))
+            # Example fees (pos/fees.py); the shop sets its own in Settings.
+            for low, high, fee in DEFAULT_SCHEDULE.brackets:
+                db.add(PosFeeBracket(min_cents=low, max_cents=high, fee_cents=fee))
         if (await db.execute(select(PosService.id).limit(1))).first() is None:
             for order, name in enumerate(DEFAULT_SERVICES):
                 db.add(PosService(name=name, sort_order=order))
@@ -112,5 +122,5 @@ async def init_db() -> None:
                 db.add(PosNetwork(name=name, sort_order=order))
         if (await db.execute(select(PosWallet.id).limit(1))).first() is None:
             for name, provider in DEFAULT_WALLETS:
-                db.add(PosWallet(name=name, provider=provider, load_discount_bp=MAYA_LOAD_DISCOUNT_BP if provider == "MAYA" else 0))
+                db.add(PosWallet(name=name, provider=provider))
         await db.commit()

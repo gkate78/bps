@@ -222,8 +222,34 @@ def test_cashier_records_rejects_by_print_or_material_with_the_sale(shop):
     assert "ENCODER" in shop.client.get("/pos/rejects").text  # admins see who recorded it
 
 
-def test_tarpaulin_sizes(shop):
-    """Tarp sizes are read as W X H in feet (the shop's prices and costs are set in Settings)."""
-    from pos.controllers.stock_controller import tarp_size
+def test_tarpaulin_costs_from_settings_and_small_tarps(shop):
+    """Example numbers: the printer charges ₱12 a sq ft; tarps under 6 sq ft are ₱300 and cost ₱90."""
+    from pos.controllers.stock_controller import tarp_size, tarp_sqft
 
-    assert tarp_size("2x3") == (2, 3) and tarp_size("TARP 2X3") is None
+    assert tarp_size("2x3") == (2, 3) and tarp_size(" 1 X 1.5 ft") == (1, 1.5) and tarp_size("TARP 2X3") is None
+    assert tarp_sqft(2, 3) == 6 and tarp_sqft(8, 10) == 80
+    assert suggested_use("TARPAULIN", "8X10") == ("TARPAULIN (SENT OUT)", 80)
+
+    tarp_id = ids()["TARPAULIN"]
+    # Off until set: no small-tarp suggestion.
+    assert shop.client.get(f"/pos/api/suggest/service?service_id={tarp_id}&q=1x1.5").json() == []
+    r = shop.client.post("/pos/settings/tarpaulin", data={"cost_sqft": "12", "small_below_sqft": "6", "small_price": "300", "small_cost": "90"})
+    assert "Tarpaulin saved" in r.text
+    assert "number of sq ft" in shop.client.post("/pos/settings/tarpaulin", data={"small_below_sqft": "abc"}).text
+
+    item(shop, tarp_id, "2X3", "330")
+    item(shop, tarp_id, "8X10", "1800")
+    shop.client.post("/pos/stock/set-up")
+    tarp = materials(shop)["TARPAULIN (SENT OUT)"]
+    assert (tarp.unit, tarp.avg_cost) == ("SQ FT", 12)
+
+    found = shop.client.get(f"/pos/api/suggest/service?service_id={tarp_id}&q=1x1.5").json()
+    assert found[0] == {"description": "1X1.5", "price_cents": 30000, "preset": True}
+    assert not any(s["description"] == "9X9" for s in shop.client.get(f"/pos/api/suggest/service?service_id={tarp_id}&q=9x9").json())
+    assert shop.client.get(f"/pos/api/suggest/service?service_id={XEROX}&q=1x1").json() == []
+
+    sell(shop, tarp_id, "8X10", 1, "1800", cash="2000")   # 80 sq ft × ₱12 = ₱960
+    sell(shop, tarp_id, "1X1.5", 2, "300")                # small: ₱90 each
+    assert materials(shop)["TARPAULIN (SENT OUT)"].counted_at is None  # never counted: cost is tracked, not stock
+    page = shop.client.get("/pos/stock").text
+    assert "<td>TARPAULIN</td><td class=\"num\">₱2,400.00</td><td class=\"num\">₱1,140.00</td><td class=\"num\">₱1,260.00</td>" in page

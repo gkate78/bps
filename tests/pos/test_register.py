@@ -50,24 +50,24 @@ def test_shop_sale_with_services_and_load(shop):
     r = client.post("/pos/api/sales", json=body)
     assert r.status_code == 200, r.text
     sale = r.json()
-    # 80 + 20 + 45 + promo 59 -> 70 = 215; change 85
+    # 80 + 20 + 45 + promo 59 -> 60 + ₱15 fee = 220; change 80 (example fees in pos/fees.py)
     assert sale["sale_no"] == "S-000001"
-    assert sale["change_cents"] == 8_500
+    assert sale["change_cents"] == 8_000
 
     receipt = client.get(f"/pos/receipt/sale/{sale['id']}")
     assert receipt.status_code == 200
     assert "THIS IS NOT AN OFFICIAL RECEIPT" in receipt.text
-    assert "215.00" in receipt.text and "ID PACKAGE" in receipt.text and "INVOICE NO. 0123" in receipt.text
+    assert "220.00" in receipt.text and "ID PACKAGE" in receipt.text and "INVOICE NO. 0123" in receipt.text
 
     s = client.get("/pos/summary").text
-    # income: services 145 + load income 11 (₱10 fee + ₱1 rounding)
-    assert "₱156.00" in s
+    # income: services 145 + load income 16 (₱15 fee + ₱1 rounding)
+    assert "₱161.00" in s
     # GCash balance went down by the actual promo price
     assert "-₱59.00" in s
 
     # Admin → Database shows the register's tables, amounts in pesos.
     db_view = client.get("/admin/database?table=pos_sales").text
-    assert "Shop Sales" in db_view and "S-000001" in db_view and "215.00" in db_view and "total_cents" not in db_view
+    assert "Shop Sales" in db_view and "S-000001" in db_view and "220.00" in db_view and "total_cents" not in db_view
     assert "A4 COLORED" in client.get("/admin/database?table=pos_sale_lines").text
 
 
@@ -162,13 +162,13 @@ def test_cash_in_and_cash_out(shop):
         json={"kind": "cash_in", "wallet_id": i["GCASH"], "amount": "1000", "customer_mobile": "09181112222", "reference": "abc1", "tendered": "1100"},
     )
     assert r.status_code == 200, r.text
-    assert r.json()["change_cents"] == 8_000  # 1,100 - 1,020
+    assert r.json()["change_cents"] == 7_500  # 1,100 - 1,025
 
     r = client.post(
         "/pos/api/wallet-txns",
         json={"kind": "cash_out", "wallet_id": i["MAYA"], "amount": "1000", "fee_mode": "deducted", "customer_mobile": "09181112222", "reference": "x2"},
     )
-    assert r.json()["give_cents"] == 98_000
+    assert r.json()["give_cents"] == 97_500
 
     r = client.post(
         "/pos/api/wallet-txns",
@@ -187,10 +187,10 @@ def test_cash_in_and_cash_out(shop):
     assert "FEE PAID IN CASH" in receipt and "1,500.00" in receipt
 
     s = client.get("/pos/summary").text
-    # drawer: +1,020 - 980 - (1,500 - 40) = -1,420
-    assert "-₱1,420.00" in s
-    # fees: 20 + 20 + 40
-    assert "₱80.00" in s
+    # drawer: +1,025 - 975 - (1,500 - 50) = -1,400
+    assert "-₱1,400.00" in s
+    # fees: 25 + 25 + 50
+    assert "₱100.00" in s
 
 
 def test_a_gcash_maya_reference_is_accepted_only_once(shop):
@@ -221,30 +221,30 @@ def test_a_gcash_maya_reference_is_accepted_only_once(shop):
 
 
 def test_sale_paid_by_gcash_with_a_cash_out_in_the_same_transfer(shop):
-    """₱50 load (+₱5) and a ₱1,000 cash-out (+₱20) in one ₱1,075 GCash transfer."""
+    """₱50 load (+₱3) and a ₱1,000 cash-out (+₱25) in one ₱1,078 GCash transfer (example fees)."""
     client = shop.client
     i = ids()
     load = {"kind": "load", "network_id": i["GLOBE"], "wallet_id": i["GCASH"], "mobile_no": "09181112222", "amount": "50"}
     body = {"lines": [load], "payment_method": "wallet", "pay_wallet_id": i["GCASH"], "payment_reference": "7001", "customer_phone": "09181112222"}
 
-    q = client.get("/pos/api/quote/sale-cash-out", params={"due": "55", "sent": "1075"}).json()
-    assert (q["amount_cents"], q["fee_cents"], q["give_cents"]) == (102_000, 2_000, 100_000)
-    bad = client.get("/pos/api/quote/sale-cash-out", params={"due": "55", "sent": "1080"})
-    assert bad.status_code == 400 and "₱1,075.00 sent gives ₱1,000.00 cash" in bad.json()["detail"]
-    assert client.get("/pos/api/quote/sale-cash-out", params={"due": "55", "sent": "50"}).status_code == 400
-    assert client.post("/pos/api/sales", json={**body, "amount_sent": "1075", "customer_phone": ""}).status_code == 400
+    q = client.get("/pos/api/quote/sale-cash-out", params={"due": "53", "sent": "1078"}).json()
+    assert (q["amount_cents"], q["fee_cents"], q["give_cents"]) == (102_500, 2_500, 100_000)
+    bad = client.get("/pos/api/quote/sale-cash-out", params={"due": "53", "sent": "1083"})
+    assert bad.status_code == 400 and "₱1,078.00 sent gives ₱1,000.00 cash" in bad.json()["detail"]
+    assert client.get("/pos/api/quote/sale-cash-out", params={"due": "53", "sent": "50"}).status_code == 400
+    assert client.post("/pos/api/sales", json={**body, "amount_sent": "1078", "customer_phone": ""}).status_code == 400
 
-    r = client.post("/pos/api/sales", json={**body, "amount_sent": "1,075"})
+    r = client.post("/pos/api/sales", json={**body, "amount_sent": "1,078"})
     assert r.status_code == 200, r.text
     sale = r.json()
-    assert sale["cash_out"]["give_cents"] == 100_000 and sale["cash_out"]["fee_cents"] == 2_000
+    assert sale["cash_out"]["give_cents"] == 100_000 and sale["cash_out"]["fee_cents"] == 2_500
 
     receipt = client.get(f"/pos/receipt/sale/{sale['id']}").text
-    assert "CASH GIVEN" in receipt and "1,000.00" in receipt and "1,075.00" in receipt
+    assert "CASH GIVEN" in receipt and "1,000.00" in receipt and "1,078.00" in receipt
     listing = client.get("/pos/sales").text
     assert f"sent with sale {sale['sale_no']}" in listing
-    # fees: ₱5 load + ₱20 cash-out
-    assert "₱25.00" in client.get("/pos/summary").text
+    # fees: ₱3 load + ₱25 cash-out
+    assert "₱28.00" in client.get("/pos/summary").text
 
     # the reference is used up by the pair
     r = client.post("/pos/api/wallet-txns", json={"kind": "cash_out", "wallet_id": i["GCASH"], "amount": "500",
@@ -268,23 +268,23 @@ def test_mobile_suggestions_include_bill_customers(shop):
 
 
 def test_cash_out_with_fee_included(shop):
-    """Customer sends ₱6,120 to receive exactly ₱6,000: the fee is ₱120, not ₱130 on ₱6,120."""
+    """Customer sends ₱6,150 to receive exactly ₱6,000: the fee is ₱150, not ₱165 on ₱6,150 (example fees)."""
     client = shop.client
     i = ids()
-    q = client.get("/pos/api/quote/wallet", params={"kind": "cash_out", "amount": "6120", "fee_mode": "included"}).json()
-    assert (q["fee_cents"], q["give_cents"]) == (12_000, 600_000)
-    bad = client.get("/pos/api/quote/wallet", params={"kind": "cash_out", "amount": "6125", "fee_mode": "included"})
+    q = client.get("/pos/api/quote/wallet", params={"kind": "cash_out", "amount": "6150", "fee_mode": "included"}).json()
+    assert (q["fee_cents"], q["give_cents"]) == (15_000, 600_000)
+    bad = client.get("/pos/api/quote/wallet", params={"kind": "cash_out", "amount": "6155", "fee_mode": "included"})
     assert bad.status_code == 400 and "Deduct from payout" in bad.json()["detail"]
 
     r = client.post(
         "/pos/api/wallet-txns",
-        json={"kind": "cash_out", "wallet_id": i["GCASH"], "amount": "6120", "fee_mode": "included", "customer_mobile": "09181112222", "reference": "inc1"},
+        json={"kind": "cash_out", "wallet_id": i["GCASH"], "amount": "6150", "fee_mode": "included", "customer_mobile": "09181112222", "reference": "inc1"},
     )
     assert r.status_code == 200, r.text
     txn = r.json()
     assert txn["give_cents"] == 600_000
     receipt = client.get(f"/pos/receipt/wallet/{txn['id']}").text
-    assert "FEE (INCLUDED)" in receipt and "6,120.00" in receipt and "-120.00" in receipt and "6,000.00" in receipt
+    assert "FEE (INCLUDED)" in receipt and "6,150.00" in receipt and "-150.00" in receipt and "6,000.00" in receipt
 
 
 def test_encoders_see_only_their_own_sales(shop):
@@ -461,25 +461,26 @@ def test_rename_service_keeps_old_sales(shop):
     assert "PRINTING already exists" in r.text
 
 
-def test_maya_load_discount(shop):
-    """A wallet with a load discount deducts less than the load; the wallet and income use what was deducted."""
+def test_wallet_load_discount(shop):
+    """A wallet with a 2% load discount deducts ₱97.02 for a ₱99 load; the wallet and income use what was deducted."""
     client = shop.client
     i = ids()
+    client.post("/pos/settings/wallets/discounts", data={f"discount_{i['GCASH']}": "0", f"discount_{i['MAYA']}": "2"})
     q = client.get(f"/pos/api/quote/load?amount=99&promo=true&wallet_id={i['MAYA']}").json()
-    assert q["cost_cents"] == 9_603 and q["total_cents"] == 11_000  # ₱99 promo → ₱100 + ₱10 fee
+    assert q["cost_cents"] == 9_702 and q["total_cents"] == 11_500  # ₱99 promo → ₱100 + ₱15 fee
     assert client.get(f"/pos/api/quote/load?amount=99&promo=true&wallet_id={i['GCASH']}").json()["cost_cents"] == 9_900
 
     load = {"kind": "load", "network_id": i["GLOBE"], "wallet_id": i["MAYA"], "mobile_no": "09181112222", "amount": "99", "is_promo": True}
-    assert client.post("/pos/api/sales", json={"lines": [load], "cash": "110"}).status_code == 200
+    assert client.post("/pos/api/sales", json={"lines": [load], "cash": "115"}).status_code == 200
     # The app showed a different amount once: typed in, it's used instead.
-    assert client.post("/pos/api/sales", json={"lines": [{**load, "deducted": "96.50"}], "cash": "110"}).status_code == 200
-    bad = client.post("/pos/api/sales", json={"lines": [{**load, "deducted": "120"}], "cash": "110"})
+    assert client.post("/pos/api/sales", json={"lines": [{**load, "deducted": "96.50"}], "cash": "115"}).status_code == 200
+    bad = client.post("/pos/api/sales", json={"lines": [{**load, "deducted": "120"}], "cash": "115"})
     assert bad.status_code == 400 and "not more than the load" in bad.text
 
     s = client.get("/pos/summary").text
-    assert "₱192.53" in s  # deducted by the wallet
-    assert "₱27.47" in s  # load income: 220 - 192.53
-    assert "-₱192.53" in s  # Maya balance
+    assert "₱193.52" in s  # deducted: 97.02 + 96.50
+    assert "₱36.48" in s  # load income: 230 - 193.52
+    assert "-₱193.52" in s  # Maya balance
 
     # Discounts are set per account in Settings.
     r = client.post("/pos/settings/wallets/discounts", data={f"discount_{i['GCASH']}": "2.5", f"discount_{i['MAYA']}": "3"})

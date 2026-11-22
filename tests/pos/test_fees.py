@@ -15,21 +15,21 @@ def P(pesos: int) -> int:
     return pesos * 100
 
 
-# The confirmed fee table in docs/PLAN.md.
+# The example fee schedule in pos/fees.py (₱25 per ₱1,000, ₱15 / ₱25 brackets). The shop's own is in Settings.
 @pytest.mark.parametrize(
     "amount, fee",
     [
-        (300, 10),
-        (499, 10),
-        (500, 20),
-        (999, 20),
-        (1_000, 20),
-        (1_200, 30),
-        (1_500, 40),
-        (2_000, 40),
-        (2_300, 50),
-        (5_750, 120),
-        (1, 10),
+        (300, 15),
+        (499, 15),
+        (500, 25),
+        (999, 25),
+        (1_000, 25),
+        (1_200, 40),
+        (1_500, 50),
+        (2_000, 50),
+        (2_300, 65),
+        (5_750, 150),
+        (1, 15),
     ],
 )
 def test_ewallet_fee_table(amount, fee):
@@ -39,18 +39,18 @@ def test_ewallet_fee_table(amount, fee):
 @pytest.mark.parametrize(
     "amount, is_promo, fee, total",
     [
-        (30, False, 5, 35),
-        (50, False, 5, 55),
-        (51, False, 10, 61),
-        (100, False, 10, 110),
-        (499, False, 10, 509),
-        (500, False, 20, 520),
-        (1_000, False, 20, 1_020),
-        (1_030, False, 30, 1_060),
-        (59, True, 10, 70),
-        (69, True, 10, 80),
-        (70, True, 10, 80),
-        (49, True, 5, 55),
+        (30, False, 3, 33),
+        (50, False, 3, 53),
+        (51, False, 15, 66),
+        (100, False, 15, 115),
+        (499, False, 15, 514),
+        (500, False, 25, 525),
+        (1_000, False, 25, 1_025),
+        (1_030, False, 40, 1_070),
+        (59, True, 15, 75),
+        (69, True, 15, 85),
+        (70, True, 15, 85),
+        (49, True, 3, 53),
     ],
 )
 def test_load_quotes(amount, is_promo, fee, total):
@@ -63,27 +63,27 @@ def test_load_quotes(amount, is_promo, fee, total):
 def test_promo_rounding_counts_as_income():
     q = quote_load(P(59), True)
     assert q.priced_cents == P(60)
-    assert q.income_cents == P(11)
+    assert q.income_cents == P(16)
 
 
 def test_cash_in():
     q = quote_wallet("cash_in", P(1_000))
-    assert (q.fee_cents, q.collect_cents, q.give_cents) == (P(20), P(1_020), 0)
-    assert q.drawer_delta_cents == P(1_020)
+    assert (q.fee_cents, q.collect_cents, q.give_cents) == (P(25), P(1_025), 0)
+    assert q.drawer_delta_cents == P(1_025)
     assert q.wallet_delta_cents == -P(1_000)
 
 
 def test_cash_out_fee_deducted():
     q = quote_wallet("cash_out", P(1_000), "deducted")
-    assert (q.collect_cents, q.give_cents) == (0, P(980))
-    assert q.drawer_delta_cents == -P(980)
+    assert (q.collect_cents, q.give_cents) == (0, P(975))
+    assert q.drawer_delta_cents == -P(975)
     assert q.wallet_delta_cents == P(1_000)
 
 
 def test_cash_out_fee_paid_in_cash_moves_drawer_the_same():
     q = quote_wallet("cash_out", P(1_000), "paid_in_cash")
-    assert (q.collect_cents, q.give_cents) == (P(20), P(1_000))
-    assert q.drawer_delta_cents == -P(980)
+    assert (q.collect_cents, q.give_cents) == (P(25), P(1_000))
+    assert q.drawer_delta_cents == -P(975)
 
 
 def test_cash_out_must_exceed_fee():
@@ -118,15 +118,15 @@ def test_invalid_brackets_rejected(brackets):
 def test_load_cost_after_wallet_discount():
     from pos.fees import load_cost
 
-    assert load_cost(9_900, 300) == 9_603  # a wallet discount
-    assert load_cost(5_000, 300) == 4_850
+    assert load_cost(9_900, 200) == 9_702  # a 2% wallet discount: ₱99 → ₱97.02
+    assert load_cost(5_000, 200) == 4_900
     assert load_cost(9_900, 0) == 9_900
     assert load_cost(3_300, 250) == 3_218  # ₱32.175 rounds to ₱32.18
 
 
 @pytest.mark.parametrize(
     "sent, payout, fee",
-    [(6_120, 6_000, 120), (1_020, 1_000, 20), (1_540, 1_500, 40), (520, 500, 20), (6_131, 6_001, 130)],
+    [(6_150, 6_000, 150), (1_025, 1_000, 25), (1_550, 1_500, 50), (525, 500, 25), (6_166, 6_001, 165)],
 )
 def test_cash_out_fee_included_in_amount_sent(sent, payout, fee):
     q = quote_wallet("cash_out", P(sent), "included")
@@ -135,7 +135,7 @@ def test_cash_out_fee_included_in_amount_sent(sent, payout, fee):
     assert q.drawer_delta_cents == -P(payout)
 
 
-@pytest.mark.parametrize("sent", [6_125, 510, 10, 1])
+@pytest.mark.parametrize("sent", [6_155, 520, 10, 1])
 def test_cash_out_fee_included_rejects_amounts_that_dont_fit(sent):
     with pytest.raises(FeeError):
         quote_wallet("cash_out", P(sent), "included")

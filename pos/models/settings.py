@@ -34,6 +34,12 @@ class PosSettings(SQLModel, table=True):
     gsheets_after_eod: bool = Field(default=True, nullable=False)
     gsheets_last_at: Optional[datetime] = Field(default=None)
     gsheets_last_result: Optional[str] = Field(default=None, max_length=500)
+    # Tarpaulin (DEC-079), set in Settings; 0 = not used. What the printer charges a sq ft (the cost of a new
+    # TARPAULIN (SENT OUT) material), and small tarps: below this many sq ft, this price and this cost.
+    tarp_cost_sqft_cents: int = Field(default=0, nullable=False)
+    tarp_small_below_sqft: float = Field(default=0, nullable=False)
+    tarp_small_price_cents: int = Field(default=0, nullable=False)
+    tarp_small_cost_cents: int = Field(default=0, nullable=False)
 
     updated_at: datetime = Field(default_factory=datetime.now, nullable=False)
 

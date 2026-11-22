@@ -4,6 +4,7 @@ Fees for loading and GCash/Maya cash-in/cash-out (see docs/PLAN.md, Phase 1).
 One rule for everything: a fee per full block (e.g. ₱25 per ₱1,000), plus a fee on the
 remainder from the brackets (e.g. ₱1-₱499 -> ₱15, ₱500-₱999 -> ₱25).
 Loading exception: a small load (e.g. ₱50 or less) has its own fee.
+The numbers here are examples; the shop's own fees are set in Settings and kept in its database.
 Promos: the promo price is rounded up to the next ₱10 before the fee is added.
 """
 from dataclasses import dataclass, field

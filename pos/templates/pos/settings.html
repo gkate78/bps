@@ -17,6 +17,20 @@
         </form>
     </section>
 
+    <section class="panel" id="tarpaulin">
+        <h2>Tarpaulin</h2>
+        <p class="muted small">For tarps printed by another shop. The cost a sq ft is used for the TARPAULIN (SENT OUT) material that Stock's set-up adds (change it there afterwards). Small tarps: a size typed at the register below this many sq ft is suggested at the small price, and costs the small cost. 0 = not used.</p>
+        <form method="post" action="/pos/settings/tarpaulin" class="stack">
+            <label>Printing cost a sq ft ₱ <input type="text" name="cost_sqft" inputmode="decimal" value="{{ settings.tarp_cost_sqft_cents | pesos_input }}"></label>
+            <div class="row3">
+                <label>Small: below sq ft <input type="text" name="small_below_sqft" inputmode="decimal" value="{{ '%g' % settings.tarp_small_below_sqft }}"></label>
+                <label>Small price ₱ <input type="text" name="small_price" inputmode="decimal" value="{{ settings.tarp_small_price_cents | pesos_input }}"></label>
+                <label>Small cost ₱ <input type="text" name="small_cost" inputmode="decimal" value="{{ settings.tarp_small_cost_cents | pesos_input }}"></label>
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    </section>
+
     <section class="panel" id="gsheets">
         <h2>Backup to Google Sheets</h2>
         <p class="muted small">A copy of bills, customers and shop records in your own Google Sheet, one tab each, for viewing from anywhere. PINs and settings are not sent. To restore BPS, use the database backups in <code>~/bps-data/backups</code>.</p>

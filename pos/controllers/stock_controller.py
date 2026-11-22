@@ -30,15 +30,10 @@ def _round(value: float) -> float:
 # ---------- Tarpaulin sizes ----------
 
 TARP_SERVICE = "TARPAULIN"
-# Tarps are printed by another shop, which charges by the sq ft. The customer's price is the size times a rate plus a
-# layout charge (the owner's price list). The printing is kept as a "material" in sq ft so its cost shows in
-# Cost and profit; it is never counted, so it gives no low-stock warning.
+# Tarps may be printed by another shop, charged by the sq ft. That printing is kept as a "material" in sq ft so
+# its cost shows in Cost and profit; it is never counted, so it gives no low-stock warning. The cost a sq ft and
+# the small-tarp price and cost are the shop's own, set in Settings (PosSettings.tarp_*).
 TARP = "TARPAULIN (SENT OUT)"
-TARP_COST_PER_SQFT = 12
-TARP_SMALL_AREA = 6  # smaller than 2x3 ...
-TARP_SMALL_PRICE_CENTS = 30000  # ... is charged a set price
-TARP_SMALL_COST = 90  # ... and costs a set amount
-TARP_SMALL_SQFT = TARP_SMALL_COST / TARP_COST_PER_SQFT  # the small cost at the cost a sq ft
 
 
 def tarp_size(text: str) -> Optional[tuple[float, float]]:
@@ -53,9 +48,13 @@ def tarp_size(text: str) -> Optional[tuple[float, float]]:
 
 
 def tarp_sqft(width: float, height: float) -> float:
-    """Sq ft of printing a tarp costs: its area, but a tarp smaller than 2x3 costs the small cost."""
-    area = width * height
-    return _round(TARP_SMALL_SQFT) if area < TARP_SMALL_AREA else _round(area)
+    return _round(width * height)
+
+
+def tarp_small(settings, description: str) -> bool:
+    """A tarp below the small size in Settings (it has its own price and cost)."""
+    size = tarp_size(description)
+    return bool(size and settings and settings.tarp_small_below_sqft > 0 and size[0] * size[1] < settings.tarp_small_below_sqft)
 
 
 def tarp_name(width: float, height: float) -> str:
@@ -145,6 +144,9 @@ async def use_for_sale(db: AsyncSession, sale: PosSale, lines: list[PosSaleLine]
     if not recipes and not tarp:
         return 0
     materials = {m.id: m for m in await list_materials(db)}
+    from pos.controllers.settings_controller import get_settings
+
+    settings = await get_settings(db)
     made = 0
     for line in service_lines:
         uses = recipes.get((line.service_id, line.description), [])
@@ -155,7 +157,10 @@ async def use_for_sale(db: AsyncSession, sale: PosSale, lines: list[PosSaleLine]
             if not material or per_unit <= 0:
                 continue
             used = _round(per_unit * line.qty)
-            _move(db, material, "sale", -used, cost_cents=int(round(used * material.avg_cost * 100)),
+            cost_cents = int(round(used * material.avg_cost * 100))
+            if material.name == TARP and settings.tarp_small_cost_cents and tarp_small(settings, line.description):
+                cost_cents = settings.tarp_small_cost_cents * int(line.qty)  # a small tarp's own cost
+            _move(db, material, "sale", -used, cost_cents=cost_cents,
                   sale_id=sale.id, sale_line_id=line.id, service_id=line.service_id, user_id=sale.cashier_user_id)
             made += 1
     return made
@@ -429,13 +434,16 @@ def suggested_material(service: str, item: str) -> Optional[str]:
 
 async def set_up_suggested(db: AsyncSession, user_id: int) -> tuple[int, int]:
     """Adds paper and lamination film materials and links pick list items that have no materials yet."""
+    from pos.controllers.settings_controller import get_settings
+
+    tarp_cost = (await get_settings(db)).tarp_cost_sqft_cents / 100  # Settings → Tarpaulin
     materials = {m.name: m for m in await list_materials(db)}
     created = 0
     for name, unit in [(n, "SHEET") for n in PAPER.values()] + [(PHOTO_PAPER, "SHEET"), (PHOTO_3R, "SHEET"), (PHOTO_4R, "SHEET"), (PHOTO_5R, "SHEET")] + [(n, "PC") for n in FILM.values()] + [(TARP, "SQ FT")]:
         if name not in materials:
             last = (await db.execute(select(func.max(PosMaterial.sort_order)))).scalar() or 0
             material = PosMaterial(name=name, unit=unit, sort_order=last + 1,
-                                   avg_cost=TARP_COST_PER_SQFT if name == TARP else 0)
+                                   avg_cost=tarp_cost if name == TARP else 0)
             db.add(material)
             await db.flush()
             materials[name] = material

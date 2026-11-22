@@ -88,6 +88,37 @@ async def save_business(
     return _back(request, message="Saved", anchor="business")
 
 
+@router.post("/tarpaulin", include_in_schema=False)
+async def save_tarpaulin(
+    request: Request,
+    cost_sqft: str = Form(""),
+    small_below_sqft: str = Form(""),
+    small_price: str = Form(""),
+    small_cost: str = Form(""),
+    user: User = Depends(page_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tarpaulin printing cost a sq ft, and small tarps' price and cost (DEC-079)."""
+    try:
+        cost = to_cents(cost_sqft or "0", field="Printing cost a sq ft")
+        price = to_cents(small_price or "0", field="Small tarp price")
+        small = to_cents(small_cost or "0", field="Small tarp cost")
+        below = float(small_below_sqft or 0)
+    except MoneyError as exc:
+        return _back(request, error=str(exc), anchor="tarpaulin")
+    except ValueError:
+        return _back(request, error="Small size must be a number of sq ft (e.g. 6 for 2x3)", anchor="tarpaulin")
+    if min(cost, price, small) < 0 or not 0 <= below <= 1000:
+        return _back(request, error="Use 0 or more", anchor="tarpaulin")
+    s = await get_settings(db)
+    s.tarp_cost_sqft_cents, s.tarp_small_below_sqft, s.tarp_small_price_cents, s.tarp_small_cost_cents = cost, below, price, small
+    db.add(s)
+    add_audit(db, "settings", 1, "update_tarpaulin", user.id,
+              {"cost_sqft_cents": cost, "small_below_sqft": below, "small_price_cents": price, "small_cost_cents": small})
+    await db.commit()
+    return _back(request, message="Tarpaulin saved", anchor="tarpaulin")
+
+
 @router.post("/gsheets", include_in_schema=False)
 async def save_gsheets(
     request: Request,

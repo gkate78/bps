@@ -57,8 +57,8 @@ def test_end_of_day_one_count_for_bills_and_shop(shop):
     )
     client.post("/pos/settings/business", data={"receipt_footer": "THANK YOU", "default_starting_cash": "1000"})
 
-    # Shop: ₱100 printing in cash, ₱50 printing paid via Maya, a ₱100 Globe load from GCash (₱110 cash),
-    # and a ₱1,000 GCash cash-in (₱1,020 cash).
+    # Shop: ₱100 printing in cash, ₱50 printing paid via Maya, a ₱100 Globe load from GCash (₱115 cash),
+    # and a ₱1,000 GCash cash-in (₱1,025 cash). Example fees (pos/fees.py).
     printing = {"kind": "service", "service_id": 1, "qty": 1}
     assert client.post("/pos/api/sales", json={"lines": [{**printing, "unit_price": "100"}], "cash": "100"}).status_code == 200
     client.post(
@@ -67,7 +67,7 @@ def test_end_of_day_one_count_for_bills_and_shop(shop):
     )
     client.post(
         "/pos/api/sales",
-        json={"lines": [{"kind": "load", "network_id": 1, "wallet_id": 1, "mobile_no": "09181112222", "amount": "100"}], "cash": "110"},
+        json={"lines": [{"kind": "load", "network_id": 1, "wallet_id": 1, "mobile_no": "09181112222", "amount": "100"}], "cash": "115"},
     )
     client.post(
         "/pos/api/wallet-txns",
@@ -81,9 +81,9 @@ def test_end_of_day_one_count_for_bills_and_shop(shop):
     assert client.post(f"/pos/api/eod/{day}/movements", json={"kind": "take_out", "amount": "50", "reason": ""}).status_code == 400
 
     page = client.get("/pos/eod").text
-    # Drawer lines: bills in cash 1,315 (1,015 + 300), shop cash 210 (100 + 110 load), cash-in 1,020,
+    # Drawer lines: bills in cash 1,315 (1,015 + 300), shop cash 215 (100 + 115 load), cash-in 1,025,
     # bill paid to the biller in cash -1,000, owner pickup -300, moved to GCash -500.
-    assert "₱1,315.00" in page and "₱210.00" in page and "₱1,020.00" in page and "-₱1,000.00" in page
+    assert "₱1,315.00" in page and "₱215.00" in page and "₱1,025.00" in page and "-₱1,000.00" in page
     assert "BAYAD" in page and "₱2,000.00" in page  # other channels, for reference
     assert "not yet paid to the billers (₱290.00)" in page
 
@@ -91,13 +91,13 @@ def test_end_of_day_one_count_for_bills_and_shop(shop):
         f"/pos/api/eod/{day}",
         json={
             "opening_cash": "1000",
-            "counted_cash": "1745",
+            "counted_cash": "1755",
             "wallets": [{"wallet_id": 1, "opening": "2000", "counted": "1400"}, {"wallet_id": 2, "opening": "0", "counted": "50"}],
         },
     )
     assert r.status_code == 200, r.text
-    # 1,000 + 1,315 + 210 + 1,020 - 1,000 - 300 - 500 = 1,745
-    assert r.json() == {"expected_cash_cents": 174_500, "difference_cents": 0}
+    # 1,000 + 1,315 + 215 + 1,025 - 1,000 - 300 - 500 = 1,755
+    assert r.json() == {"expected_cash_cents": 175_500, "difference_cents": 0}
 
     page = client.get("/pos/eod").text
     assert "Saved by KATE TEST" in page and "balanced" in page

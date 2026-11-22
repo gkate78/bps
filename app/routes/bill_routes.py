@@ -891,6 +891,14 @@ async def get_records_kpis(
     )
 
 
+def _usual_bayad_charge(rules) -> float:
+    """The Bayad system charge most active rules use: the default for a new rule (0 when there are none)."""
+    from collections import Counter
+
+    counts = Counter(round(float(r.system_charge_bayad or 0), 2) for r in rules if getattr(r, "is_active", False))
+    return counts.most_common(1)[0][0] if counts else 0.0
+
+
 @router.get("/admin/settings", response_class=HTMLResponse, include_in_schema=False)
 async def admin_settings_page(
     request: Request,
@@ -907,6 +915,7 @@ async def admin_settings_page(
             "request": request,
             "current_user": current_user,
             "business_profile": profile,
+            "default_bayad_charge": _usual_bayad_charge(biller_rules),
             "receipt_show_headings": bool(profile.receipt_show_headings) if profile else True,
             "receipt_show_business_name": bool(profile.receipt_show_business_name) if profile else True,
             "receipt_show_business_address": bool(profile.receipt_show_business_address) if profile else True,
@@ -1145,8 +1154,8 @@ async def quick_add_biller_rule(
         biller=cleaned_biller,
         service_charge=round(float(payload.service_charge), 2),
         late_charge=round(float(payload.late_charge), 2),
-        # Same default as the Settings form; other system charges can be set later in Settings.
-        system_charge_bayad=0,
+        # Same default as the Settings form (what most rules use); other system charges can be set later in Settings.
+        system_charge_bayad=_usual_bayad_charge(await _list_biller_rules(db)),
         account_digits=payload.account_digits,
         account_format=normalize_account_format(payload.account_format),
         category=guess_category(cleaned_biller),
