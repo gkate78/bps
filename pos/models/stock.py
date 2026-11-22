@@ -42,7 +42,8 @@ class PosItemMaterial(SQLModel, table=True):
 class PosStockMove(SQLModel, table=True):
     """
     One change to a material's stock. kind: sale (used, qty < 0), void (a voided sale's use put back),
-    restock (bought, qty > 0, with its cost), count (a count's difference), adjust (a correction).
+    restock (bought, qty > 0, with its cost), count (a count's difference), adjust (a correction),
+    reject (wasted: misprint, paper jam, customer reprint; qty < 0, with its reason and, if given, the sale it was for).
     """
 
     __tablename__ = "pos_stock_moves"
@@ -58,6 +59,7 @@ class PosStockMove(SQLModel, table=True):
     sale_line_id: Optional[int] = Field(default=None)
     service_id: Optional[int] = Field(default=None)
     supplier: Optional[str] = Field(default=None, max_length=80)
+    reason: Optional[str] = Field(default=None, max_length=20)  # rejects: MISPRINT, PAPER JAM, CUSTOMER REPRINT, OTHER
     note: Optional[str] = Field(default=None, max_length=160)
     user_id: Optional[int] = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.now, nullable=False, index=True)

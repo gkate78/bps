@@ -94,6 +94,8 @@ async def init_db() -> None:
                 ("gsheets_last_result", "VARCHAR(500)"),
             ),
         )
+        # Rejects (DEC-078): why stock was wasted.
+        await _add_missing_columns(conn, "pos_stock_moves", (("reason", "VARCHAR(20)"),))
 
     # Seed defaults once, only into empty tables.
     async with bps_db.AsyncSessionLocal() as db:

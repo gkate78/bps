@@ -7,14 +7,15 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from pos.auth_adapter import User, page_admin
+from pos.auth_adapter import User, display_name, page_admin, page_user
 from pos.controllers import stock_controller as stock
 from pos.controllers.settings_controller import list_services
 from pos.database import get_db
-from pos.models import PosServiceItem
+from pos.models import PosSale, PosServiceItem
 from pos.templating import templates
 
 router = APIRouter(prefix="/pos/stock")
+rejects_router = APIRouter(prefix="/pos/rejects")
 
 
 def per_unit(value: float) -> str:
@@ -64,6 +65,7 @@ async def stock_page(
             "items_by_service": by_service,
             "uses": await stock.item_uses(db),
             "moves": await stock.recent_moves(db, 60),
+            "reasons": stock.REJECT_REASONS,
             "report": await stock.cost_report(
                 db, datetime.combine(start, datetime.min.time()), datetime.combine(end + timedelta(days=1), datetime.min.time())
             ),
@@ -167,3 +169,60 @@ async def set_use(
 async def set_up(request: Request, user: User = Depends(page_admin), db: AsyncSession = Depends(get_db)):
     return await _done(request, lambda: stock.set_up_suggested(db, user.id),
                        lambda r: f"{r[0]} materials added, {r[1]} items linked. Check them below, then count your stock.", "materials")
+
+
+# ---------- Rejects (DEC-078): cashiers and admins ----------
+
+@rejects_router.get("", response_class=HTMLResponse, include_in_schema=False)
+async def rejects_page(request: Request, sale: str = Query(""), user: User = Depends(page_user), db: AsyncSession = Depends(get_db)):
+    flash = request.session.pop("pos_flash", None) or {}
+    items, materials = await stock.reject_choices(db)
+    # Cashiers see their own; admins see everyone's.
+    moves = await stock.recent_rejects(db, None if user.role == "admin" else user.id)
+    names, sale_dates = {}, {}
+    if moves:
+        sale_ids = {m.sale_id for m in moves if m.sale_id}
+        if sale_ids:
+            sale_dates = dict((await db.execute(select(PosSale.id, PosSale.created_at).where(PosSale.id.in_(sale_ids)))).all())
+        ids = {m.user_id for m in moves if m.user_id}
+        names = {u.id: display_name(u) for u in (await db.execute(select(User).where(User.id.in_(ids)))).scalars().all()}
+    return templates.TemplateResponse(
+        request,
+        "pos/rejects.html",
+        {
+            "user": user,
+            "active": "rejects",
+            "items": items,
+            "materials": materials,
+            "materials_by_id": {m.id: m for m in await stock.list_materials(db)},
+            "reasons": stock.REJECT_REASONS,
+            "moves": moves,
+            "names": names,
+            "sale_dates": sale_dates,
+            "sale": sale,
+            "message": flash.get("message"),
+            "error": flash.get("error"),
+        },
+    )
+
+
+@rejects_router.post("", include_in_schema=False)
+async def record_reject(
+    request: Request,
+    what: str = Form(""),
+    qty: str = Form("1"),
+    reason: str = Form(""),
+    sale: str = Form(""),
+    note: str = Form(""),
+    user: User = Depends(page_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        moves = await stock.record_reject(db, what, qty, reason, sale, note, user.id)
+    except stock.StockError as exc:
+        request.session["pos_flash"] = {"error": str(exc)}
+        return RedirectResponse(url="/pos/rejects", status_code=303)
+    materials = {m.id: m.name for m in await stock.list_materials(db)}
+    used = ", ".join(f"{per_unit(-m.qty)} {materials.get(m.material_id, '?')}" for m in moves)
+    request.session["pos_flash"] = {"message": f"Reject saved: {used} taken off the stock"}
+    return RedirectResponse(url="/pos/rejects", status_code=303)

@@ -171,3 +171,52 @@ def test_wallet_size_photos_use_half_a_3r_photo_paper(shop):
     sell(shop, ids()["PRINTING"], "3R PHOTO", 1, "15")
     assert round(materials(shop)["3R PHOTO PAPER"].stock_qty, 4) == 47
     assert 'value="1/2"' in shop.client.get("/pos/stock").text
+
+
+def test_cashier_records_rejects_by_print_or_material_with_the_sale(shop):
+    from tests.conftest import ENCODER_PHONE, ENCODER_PIN
+
+    item(shop, ids()["PRINTING"], "WALLET SIZE PHOTO", "10")
+    item(shop, XEROX, "LONG", "4")
+    shop.client.post("/pos/stock/set-up")
+    m = materials(shop)
+    photo, long_paper = m["3R PHOTO PAPER"], m["LONG BOND PAPER"]
+    shop.client.post("/pos/stock/restock", data={"material_id": photo.id, "qty": "50", "total_cost": "250"})  # ₱5 a sheet
+    shop.client.post("/pos/stock/count", data={"material_id": long_paper.id, "counted": "100"})
+    with Session(shop.engine) as s:
+        wallet = s.exec(select(PosServiceItem).where(PosServiceItem.name == "WALLET SIZE PHOTO")).one()
+    sale = sell(shop, ids()["PRINTING"], "WALLET SIZE PHOTO", 2, "10")  # 1 sheet
+
+    shop.add_user(ENCODER_PHONE, ENCODER_PIN, "encoder", "ENCODER")
+    shop.sign_in(ENCODER_PHONE, ENCODER_PIN)
+    page = shop.client.get(f"/pos/rejects?sale=S-{sale:06d}").text
+    assert "WALLET SIZE PHOTO — 1/2 3r photo paper each" in page and f'value="S-{sale:06d}"' in page
+
+    # A customer reprint needs the sale no.
+    r = shop.client.post("/pos/rejects", data={"what": f"item:{wallet.id}", "qty": "2", "reason": "CUSTOMER REPRINT"})
+    assert "type the sale no." in r.text
+    assert "not found" in shop.client.post("/pos/rejects", data={"what": f"item:{wallet.id}", "qty": "2",
+                                                                  "reason": "CUSTOMER REPRINT", "sale": "S-999999"}).text
+    r = shop.client.post("/pos/rejects", data={"what": f"item:{wallet.id}", "qty": "2", "reason": "CUSTOMER REPRINT",
+                                               "sale": f"s{sale}", "note": "faded"})
+    assert "Reject saved: 1 3R PHOTO PAPER taken off the stock" in r.text
+    r = shop.client.post("/pos/rejects", data={"what": f"material:{long_paper.id}", "qty": "3", "reason": "PAPER JAM"})
+    assert "Reject saved: 3 LONG BOND PAPER" in r.text
+    assert f"S-{sale:06d}</a>" in r.text and "faded" in r.text
+    assert "Choose why" in shop.client.post("/pos/rejects", data={"what": f"material:{long_paper.id}", "qty": "1"}).text
+    assert shop.client.get("/pos/stock", follow_redirects=False).status_code in (303, 403)  # Stock stays admin-only
+
+    m = materials(shop)
+    assert m["3R PHOTO PAPER"].stock_qty == 48 and m["LONG BOND PAPER"].stock_qty == 97
+    with Session(shop.engine) as s:
+        move = s.exec(select(PosStockMove).where(PosStockMove.kind == "reject", PosStockMove.sale_id == sale)).one()
+    assert (move.qty, move.cost_cents, move.reason, move.note) == (-1, 500, "CUSTOMER REPRINT", "2 × PRINTING WALLET SIZE PHOTO · FADED")
+
+    # Voiding the sale puts back what it sold, not the reprint's wasted sheet.
+    from tests.conftest import ADMIN_PHONE
+    shop.sign_in(ADMIN_PHONE, ADMIN_PIN)
+    shop.client.post(f"/pos/api/sales/{sale}/void", json={"reason": "test", "admin_pin": ADMIN_PIN})
+    assert materials(shop)["3R PHOTO PAPER"].stock_qty == 49
+    page = shop.client.get("/pos/stock").text
+    assert "Rejects: <strong>₱5.00</strong> at cost (customer reprint ₱5.00, paper jam ₱0.00" in page
+    assert "ENCODER" in shop.client.get("/pos/rejects").text  # admins see who recorded it

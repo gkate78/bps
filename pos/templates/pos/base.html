@@ -22,6 +22,7 @@
             <a href="/pos/sales" class="{{ 'on' if active == 'sales' }}">Sales</a>
             {% if user.role == 'admin' %}<a href="/pos/summary" class="{{ 'on' if active == 'summary' }}">Summary</a>{% endif %}
             <a href="/pos/eod" class="{{ 'on' if active == 'eod' }}">End of day</a>
+            <a href="/pos/rejects" class="{{ 'on' if active == 'rejects' }}">Rejects</a>
             {% if user.role == 'admin' %}
             <a href="/pos/stock" class="{{ 'on' if active == 'stock' }}">Stock</a>
             <a href="/pos/settings" class="{{ 'on' if active == 'settings' }}">Settings</a>

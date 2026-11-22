@@ -243,6 +243,95 @@ async def set_item_use(db: AsyncSession, service_item_id: int, material_id: Opti
     await db.commit()
 
 
+# ---------- Rejects (DEC-078) ----------
+
+REJECT_REASONS = {"MISPRINT": "Misprint", "PAPER JAM": "Paper jam", "CUSTOMER REPRINT": "Customer reprint", "OTHER": "Other"}
+
+
+def sale_id_from(text: str) -> Optional[int]:
+    """S-000123, s123 or 123 → 123; blank → None."""
+    text = str(text or "").strip().upper().replace(" ", "")
+    if not text:
+        return None
+    if text.startswith("S-"):
+        text = text[2:]
+    elif text.startswith("S"):
+        text = text[1:]
+    if not text.isdigit() or int(text) <= 0:
+        raise StockError("Sale no. should look like S-000123")
+    return int(text)
+
+
+async def reject_choices(db: AsyncSession) -> tuple[list[tuple[PosServiceItem, str, list[tuple[PosMaterial, float]]]], list[PosMaterial]]:
+    """What a cashier can mark as wasted: pick list items that use materials (counted in prints), or a material itself."""
+    materials = {m.id: m for m in await list_materials(db, active_only=True)}
+    rows = await db.execute(
+        select(PosServiceItem, PosService.name, PosItemMaterial.material_id, PosItemMaterial.qty_per_unit)
+        .join(PosService, PosService.id == PosServiceItem.service_id)
+        .join(PosItemMaterial, PosItemMaterial.service_item_id == PosServiceItem.id)
+        .where(PosServiceItem.is_active)
+        .order_by(PosService.sort_order, PosService.name, PosServiceItem.sort_order, PosServiceItem.name)
+    )
+    items: dict[int, tuple[PosServiceItem, str, list]] = {}
+    for item, service_name, material_id, per_unit in rows.all():
+        if material_id in materials:
+            items.setdefault(item.id, (item, service_name, []))[2].append((materials[material_id], per_unit))
+    return list(items.values()), list(materials.values())
+
+
+async def record_reject(db: AsyncSession, what: str, qty, reason: str, sale_ref: str, note: str, user_id: int) -> list[PosStockMove]:
+    """
+    Wasted stock, taken off now. `what` is "item:<id>" (qty in prints; the item's materials per print) or
+    "material:<id>" (qty in the material's unit). A customer reprint must name the sale it was for.
+    """
+    reason = str(reason or "").strip().upper()
+    if reason not in REJECT_REASONS:
+        raise StockError("Choose why it was rejected")
+    sale_id = sale_id_from(sale_ref)
+    if reason == "CUSTOMER REPRINT" and not sale_id:
+        raise StockError("Customer reprint: type the sale no. it was for (on the receipt, e.g. S-000123)")
+    if sale_id and not (await db.execute(select(PosSale.id).where(PosSale.id == sale_id))).first():
+        raise StockError(f"Sale S-{sale_id:06d} not found")
+    kind, _, raw_id = str(what or "").partition(":")
+    if not raw_id.isdigit():
+        raise StockError("Choose what was rejected")
+    qty = _qty(qty, "Quantity")
+    note = _clean(note, 160)
+    uses: list[tuple[PosMaterial, float]] = []
+    service_id = None
+    label = ""
+    if kind == "item":
+        items, _ = await reject_choices(db)
+        found = next((entry for entry in items if entry[0].id == int(raw_id)), None)
+        if not found:
+            raise StockError("That item uses no materials")
+        item, service_name, materials = found
+        service_id = item.service_id
+        label = f"{qty:g} × {service_name} {item.name}"
+        uses = [(material, _round(per_unit * qty)) for material, per_unit in materials]
+    elif kind == "material":
+        material = await get_material(db, int(raw_id))
+        uses = [(material, qty)]
+    else:
+        raise StockError("Choose what was rejected")
+    moves = []
+    for material, used in uses:
+        moves.append(_move(db, material, "reject", -used, cost_cents=int(round(used * material.avg_cost * 100)),
+                           sale_id=sale_id, service_id=service_id, reason=reason,
+                           note=" · ".join(x for x in (label, note) if x)[:160] or None, user_id=user_id))
+    add_audit(db, "material", uses[0][0].id, "reject", user_id,
+              {"what": what, "qty": qty, "reason": reason, "sale_id": sale_id, "materials": {m.name: q for m, q in uses}})
+    await db.commit()
+    return moves
+
+
+async def recent_rejects(db: AsyncSession, user_id: Optional[int] = None, limit: int = 30) -> list[PosStockMove]:
+    query = select(PosStockMove).where(PosStockMove.kind == "reject").order_by(PosStockMove.id.desc()).limit(limit)
+    if user_id is not None:
+        query = query.where(PosStockMove.user_id == user_id)
+    return list((await db.execute(query)).scalars().all())
+
+
 # ---------- Suggested setup ----------
 
 PAPER = {"SHORT": "SHORT BOND PAPER", "LONG": "LONG BOND PAPER", "A4": "A4 BOND PAPER"}
@@ -344,6 +433,11 @@ class CostReport:
     services: list[ServiceCost] = field(default_factory=list)
     restock_cents: int = 0
     spoilage_cents: int = 0  # counts' differences at the average cost (negative = missing stock)
+    rejects: dict[str, int] = field(default_factory=dict)  # reason → cost of rejects in centavos
+
+    @property
+    def rejects_cents(self) -> int:
+        return sum(self.rejects.values())
 
     @property
     def sales_cents(self) -> int:
@@ -390,4 +484,11 @@ async def cost_report(db: AsyncSession, start: datetime, end: datetime) -> CostR
             report.restock_cents = int(cost or 0)
         else:
             report.spoilage_cents = int(cost or 0)
+    rejects = await db.execute(
+        select(PosStockMove.reason, func.sum(PosStockMove.cost_cents))
+        .where(PosStockMove.kind == "reject", PosStockMove.created_at >= start, PosStockMove.created_at < end)
+        .group_by(PosStockMove.reason)
+    )
+    for reason, cost in rejects.all():
+        report.rejects[REJECT_REASONS.get(reason or "", "Other")] = report.rejects.get(REJECT_REASONS.get(reason or "", "Other"), 0) + int(cost or 0)
     return report

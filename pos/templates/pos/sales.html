@@ -47,6 +47,7 @@
                         {% else %}
                         <a class="btn btn-secondary btn-small" target="receipt" href="/pos/receipt/{{ r.type }}/{{ r.id }}">Reprint</a>
                         {% endif %}
+                        {% if r.type == 'sale' %}<a class="btn btn-ghost btn-small" href="/pos/rejects?sale={{ r.no }}" title="Record paper or film wasted on this sale, e.g. a reprint">Reject</a>{% endif %}
                         {% if r.status != 'voided' and user.role == 'admin' %}
                         <button type="button" class="btn btn-danger btn-small" data-void-type="{{ r.type }}" data-void-id="{{ r.id }}" data-void-no="{{ r.no }}">Void</button>
                         {% endif %}

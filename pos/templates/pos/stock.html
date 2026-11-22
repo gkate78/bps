@@ -127,7 +127,7 @@
         <label>To <input type="date" name="to_date" value="{{ to_date.isoformat() }}"></label>
         <button type="submit" class="btn btn-secondary btn-small">Show</button>
     </form>
-    <p class="muted small">Shop services in completed sales (not personal). Material cost is what the items used, at the cost per unit when sold; services whose items use no material show ₱0 cost.</p>
+    <p class="muted small">Shop services in completed sales (not personal). Material cost is what the items used, at the cost per unit when sold; services whose items use no material show ₱0 cost. Rejects are counted below the table, not in each service.</p>
     <table class="list">
         <thead><tr><th>Service</th><th class="num">Sales</th><th class="num">Material cost</th><th class="num">Profit</th></tr></thead>
         <tbody>
@@ -142,6 +142,7 @@
         {% endif %}
     </table>
     <p class="small">Spent on restocks in these dates: <strong>{{ report.restock_cents | peso }}</strong>.
+        {% if report.rejects %} Rejects: <strong>{{ report.rejects_cents | peso }}</strong> at cost ({% for label, cents in report.rejects.items() %}{{ label | lower }} {{ cents | peso }}{{ ", " if not loop.last }}{% endfor %}; <a href="/pos/rejects">see rejects</a>).{% endif %}
         {% if report.spoilage_cents %} Counts found {{ 'less' if report.spoilage_cents < 0 else 'more' }} stock than expected: <strong>{{ (report.spoilage_cents | abs) | peso }}</strong> at cost.{% endif %}</p>
 </section>
 
@@ -154,7 +155,7 @@
         <tr>
             <td>{{ mv.created_at.strftime("%m/%d %I:%M %p") }}</td>
             <td>{{ m.name if m else '?' }}</td>
-            <td>{{ {"sale": "Sold", "void": "Sale voided", "restock": "Restock", "count": "Count", "adjust": "Correction"}.get(mv.kind, mv.kind) }}</td>
+            <td>{{ {"sale": "Sold", "void": "Sale voided", "restock": "Restock", "count": "Count", "adjust": "Correction", "reject": "Reject"}.get(mv.kind, mv.kind) }}{% if mv.reason %} <span class="muted small">({{ reasons.get(mv.reason, mv.reason) | lower }})</span>{% endif %}</td>
             <td class="num">{{ '%+g' % (mv.qty | round(2)) }}</td>
             <td class="num">{{ '%g' % (mv.stock_after | round(2)) }}</td>
             <td class="num">{{ mv.cost_cents | peso if mv.cost_cents else '' }}</td>

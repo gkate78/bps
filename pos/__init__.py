@@ -47,13 +47,14 @@ def register_pos(app: FastAPI) -> None:
     from pos.routes.eod_routes import router as eod_router
     from pos.routes.register_routes import router as register_router
     from pos.routes.settings_routes import router as settings_router
-    from pos.routes.stock_routes import router as stock_router
+    from pos.routes.stock_routes import rejects_router, router as stock_router
 
     app.mount("/pos/static", StaticFiles(directory=str(Path(__file__).parent / "static" / "pos")), name="pos_static")
     app.include_router(register_router)
     app.include_router(eod_router)
     app.include_router(settings_router)
     app.include_router(stock_router)
+    app.include_router(rejects_router)
 
     # BPS pages show the Bills / Shop switch when the register is on.
     for bps_templates in (bps_auth_templates, bps_bill_templates):
