@@ -35,7 +35,7 @@ def set_up(shop):
     item(shop, SUPPLIES, "SHORT BOND PAPER", "2")
     item(shop, ids()["PRINTING"], "A4 PHOTO PRINT", "60")
     r = shop.client.post("/pos/stock/set-up")
-    assert "9 materials added, 5 items linked" in r.text
+    assert "12 materials added, 5 items linked" in r.text
 
 
 def test_suggested_materials():
@@ -44,6 +44,9 @@ def test_suggested_materials():
     assert suggested_material("PRINTING", "A4 PHOTO PRINT") == "A4 PHOTO PAPER" and suggested_material("PRINTING", "A4 VELLUM 300 GSM") is None
     assert suggested_use("ID PICTURE", "PACKAGE 2 - 4 PCS 2X2 4 PCS 1X1") == ("A4 PHOTO PAPER", 1 / 3)
     assert suggested_use("ID PICTURE", "PDS") == ("A4 PHOTO PAPER", 1 / 3)
+    assert suggested_use("PRINTING", "WALLET SIZE PHOTO") == ("3R PHOTO PAPER", 1 / 2)
+    assert suggested_use("PRINTING", "3R PHOTO") == ("3R PHOTO PAPER", 1) and suggested_use("PRINTING", "4R PHOTO") == ("4R PHOTO PAPER", 1)
+    assert suggested_use("PRINTING", "5R PHOTO") == ("A4 PHOTO PAPER", 1 / 2)
     assert suggested_material("LAMINATION", "ID MEDIUM") == "LAMINATION FILM ID MEDIUM"
     assert suggested_material("SUPPLIES", "SHORT BOND PAPER") == "SHORT BOND PAPER"
     assert suggested_material("SCAN", "SHORT") is None and suggested_material("OTHER", "SOFT COPY") is None
@@ -156,3 +159,15 @@ def test_id_picture_packages_use_a_third_of_a_photo_paper(shop):
         assert s.exec(select(PosItemMaterial).where(PosItemMaterial.service_item_id == pds.id)).one().qty_per_unit == 0.5
     assert "fraction like 1/3" in shop.client.post(f"/pos/stock/uses/{pds.id}", data={"material_id": str(paper.id), "qty_per_unit": "1/0"}).text
     assert per_unit(1 / 3) == "1/3" and per_unit(0.5) == "1/2" and per_unit(2) == "2" and per_unit(0.3) == "0.3"
+
+
+def test_wallet_size_photos_use_half_a_3r_photo_paper(shop):
+    item(shop, ids()["PRINTING"], "WALLET SIZE PHOTO", "10")
+    item(shop, ids()["PRINTING"], "3R PHOTO", "15")
+    shop.client.post("/pos/stock/set-up")
+    paper = materials(shop)["3R PHOTO PAPER"]
+    shop.client.post("/pos/stock/count", data={"material_id": paper.id, "counted": "50"})
+    sell(shop, ids()["PRINTING"], "WALLET SIZE PHOTO", 4, "10")  # 2 wallets per sheet = 2 sheets
+    sell(shop, ids()["PRINTING"], "3R PHOTO", 1, "15")
+    assert round(materials(shop)["3R PHOTO PAPER"].stock_qty, 4) == 47
+    assert 'value="1/2"' in shop.client.get("/pos/stock").text

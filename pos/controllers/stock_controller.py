@@ -250,6 +250,11 @@ FILM = {"ID SMALL": "LAMINATION FILM ID SMALL", "ID MEDIUM": "LAMINATION FILM ID
         "SHORT": "LAMINATION FILM SHORT", "LONG": "LAMINATION FILM LONG", "A4": "LAMINATION FILM A4"}
 PHOTO_PAPER = "A4 PHOTO PAPER"
 ID_PACKAGES_PER_SHEET = 3  # the owner prints 3 ID picture packages on one A4 photo paper
+PHOTO_3R = "3R PHOTO PAPER"
+WALLETS_PER_3R = 2  # the owner prints 2 wallet-size photos on one 3R photo paper
+PHOTO_4R = "4R PHOTO PAPER"
+PHOTO_5R = "5R PHOTO PAPER"  # out of stock for now: 5R photos are printed 2 on one A4 photo paper
+FIVE_R_PER_A4 = 2
 NOT_BOND = ("PHOTO", "VELLUM", "GSM", "STICKER", "CARD")
 
 
@@ -265,6 +270,14 @@ def suggested_use(service: str, item: str) -> Optional[tuple[str, float]]:
     if service in ("XEROX", "PRINTING"):
         if item.startswith("A4 PHOTO PRINT"):
             return PHOTO_PAPER, 1
+        if "WALLET" in item:
+            return PHOTO_3R, 1 / WALLETS_PER_3R
+        if item.startswith("3R PHOTO"):
+            return PHOTO_3R, 1
+        if item.startswith("4R PHOTO"):
+            return PHOTO_4R, 1
+        if item.startswith("5R PHOTO"):
+            return PHOTO_PAPER, 1 / FIVE_R_PER_A4
         if any(word in item for word in NOT_BOND):
             return None
         first = item.split()[0] if item.split() else ""
@@ -281,7 +294,7 @@ async def set_up_suggested(db: AsyncSession, user_id: int) -> tuple[int, int]:
     """Adds paper and lamination film materials and links pick list items that have no materials yet."""
     materials = {m.name: m for m in await list_materials(db)}
     created = 0
-    for name, unit in [(n, "SHEET") for n in PAPER.values()] + [(PHOTO_PAPER, "SHEET")] + [(n, "PC") for n in FILM.values()]:
+    for name, unit in [(n, "SHEET") for n in PAPER.values()] + [(PHOTO_PAPER, "SHEET"), (PHOTO_3R, "SHEET"), (PHOTO_4R, "SHEET"), (PHOTO_5R, "SHEET")] + [(n, "PC") for n in FILM.values()]:
         if name not in materials:
             last = (await db.execute(select(func.max(PosMaterial.sort_order)))).scalar() or 0
             material = PosMaterial(name=name, unit=unit, sort_order=last + 1)
