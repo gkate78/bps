@@ -9,7 +9,6 @@ General notes only; the detailed records (prices, fees, costs, live-data fixes) 
 - [ ] BPS-209 | Theme: Customer comms | Outcome: SMS/Viber confirmation with reference + posting ETA | Done when: message trigger is sent after submission (post-MVP)
 - [ ] BPS-211 | Theme: Import observability | Outcome: Batch-level import review and replay tools | Done when: admin can filter by `import_batch_id`, inspect row outcomes, and optionally re-run selected skipped rows | Progress: import results now list skipped/duplicate rows with reasons (BPS-216)
 
-- [ ] BPS-245 | Theme: Deployment | Outcome: Shop register and today's bills changes online on Dokploy | Done when: Dokploy deploys `feature/register-bills` (branch setting, so it can be switched back to `main`), `POS_ENABLED` is decided, it's checked online, and the branch is merged to `main`
 
 ## LATER
 - [ ] BPS-246 | Theme: Register consolidation | Outcome: Everything is rung up in the shop sale | Done when: staff use the sale for bills and GCash/Maya, the separate Bills payment and GCash / Maya tabs are removed, and bill reprints (Bills I entered today, BPS entry form) show the sale's payment (DEC-055, DEC-057)
@@ -89,3 +88,4 @@ General notes only; the detailed records (prices, fees, costs, live-data fixes) 
 - [x] BPS-273 | Shipped on: 2026-11-23 | Notes: Public docs generalized; detailed business records moved to a private repo; example fees and Settings-based tarpaulin figures instead of the shop's numbers in code and tests (DEC-080).
 - [x] BPS-274 | Shipped on: 2026-11-23 | Notes: Demo data can be loaded into an online copy: `make_demo_data.py --random-pins` gives the demo accounts new PINs, since the ones in the script are public.
 - [x] BPS-275 | Shipped on: 2026-11-23 | Notes: Demo register data: a pick list, materials stock with restocks and weekly counts, sales with bills, split and GCash/Maya payments and tarpaulins, rejects, and each day closed at End of day, all made up and made through the register's own code.
+- [x] BPS-245 | Shipped on: 2026-11-23 | Notes: Shop register, stock and today's bills changes online: the branch is merged to `main` and deployed, the register setting decided, and the database on a data volume that survives redeploys; the online copy runs on the made-up demo data.
