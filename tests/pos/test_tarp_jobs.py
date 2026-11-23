@@ -30,11 +30,15 @@ def test_tarp_sales_become_jobs_for_the_designer(shop):
     designer = shop.add_user(DESIGNER_PHONE, DESIGNER_PIN, "encoder", "DINO")
     shop.add_user(ENCODER_PHONE, ENCODER_PIN, "encoder", "ANA")
     tarp_sale(shop, "2X3", "300")  # before a designer is set: not assigned
-    set_designer(shop, designer.id)
+    assert jobs(shop)[0].designer_user_id is None
+    set_designer(shop, designer.id)  # ...until one is set
+    assert jobs(shop)[0].designer_user_id == designer.id
     sale = tarp_sale(shop, customer_name="JUAN DELA CRUZ")
     shop.client.post("/pos/api/sales", json={"lines": [{"kind": "service", "service_id": ids()["PRINTING"], "qty": 1, "unit_price": "3"}],
                                              "cash": "3"})  # no tarp: no job
     first, second = jobs(shop)
+    shop.client.post(f"/pos/tarp-jobs/{first.id}/assign", data={"designer": ""})  # the admin takes it off them
+    first = jobs(shop)[0]
     assert first.designer_user_id is None and second.designer_user_id == designer.id
     assert (second.sale_id, second.status) == (sale["id"], "layout")
 
@@ -95,6 +99,21 @@ def test_specs_typed_at_the_register_reach_the_designer(shop):
     shop.client.post("/pos/api/sales", json={"lines": [{"kind": "service", "service_id": ids()["PRINTING"], "qty": 1, "unit_price": "3"}],
                                              "cash": "3", "tarp_specs": "x"})
     assert len(jobs(shop)) == 1
+
+
+def test_setting_the_designer_gives_them_the_unassigned_open_jobs(shop):
+    designer = shop.add_user(DESIGNER_PHONE, DESIGNER_PIN, "encoder", "DINO")
+    other = shop.add_user(ENCODER_PHONE, ENCODER_PIN, "encoder", "ANA")
+    for _ in range(4):
+        tarp_sale(shop)
+    a, b, c, d = jobs(shop)
+    shop.client.post(f"/pos/tarp-jobs/{b.id}/assign", data={"designer": str(other.id)})  # already someone's: kept
+    shop.client.post(f"/pos/tarp-jobs/{c.id}/status", data={"status": "claimed"})      # claimed: left alone
+    shop.client.post(f"/pos/api/sales/{d.sale_id}/void", json={"reason": "WRONG SIZE", "admin_pin": ADMIN_PIN})  # voided: left alone
+    r = shop.client.post("/pos/settings/tarpaulin", data={"designer": str(designer.id)})
+    assert "1 unassigned tarp job given to the designer" in r.text
+    assert [j.designer_user_id for j in jobs(shop)] == [designer.id, other.id, None, None]
+    assert "Tarpaulin saved<" in shop.client.post("/pos/settings/tarpaulin", data={"designer": str(designer.id)}).text  # nothing left
 
 
 def test_voided_sale_leaves_the_list(shop):

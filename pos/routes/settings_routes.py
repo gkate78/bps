@@ -120,11 +120,14 @@ async def save_tarpaulin(
     s.tarp_cost_sqft_cents, s.tarp_small_below_sqft, s.tarp_small_price_cents, s.tarp_small_cost_cents = cost, below, price, small
     s.tarp_designer_user_id = designer_id
     db.add(s)
+    # Open jobs no one has yet go to the designer too.
+    handed = await tarp.assign_unassigned(db, designer_id, user) if designer_id else 0
     add_audit(db, "settings", 1, "update_tarpaulin", user.id,
               {"cost_sqft_cents": cost, "small_below_sqft": below, "small_price_cents": price, "small_cost_cents": small,
                "designer_user_id": designer_id})
     await db.commit()
-    return _back(request, message="Tarpaulin saved", anchor="tarpaulin")
+    note = f"; {handed} unassigned tarp job{'' if handed == 1 else 's'} given to the designer" if handed else ""
+    return _back(request, message=f"Tarpaulin saved{note}", anchor="tarpaulin")
 
 
 @router.post("/gsheets", include_in_schema=False)

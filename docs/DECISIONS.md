@@ -84,7 +84,7 @@ fee" or "a set price", not the amount.
 - **DEC-075**: Each service has a pick list of usual items and prices; the register suggests them first.
 - **DEC-077**: Materials stock: pick list items use materials per unit (fractions allowed); sales take stock off, voids put it back, restocks average the cost, counts correct it; low-stock warnings; cost and profit per service.
 - **DEC-078**: Rejects (misprints, paper jams, customer reprints with their sale) are recorded by cashiers, taken off stock at once and reported at cost by reason.
-- **DEC-081**: Tarpaulin jobs: each sale with a tarpaulin goes to the designer set in Settings with the customer's specs typed at the register, who sees only their own jobs and marks the steps (layout, customer approval, sent to print shop, ready, claimed); claimed needs the balance paid; admins see all and reassign.
+- **DEC-081**: Tarpaulin jobs: each sale with a tarpaulin goes to the designer set in Settings with the customer's specs typed at the register, who sees only their own jobs and marks the steps (layout, customer approval, sent to print shop, ready, claimed); claimed needs the balance paid; admins see all and reassign; setting the designer gives them the open unassigned jobs.
 - **DEC-079**: Tarpaulins printed by another shop: the printing cost a sq ft and small-tarp price and cost are set in Settings; the cost is tracked as a never-counted material so profit shows correctly.
 
 ## Repository

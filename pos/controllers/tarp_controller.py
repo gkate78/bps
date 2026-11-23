@@ -163,6 +163,22 @@ async def assign(db: AsyncSession, job_id: int, designer_id: Optional[int], user
     return job
 
 
+async def assign_unassigned(db: AsyncSession, designer_id: int, user: User) -> int:
+    """When a designer is set in Settings, the open jobs no one has yet go to them (not committed here)."""
+    query = (
+        select(PosTarpJob).join(PosSale, PosSale.id == PosTarpJob.sale_id)
+        .where(PosTarpJob.designer_user_id.is_(None), PosTarpJob.status != "claimed", PosSale.status != "voided")
+    )
+    jobs = (await db.execute(query)).scalars().all()
+    now = datetime.now()
+    for job in jobs:
+        job.designer_user_id, job.updated_at = designer_id, now
+        db.add(job)
+    if jobs:
+        add_audit(db, "tarp_job", 0, "assign_unassigned", user.id, {"designer_user_id": designer_id, "jobs": [j.id for j in jobs]})
+    return len(jobs)
+
+
 async def open_count(db: AsyncSession, user: User) -> int:
     from sqlalchemy import func
 
