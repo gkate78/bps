@@ -458,6 +458,10 @@ async def create_sale(db: AsyncSession, data: SaleIn, user: User) -> PosSale:
 
     await db.flush()
     await stock_controller.use_for_sale(db, sale, lines)
+    # A tarpaulin goes to the designer's pending jobs.
+    from pos.controllers import tarp_controller
+
+    await tarp_controller.add_for_sale(db, sale, lines, data.tarp_specs)
     add_audit(
         db, "sale", sale.id, "create", user.id,
         {"sale_no": sale.sale_no, "total_cents": total, "paid_cents": due, "job_order": data.is_job_order, "personal": data.personal},

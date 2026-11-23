@@ -1,0 +1,99 @@
+{% extends "pos/base.html" %}
+{% block title %}Tarp jobs{% endblock %}
+{% block content %}
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+<section class="panel">
+    <form method="get" action="/pos/tarp-jobs" class="filters">
+        <label>Show
+            <select name="show">
+                <option value="open" {{ 'selected' if show == 'open' }}>Not yet claimed</option>
+                <option value="claimed" {{ 'selected' if show == 'claimed' }}>Claimed</option>
+                <option value="all" {{ 'selected' if show == 'all' }}>All</option>
+            </select>
+        </label>
+        {% if user.role == 'admin' %}
+        <label>Designer
+            <select name="designer">
+                <option value="">Everyone</option>
+                <option value="0" {{ 'selected' if designer == '0' }}>Not assigned</option>
+                {% for u in staff %}<option value="{{ u.id }}" {{ 'selected' if designer == u.id | string }}>{{ u.first_name }} {{ u.last_name }}</option>{% endfor %}
+            </select>
+        </label>
+        {% endif %}
+        <button type="submit" class="btn btn-primary">Show</button>
+    </form>
+    <p class="muted small">
+        {% if user.role == 'admin' %}Every sale with a tarpaulin is a job, given to the designer set in <a href="/pos/settings#tarpaulin">Settings → Tarpaulin</a>. You can reassign each job.
+        {% else %}The tarpaulins assigned to you.{% endif %}
+        The customer's specs are typed at the register when the tarpaulin is rung up, and can be added or corrected here.
+        Steps: {{ steps.values() | join(' → ') }}. A job with a balance is claimed after the balance is collected in <a href="/pos/jobs">Job orders</a>.
+    </p>
+</section>
+
+<section class="panel">
+    <h2>{{ rows | length }} tarp job{{ '' if rows | length == 1 else 's' }}</h2>
+    <div class="table-wrap">
+        <table class="list">
+            <thead>
+                <tr><th>No.</th><th>Customer</th><th>Tarpaulin</th><th>Ready by</th><th>Payment</th>
+                    {% if user.role == 'admin' %}<th>Designer</th>{% endif %}<th>Step</th><th>Customer specs</th><th>Notes</th></tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}{% set j = r.job %}{% set s = r.sale %}
+                <tr>
+                    <td class="nowrap">{{ s.sale_no }}<div class="muted small">{{ s.created_at.strftime("%m/%d/%Y %I:%M %p") }}</div></td>
+                    <td>{{ s.customer_name or '—' }}{% if s.customer_phone %}<div class="muted small">{{ s.customer_phone }}</div>{% endif %}</td>
+                    <td><strong>{{ r.tarps }}</strong>{% if r.others %}<div class="muted small">With: {{ r.others }}</div>{% endif %}</td>
+                    <td class="nowrap {{ 'late' if r.late }}">{{ s.promised_date.strftime("%m/%d/%Y") if s.promised_date else '—' }}</td>
+                    <td class="nowrap">{% if s.balance_cents > 0 %}Balance <strong>{{ s.balance_cents | peso }}</strong>{% else %}<span class="muted">Paid</span>{% endif %}</td>
+                    {% if user.role == 'admin' %}
+                    <td>
+                        <form method="post" action="/pos/tarp-jobs/{{ j.id }}/assign" class="inline-row">
+                            <input type="hidden" name="back" value="{{ back }}">
+                            <select name="designer" aria-label="Designer" onchange="this.form.submit()">
+                                <option value="">Not assigned</option>
+                                {% for u in staff %}<option value="{{ u.id }}" {{ 'selected' if j.designer_user_id == u.id }}>{{ u.first_name }}</option>{% endfor %}
+                            </select>
+                            <noscript><button type="submit" class="btn btn-ghost btn-small">Assign</button></noscript>
+                        </form>
+                    </td>
+                    {% endif %}
+                    <td>
+                        <span class="status status-{{ 'completed' if j.status == 'claimed' else ('ready' if j.status == 'ready' else 'in_progress') }}">{{ steps[j.status] }}</span>
+                        <form method="post" action="/pos/tarp-jobs/{{ j.id }}/status" class="inline-row">
+                            <input type="hidden" name="back" value="{{ back }}">
+                            <select name="status" aria-label="Step">
+                                {% for key, label in steps.items() %}<option value="{{ key }}" {{ 'selected' if j.status == key }}>{{ label }}</option>{% endfor %}
+                            </select>
+                            <button type="submit" class="btn btn-secondary btn-small">Save</button>
+                        </form>
+                    </td>
+                    <td class="specs">
+                        {% if j.specs %}<div style="white-space: pre-line">{{ j.specs }}</div>{% else %}<span class="muted">None typed</span>{% endif %}
+                        <details>
+                            <summary class="small">{{ 'Edit' if j.specs else 'Add' }}</summary>
+                            <form method="post" action="/pos/tarp-jobs/{{ j.id }}/specs" class="stack">
+                                <input type="hidden" name="back" value="{{ back }}">
+                                <textarea name="specs" rows="4" maxlength="1000" aria-label="Customer specs">{{ j.specs or '' }}</textarea>
+                                <button type="submit" class="btn btn-secondary btn-small">Save specs</button>
+                            </form>
+                        </details>
+                    </td>
+                    <td>
+                        <form method="post" action="/pos/tarp-jobs/{{ j.id }}/notes" class="inline-row">
+                            <input type="hidden" name="back" value="{{ back }}">
+                            <input type="text" name="notes" value="{{ j.notes or '' }}" maxlength="500" placeholder="e.g. layout sent to customer" aria-label="Notes">
+                            <button type="submit" class="btn btn-ghost btn-small">Save</button>
+                        </form>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="9" class="muted">No tarpaulin jobs here.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

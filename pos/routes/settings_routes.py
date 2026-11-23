@@ -5,6 +5,7 @@ from sqlmodel import delete, select
 
 from pos.auth_adapter import User, page_admin
 from pos.controllers import gsheets_controller as gsheets
+from pos.controllers import tarp_controller as tarp
 from pos.controllers.sale_controller import clean_text
 from pos.controllers.settings_controller import (
     add_audit,
@@ -59,6 +60,7 @@ async def settings_page(request: Request, user: User = Depends(page_admin), db: 
             "service_items": await _service_items(db),
             "networks": await list_networks(db),
             "wallets": await list_wallets(db),
+            "staff": await tarp.staff(db),
             "gsheets_script": gsheets.script_text(await _gsheets_password(db)),
             "message": flash.get("message"),
             "error": flash.get("error"),
@@ -95,6 +97,7 @@ async def save_tarpaulin(
     small_below_sqft: str = Form(""),
     small_price: str = Form(""),
     small_cost: str = Form(""),
+    designer: str = Form(""),
     user: User = Depends(page_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -110,11 +113,16 @@ async def save_tarpaulin(
         return _back(request, error="Small size must be a number of sq ft (e.g. 6 for 2x3)", anchor="tarpaulin")
     if min(cost, price, small) < 0 or not 0 <= below <= 1000:
         return _back(request, error="Use 0 or more", anchor="tarpaulin")
+    designer_id = int(designer) if designer.isdigit() else None
+    if designer_id and designer_id not in {u.id for u in await tarp.staff(db)}:
+        return _back(request, error="Choose a staff member as the designer", anchor="tarpaulin")
     s = await get_settings(db)
     s.tarp_cost_sqft_cents, s.tarp_small_below_sqft, s.tarp_small_price_cents, s.tarp_small_cost_cents = cost, below, price, small
+    s.tarp_designer_user_id = designer_id
     db.add(s)
     add_audit(db, "settings", 1, "update_tarpaulin", user.id,
-              {"cost_sqft_cents": cost, "small_below_sqft": below, "small_price_cents": price, "small_cost_cents": small})
+              {"cost_sqft_cents": cost, "small_below_sqft": below, "small_price_cents": price, "small_cost_cents": small,
+               "designer_user_id": designer_id})
     await db.commit()
     return _back(request, message="Tarpaulin saved", anchor="tarpaulin")
 

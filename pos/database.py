@@ -101,8 +101,10 @@ async def init_db() -> None:
                 ("tarp_small_below_sqft", "FLOAT NOT NULL DEFAULT 0"),
                 ("tarp_small_price_cents", "INTEGER NOT NULL DEFAULT 0"),
                 ("tarp_small_cost_cents", "INTEGER NOT NULL DEFAULT 0"),
+                ("tarp_designer_user_id", "INTEGER"),
             ),
         )
+        await _add_missing_columns(conn, "pos_tarp_jobs", (("specs", "VARCHAR(1000)"),))
         # Rejects (DEC-078): why stock was wasted.
         await _add_missing_columns(conn, "pos_stock_moves", (("reason", "VARCHAR(20)"),))
 

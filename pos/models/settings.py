@@ -40,6 +40,8 @@ class PosSettings(SQLModel, table=True):
     tarp_small_below_sqft: float = Field(default=0, nullable=False)
     tarp_small_price_cents: int = Field(default=0, nullable=False)
     tarp_small_cost_cents: int = Field(default=0, nullable=False)
+    # Who new tarpaulin jobs go to (a staff user id); admins can reassign each job.
+    tarp_designer_user_id: Optional[int] = Field(default=None)
 
     updated_at: datetime = Field(default_factory=datetime.now, nullable=False)
 

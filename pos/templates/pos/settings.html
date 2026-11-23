@@ -27,6 +27,12 @@
                 <label>Small price ₱ <input type="text" name="small_price" inputmode="decimal" value="{{ settings.tarp_small_price_cents | pesos_input }}"></label>
                 <label>Small cost ₱ <input type="text" name="small_cost" inputmode="decimal" value="{{ settings.tarp_small_cost_cents | pesos_input }}"></label>
             </div>
+            <label>Designer for new tarp jobs <span class="muted">(each sale with a tarpaulin goes to their <a href="/pos/tarp-jobs">Tarp jobs</a>)</span>
+                <select name="designer">
+                    <option value="">Not assigned</option>
+                    {% for u in staff %}<option value="{{ u.id }}" {{ 'selected' if settings.tarp_designer_user_id == u.id }}>{{ u.first_name }} {{ u.last_name }}</option>{% endfor %}
+                </select>
+            </label>
             <button type="submit" class="btn btn-primary">Save</button>
         </form>
     </section>

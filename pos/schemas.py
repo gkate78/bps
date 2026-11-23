@@ -46,6 +46,8 @@ class SaleIn(BaseModel):
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
     bir_invoice_no: Optional[str] = None
+    # A sale with a tarpaulin: what the customer wants (wording, colors, photos), for the designer's job.
+    tarp_specs: Optional[str] = None
     # Job order: pay only a down payment now, the balance when the job is done.
     is_job_order: bool = False
     down_payment: Optional[str] = None

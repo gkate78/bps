@@ -41,9 +41,9 @@ def test_backup_sends_every_tab_without_secrets(shop, monkeypatch):
     assert 'action="/pos/settings/gsheets/backup"' in r.text
 
     page = client.post("/pos/settings/gsheets/backup").text
-    assert "Backed up 13 tabs" in page and "1 pending bills to PAYMENT REFERENCES" in page
+    assert "Backed up 14 tabs" in page and "1 pending bills to PAYMENT REFERENCES" in page
     tabs = {p["tab"]: p for _, p in sent}
-    assert len(tabs) == 14 and all(url == URL for url, _ in sent)
+    assert len(tabs) == 15 and all(url == URL for url, _ in sent)
     pending = tabs["PAYMENT REFERENCES"]["rows"]
     assert len(pending) == 1 and pending[0][1:4] == ["1234567890", "MERALCO", 1000.0]
     assert len(pending[0]) == 6  # the test bill has no BPS reference (index 5)

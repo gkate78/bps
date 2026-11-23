@@ -39,6 +39,7 @@ TABLES = (
     ("SHOP SALES", "SELECT * FROM pos_sales ORDER BY id"),
     ("SHOP SALE LINES", "SELECT * FROM pos_sale_lines ORDER BY id"),
     ("JOB ORDER PAYMENTS", "SELECT * FROM pos_sale_payments ORDER BY id"),
+    ("TARPAULIN JOBS", "SELECT * FROM pos_tarp_jobs ORDER BY id"),
     ("GCASH MAYA CASH-IN OUT", "SELECT * FROM pos_wallet_txns ORDER BY id"),
     ("END OF DAY", "SELECT * FROM pos_day_closes ORDER BY day"),
     ("END OF DAY GCASH MAYA", "SELECT * FROM pos_day_wallets ORDER BY day, wallet_id"),

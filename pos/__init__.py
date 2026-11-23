@@ -21,6 +21,7 @@ DATABASE_VIEW_TABLES = {
     "pos_sales": "Shop Sales",
     "pos_sale_lines": "Shop Sale Lines",
     "pos_sale_payments": "Shop Job Order Payments",
+    "pos_tarp_jobs": "Tarpaulin Jobs",
     "pos_wallet_txns": "Shop GCash/Maya Cash-in/out",
     "pos_parked_txns": "Shop Parked (unpaid)",
     "pos_drafts": "Shop Unsaved (being rung up)",
@@ -48,6 +49,7 @@ def register_pos(app: FastAPI) -> None:
     from pos.routes.register_routes import router as register_router
     from pos.routes.settings_routes import router as settings_router
     from pos.routes.stock_routes import rejects_router, router as stock_router
+    from pos.routes.tarp_routes import router as tarp_router
 
     app.mount("/pos/static", StaticFiles(directory=str(Path(__file__).parent / "static" / "pos")), name="pos_static")
     app.include_router(register_router)
@@ -55,6 +57,7 @@ def register_pos(app: FastAPI) -> None:
     app.include_router(settings_router)
     app.include_router(stock_router)
     app.include_router(rejects_router)
+    app.include_router(tarp_router)
 
     # BPS pages show the Bills / Shop switch when the register is on.
     for bps_templates in (bps_auth_templates, bps_bill_templates):

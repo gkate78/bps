@@ -612,6 +612,8 @@
         return cart.reduce((sum, line) => sum + lineTotal(line), 0);
     }
 
+    const hasTarp = () => cart.some((line) => line.kind === "service" && (line.name || "").toUpperCase() === "TARPAULIN");
+
     function renderCart() {
         const body = $("cartBody");
         if (!cart.length) {
@@ -647,6 +649,8 @@
         window.dispatchEvent(new Event("pos:cart-changed"));
         renderCashInRefs();
         updateJob();
+        // A tarpaulin in the cart: ask what the customer wants, for the designer (Tarp jobs).
+        $("tarpField").hidden = !hasTarp();
         updateChange();
         updatePayment();
     }
@@ -852,7 +856,7 @@
         const loadDefault = document.querySelector('input[name="load_wallet"][data-default]');
         if (loadDefault) loadDefault.checked = true;
         if ($("jobField")) $("jobField").hidden = false;
-        ["cashIn", "payRef", "paySent", "payMobile", "custName", "custPhone", "birNo", "downPayment", "promisedDate"].forEach((id) => ($(id).value = ""));
+        ["cashIn", "payRef", "paySent", "payMobile", "custName", "custPhone", "birNo", "downPayment", "promisedDate", "tarpSpecs"].forEach((id) => ($(id).value = ""));
         $("payCashOut").hidden = true;
         $("payMobileField").hidden = true;
         document.querySelector('input[name="pay"][value="cash"]').checked = true;
@@ -938,6 +942,7 @@
                 customer_name: $("custName").value,
                 customer_phone: $("custPhone").value,
                 bir_invoice_no: $("birNo").value,
+                tarp_specs: hasTarp() ? $("tarpSpecs").value : null,
                 is_job_order: isJob(),
                 down_payment: isJob() ? $("downPayment").value : null,
                 promised_date: isJob() && $("promisedDate").value ? $("promisedDate").value : null,
@@ -1150,7 +1155,7 @@
     $("walletForm").addEventListener("submit", (event) => event.preventDefault());
 
     // ---------- Parked: on hold, not paid, while another customer is served ----------
-    const SALE_FIELDS = ["custName", "custPhone", "birNo", "downPayment", "promisedDate", "cashIn", "payRef", "paySent", "splitAmount", "splitRef"];
+    const SALE_FIELDS = ["custName", "custPhone", "birNo", "downPayment", "promisedDate", "tarpSpecs", "cashIn", "payRef", "paySent", "splitAmount", "splitRef"];
     const WALLET_FIELDS = ["wAmount", "wMobile", "wRef", "wName", "wTendered"];
     const radio = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value ?? null;
     const setRadio = (name, value) => {

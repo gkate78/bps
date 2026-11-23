@@ -10,7 +10,8 @@ Build a demo database with synthetic data for presentations and videos. No real 
 It writes:
   <dir>/bills_admin.db           users, biller rules, ~N days of bill payments, and two weeks of register data:
                                  a pick list, materials stock (restocks, counts), sales with bills, split and
-                                 GCash/Maya payments and tarpaulins, rejects, and each day closed at End of day
+                                 GCash/Maya payments and tarpaulins (with tarp jobs for BEN), rejects, and each
+                                 day closed at End of day
   <dir>/demo-import-messy.csv    a small CSV with the messy patterns of real spreadsheets, for the import demo
   <dir>/.env                     a session secret, so run_local.sh can start straight away
 
@@ -74,6 +75,14 @@ PICK_LIST = {
     "SCAN": [("SCAN TO EMAIL", 10, (1, 5), 3)],
     "TARPAULIN": [("2X3", 280, (1, 1), 0), ("3X4", 450, (1, 1), 0), ("4X6", 650, (1, 1), 0)],
 }
+# What customers asked for on their tarpaulins (made up).
+TARP_SPECS = [
+    "Happy 7th Birthday, Ana!\nPink and gold, princess theme\nPhoto sent on Messenger",
+    "Congratulations, Class of 2026!\nBlue and white, school logo (customer will email it)",
+    "FOR RENT - 0917 000 0000\nBig red letters, white background",
+    "Welcome Home, Tatay!\nFamily photo on Messenger; add the date at the bottom",
+    "Sari-sari store sign: ALING NENA'S STORE\nGreen, with a basket drawing",
+]
 # Opening stock bought two weeks ago: material -> (quantity, made-up total cost in pesos, low-stock level).
 # 4R paper is bought short so it shows as low; 5R paper isn't bought (out of stock, never counted).
 OPENING_STOCK = {
@@ -244,6 +253,7 @@ async def build_register(db, today: date, customers: list, rules: dict, admin, a
     from pos.models import PosMaterial, PosNetwork, PosSale, PosService, PosServiceItem, PosWallet, PosWalletTxn
     from pos.models.sale import PosSaleBill
     from pos.models.stock import PosStockMove
+    from pos.models.tarp_job import PosTarpJob
     from pos.schemas import BillIn, SaleIn, SaleLineIn, WalletTxnIn
 
     hours, hour_w = list(HOUR_WEIGHTS), list(HOUR_WEIGHTS.values())
@@ -266,6 +276,7 @@ async def build_register(db, today: date, customers: list, rules: dict, admin, a
         db.add(sale)
         await db.execute(update(PosStockMove).where(PosStockMove.sale_id == sale.id).values(created_at=when))
         await db.execute(update(PosWalletTxn).where(PosWalletTxn.sale_id == sale.id).values(created_at=when))
+        await db.execute(update(PosTarpJob).where(PosTarpJob.sale_id == sale.id).values(created_at=when, updated_at=when))
         bill_ids = select(PosSaleBill.bill_record_id).where(PosSaleBill.sale_id == sale.id)
         for bill in (await db.execute(select(BillRecord).where(BillRecord.id.in_(bill_ids)))).scalars().all():
             bill.txn_datetime, bill.txn_date, bill.created_at, bill.updated_at = when, when.date(), when, when
@@ -279,6 +290,7 @@ async def build_register(db, today: date, customers: list, rules: dict, admin, a
     settings.tarp_cost_sqft_cents, settings.tarp_small_below_sqft = 1_200, 6
     settings.tarp_small_price_cents, settings.tarp_small_cost_cents = 30_000, 9_000
     settings.default_starting_cash_cents = 500_000
+    settings.tarp_designer_user_id = ben.id  # BEN lays out the tarpaulins (Tarp jobs)
     db.add(settings)
     wallets = {w.name: w for w in (await db.execute(select(PosWallet))).scalars().all()}
     if "MAYA" in wallets:
@@ -355,7 +367,8 @@ async def build_register(db, today: date, customers: list, rules: dict, admin, a
             size, price = rng.choice([("2X3", 280), ("3X4", 450), ("4X6", 650), ("1X2", 300)])
             sale = await sales.create_sale(db, SaleIn(lines=[SaleLineIn(
                 kind="service", service_id=services["TARPAULIN"], description=size, unit_price=str(price))],
-                cash="1000", customer_name=f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}"), admin)
+                cash="1000", customer_name=f"{rng.choice(FIRST_NAMES)} {rng.choice(LAST_NAMES)}",
+                tarp_specs=rng.choice(TARP_SPECS)), admin)
             await date_sale(sale, at(day))
             await db.commit()
             counts["shop sales"] += 1
@@ -420,6 +433,19 @@ async def build_register(db, today: date, customers: list, rules: dict, admin, a
         db.add(report.close)
         await db.commit()
         counts["days closed"] += 1
+
+    # Tarp jobs: older ones claimed, the last few days' still moving through the steps.
+    tarp_jobs = (await db.execute(select(PosTarpJob).order_by(PosTarpJob.created_at))).scalars().all()
+    for job in tarp_jobs:
+        age = (today - job.created_at.date()).days
+        job.status = "claimed" if age > 4 else rng.choice(["layout", "approved", "sent", "ready"])
+        job.updated_at = job.created_at + timedelta(days=min(age, 2), hours=2)
+        job.claimed_at = job.updated_at if job.status == "claimed" else None
+        if job.status in ("approved", "sent"):
+            job.notes = rng.choice(["CUSTOMER OK'D THE LAYOUT ON MESSENGER", "BLUE BACKGROUND, BIG NAME", "PICKUP AFTER 3 PM"])
+        db.add(job)
+    await db.commit()
+    counts["tarp jobs"] = len(tarp_jobs)
     return counts
 
 
