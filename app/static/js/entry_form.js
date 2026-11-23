@@ -19,6 +19,14 @@ function round2(value) {
     return Math.round((parseNum(value) + Number.EPSILON) * 100) / 100;
 }
 
+/** Cash is collected to the whole peso: under 50 centavos rounds down, 50 and up rounds up
+ * (₱1,025.45 → ₱1,025, ₱1,025.50 → ₱1,026). GCash, Maya and bank payments stay exact. */
+function cashToCollect(total, paymentMethod) {
+    const method = String(paymentMethod || "").trim().toUpperCase();
+    if (method && method !== "CASH") return round2(total);
+    return Math.floor((Math.round(round2(total) * 100) + 50) / 100);
+}
+
 function formatMoney(value) {
     const num = round2(value);
     return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -58,7 +66,13 @@ const dom = {
     paymentReference: document.getElementById("paymentReference"),
     confirmationReference: document.getElementById("confirmationReference"),
     paymentMethod: document.getElementById("paymentMethod"),
+    personal: document.getElementById("personal"), // admins only
 };
+
+/** "" (customer), "paid" or "shop" (admin's own bill: no service charge; shop = paid from shop funds). */
+function personalMode() {
+    return dom.personal ? dom.personal.value : "";
+}
 
 function normalizedBillerKey(value) {
     return String(value || "").trim().toUpperCase();
@@ -92,11 +106,22 @@ function computeCharge(biller, billAmount) {
     return round2(Math.ceil((amount - 3300) / 1000) * 10 + 15);
 }
 
-function computeLateCharge(biller, dueDateValue) {
+// Late charge rule per biller: [fixed pesos, percent of the bill] (e.g. [0, 10] for a water district).
+function ruleLateCharge(biller, billAmt) {
+    const rule = BILLER_LATE_CHARGES[normalizedBillerKey(biller)];
+    const [fixed, rate] = Array.isArray(rule) ? rule : [rule || 0, 0];
+    return round2(Number(fixed || 0) + (Number(billAmt || 0) * Number(rate || 0)) / 100 + 1e-9);
+}
+
+// A late charge typed from the printed bill replaces the rule's (only while the bill is overdue).
+let lateTyped = false;
+
+function computeLateCharge(biller, dueDateValue, billAmt) {
     if (!isOverdue(dueDateValue)) {
         return 0;
     }
-    return round2(BILLER_LATE_CHARGES[normalizedBillerKey(biller)] || 0);
+    if (lateTyped && dom.amt2.value.trim() !== "") return round2(dom.amt2.value);
+    return ruleLateCharge(biller, billAmt);
 }
 
 /** Same rule as the server: numbers only, or letters and numbers (e.g. SSS), with an optional exact length. */
@@ -119,16 +144,36 @@ function recomputeFinancials() {
     const rawCash = (dom.cash.value || "").trim();
 
     const billAmt = round2(rawBillAmt);
-    const lateCharge = computeLateCharge(dom.biller.value, dom.dueDate.value);
-    const charge = computeCharge(dom.biller.value, billAmt);
+    const lateCharge = computeLateCharge(dom.biller.value, dom.dueDate.value, billAmt);
+    const charge = personalMode() ? 0 : computeCharge(dom.biller.value, billAmt);
     const total = round2(billAmt + lateCharge + charge);
     const cash = round2(rawCash);
-    const change = round2(cash - total);
+    const change = round2(cash - cashToCollect(total, dom.paymentMethod?.value));
 
-    dom.amt2.value = rawBillAmt || dom.dueDate.value ? lateCharge.toFixed(2) : "";
+    const overdue = isOverdue(dom.dueDate.value);
+    dom.amt2.readOnly = !overdue;
+    dom.amt2.title = overdue ? "Overdue: type the late charge printed on the bill if it differs" : "";
+    if (!overdue) lateTyped = false;
+    if (document.activeElement !== dom.amt2) { // don't rewrite it while it's being typed
+        dom.amt2.value = rawBillAmt || dom.dueDate.value ? lateCharge.toFixed(2) : "";
+    }
     dom.charge.value = rawBillAmt ? charge.toFixed(2) : "";
     dom.total.value = rawBillAmt ? total.toFixed(2) : "";
     dom.changeAmt.value = rawBillAmt && rawCash ? change.toFixed(2) : "";
+}
+
+/** Paid from shop funds: nothing is received, so there's no amount received or mode of payment. */
+function syncPersonalState() {
+    const fromShop = personalMode() === "shop";
+    dom.cash.disabled = fromShop;
+    if (dom.paymentMethod) dom.paymentMethod.disabled = fromShop;
+    if (fromShop) {
+        dom.cash.value = "";
+        if (dom.paymentMethod) dom.paymentMethod.value = "";
+    }
+    if (dom.confirmationReference) dom.confirmationReference.disabled = fromShop;
+    if (!fromShop) syncConfirmationReferenceState();
+    recomputeFinancials();
 }
 
 function updateCurrentDateTime() {
@@ -155,12 +200,14 @@ function syncConfirmationReferenceState() {
 
 function clearForm() {
     dom.form.reset();
+    lateTyped = false;
     dom.saveStatus.textContent = "";
     dom.printReceiptBtn.disabled = true;
     lastSavedRecordId = null;
-    syncConfirmationReferenceState();
+    const nextShopSaleBtn = document.getElementById("nextShopSaleBtn");
+    if (nextShopSaleBtn) nextShopSaleBtn.disabled = true;
+    syncPersonalState();
     updateCurrentDateTime();
-    recomputeFinancials();
 }
 
 function renderAccountOptions(items) {
@@ -252,8 +299,7 @@ async function lookupAccountDetails() {
 
 function payloadFromForm() {
     [dom.account, dom.biller, dom.customerName, dom.cpNumber].forEach(setUppercaseInput);
-    syncConfirmationReferenceState();
-    recomputeFinancials();
+    syncPersonalState();
     return {
         txn_datetime: toLocalISOString(),
         account: dom.account.value.trim(),
@@ -262,6 +308,7 @@ function payloadFromForm() {
         cp_number: dom.cpNumber.value.trim(),
         bill_amt: round2(dom.billAmt.value),
         late_charge: round2(dom.amt2.value),
+        late_charge_typed: lateTyped && isOverdue(dom.dueDate.value) ? round2(dom.amt2.value) : null,
         charge: round2(dom.charge.value),
         total: round2(dom.total.value),
         cash: round2(dom.cash.value),
@@ -279,6 +326,7 @@ function payloadFromForm() {
             dom.paymentMethod && !dom.paymentMethod.disabled
                 ? (dom.paymentMethod.value || null)
                 : null,
+        personal: personalMode() || null,
     };
 }
 
@@ -308,8 +356,14 @@ function validatePayload(payload) {
         alert("BILL AMOUNT IS REQUIRED");
         return false;
     }
-    if (payload.cash < payload.total) {
-        alert("AMOUNT RECEIVED MUST BE GREATER THAN OR EQUAL TO TOTAL");
+    if (payload.personal !== "shop" && !payload.payment_method) {
+        alert("MODE OF PAYMENT IS REQUIRED");
+        dom.paymentMethod?.focus();
+        return false;
+    }
+    const toCollect = cashToCollect(payload.total, payload.payment_method);
+    if (payload.personal !== "shop" && payload.cash < toCollect) {
+        alert(`AMOUNT RECEIVED MUST BE AT LEAST ${formatMoney(toCollect)}`);
         return false;
     }
     return true;
@@ -330,6 +384,12 @@ function confirmDetails(payload) {
         ["AMOUNT RECEIVED", formatMoney(payload.cash)],
         ["CHANGE", formatMoney(payload.change_amt)],
     ];
+    if (payload.personal) {
+        rows.unshift(["TYPE", payload.personal === "shop" ? "PERSONAL, FROM SHOP FUNDS" : "PERSONAL, NO SERVICE CHARGE"]);
+    }
+    if (payload.personal === "shop") {
+        rows.splice(-2); // nothing received, no change
+    }
 
     dom.confirmSummary.innerHTML = rows
         .map(
@@ -398,6 +458,13 @@ async function saveEntry(event) {
     const saved = await response.json();
     lastSavedRecordId = saved.id;
     dom.printReceiptBtn.disabled = false;
+    const nextShopSaleBtn = document.getElementById("nextShopSaleBtn");
+    if (nextShopSaleBtn) {
+        // A separate shop transaction; only the customer's name and phone carry over.
+        const params = new URLSearchParams({ customer_name: payload.customer_name || "", customer_phone: payload.cp_number || "" });
+        nextShopSaleBtn.dataset.href = `/pos?${params}`;
+        nextShopSaleBtn.disabled = false;
+    }
     dom.saveStatus.textContent = "SAVED SUCCESSFULLY";
     loadMyTransactions();
 }
@@ -442,12 +509,22 @@ dom.biller.addEventListener("change", () => fetchKnownAccounts({ query: dom.acco
 if (dom.paymentMethod) {
     dom.paymentMethod.addEventListener("input", syncConfirmationReferenceState);
     dom.paymentMethod.addEventListener("change", syncConfirmationReferenceState);
+    dom.paymentMethod.addEventListener("change", recomputeFinancials);
+}
+if (dom.personal) {
+    dom.personal.addEventListener("change", syncPersonalState);
 }
 
 [dom.biller, dom.billAmt, dom.cash, dom.dueDate].forEach((el) => {
     el.addEventListener("input", recomputeFinancials);
     el.addEventListener("change", recomputeFinancials);
 });
+dom.amt2.addEventListener("input", () => {
+    if (dom.amt2.readOnly) return;
+    lateTyped = dom.amt2.value.trim() !== ""; // emptied: back to the biller rule's
+    recomputeFinancials();
+});
+dom.amt2.addEventListener("blur", recomputeFinancials);
 
 /* Lookup only when user leaves the account field (blur), not while typing */
 dom.account.addEventListener("blur", lookupAccountDetails);
@@ -704,7 +781,7 @@ async function saveBillerRule(event) {
             return;
         }
         BILLER_CHARGES[data.biller] = data.service_charge;
-        BILLER_LATE_CHARGES[data.biller] = data.late_charge;
+        BILLER_LATE_CHARGES[data.biller] = [data.late_charge, data.late_charge_rate || 0];
         if (data.account_digits) BILLER_ACCOUNT_DIGITS[data.biller] = data.account_digits;
         BILLER_ACCOUNT_FORMATS[data.biller] = data.account_format;
         addBillerOption(data.biller);
@@ -739,3 +816,8 @@ if (ruleDialog.dialog) {
         }
     });
 }
+
+document.getElementById("nextShopSaleBtn")?.addEventListener("click", (event) => {
+    const href = event.currentTarget.dataset.href;
+    if (href) window.location.href = href;
+});

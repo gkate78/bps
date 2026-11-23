@@ -1,0 +1,192 @@
+{% extends "pos/base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+<div class="grid2">
+    <section class="panel" id="business">
+        <h2>Register and receipt</h2>
+        <p class="muted small">Business name, address, phone and TIN on shop receipts come from <a href="/admin/settings">BPS Admin Settings</a>. Staff accounts are managed in BPS too.</p>
+        <form method="post" action="/pos/settings/business" class="stack">
+            <label>Receipt footer <input type="text" name="receipt_footer" value="{{ settings.receipt_footer }}" maxlength="255"></label>
+            <label>Usual starting cash ₱ <span class="muted">(filled in on End of day; can be changed per day)</span>
+                <input type="text" name="default_starting_cash" inputmode="decimal" value="{{ settings.default_starting_cash_cents | pesos_input }}">
+            </label>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    </section>
+
+    <section class="panel" id="tarpaulin">
+        <h2>Tarpaulin</h2>
+        <p class="muted small">For tarps printed by another shop. The cost a sq ft is used for the TARPAULIN (SENT OUT) material that Stock's set-up adds (change it there afterwards). Small tarps: a size typed at the register below this many sq ft is suggested at the small price, and costs the small cost. 0 = not used.</p>
+        <form method="post" action="/pos/settings/tarpaulin" class="stack">
+            <label>Printing cost a sq ft ₱ <input type="text" name="cost_sqft" inputmode="decimal" value="{{ settings.tarp_cost_sqft_cents | pesos_input }}"></label>
+            <div class="row3">
+                <label>Small: below sq ft <input type="text" name="small_below_sqft" inputmode="decimal" value="{{ '%g' % settings.tarp_small_below_sqft }}"></label>
+                <label>Small price ₱ <input type="text" name="small_price" inputmode="decimal" value="{{ settings.tarp_small_price_cents | pesos_input }}"></label>
+                <label>Small cost ₱ <input type="text" name="small_cost" inputmode="decimal" value="{{ settings.tarp_small_cost_cents | pesos_input }}"></label>
+            </div>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+    </section>
+
+    <section class="panel" id="gsheets">
+        <h2>Backup to Google Sheets</h2>
+        <p class="muted small">A copy of bills, customers and shop records in your own Google Sheet, one tab each, for viewing from anywhere. PINs and settings are not sent. To restore BPS, use the database backups in <code>~/bps-data/backups</code>.</p>
+        {% if settings.gsheets_last_at %}
+        <div class="alert {{ 'alert-warn' if (settings.gsheets_last_result or '').startswith('FAILED') else 'alert-success' }}">
+            Last backup {{ settings.gsheets_last_at.strftime("%m/%d %I:%M %p") }}: {{ settings.gsheets_last_result }}
+        </div>
+        {% endif %}
+        <p class="muted small">Every backup replaces the tabs, so don't type in them. The <strong>PAYMENT REFERENCES</strong> tab lists the pending bills (txn date/time, account, biller, bill amount, due date, BPS reference); type the <strong>payment reference</strong> and <strong>channel</strong> beside them (e.g. from home). Backups keep what you type there, and <strong>Records → Get Sheet References</strong> puts them on the bills and marks the rows DONE. Script set up before 11/16/2026? Paste the script below again, then Deploy → Manage deployments → Edit → Version: <strong>New version</strong> → Deploy (the link stays the same).</p>
+        <details {{ 'open' if not settings.gsheets_url }}>
+            <summary>Set up (once)</summary>
+            <ol class="small">
+                <li>Make a new Google Sheet (e.g. "BPS BACKUP"). Keep it private.</li>
+                <li>In the sheet: <strong>Extensions → Apps Script</strong>. Delete what's there and paste the script below (it has your backup password in it). Save.</li>
+                <li><strong>Deploy → New deployment</strong> → type <strong>Web app</strong>, Execute as <strong>Me</strong>, Who has access <strong>Anyone</strong> → Deploy, and allow access when Google asks.</li>
+                <li>Copy the <strong>Web app URL</strong> into the box below and save, then press <strong>Back up now</strong>.</li>
+            </ol>
+            <textarea id="gsheetsScript" class="code" rows="8" readonly>{{ gsheets_script }}</textarea>
+            <button type="button" class="btn btn-secondary btn-small" data-copy="gsheetsScript">Copy script</button>
+        </details>
+        <form method="post" action="/pos/settings/gsheets" class="stack">
+            <label>Web app URL <input type="url" name="url" value="{{ settings.gsheets_url or '' }}" placeholder="https://script.google.com/macros/s/…/exec" maxlength="500"></label>
+            <label class="check"><input type="checkbox" name="after_eod" value="1" {{ 'checked' if settings.gsheets_after_eod }}> Back up automatically each time End of day is saved</label>
+            <button type="submit" class="btn btn-primary">Save</button>
+        </form>
+        {% if settings.gsheets_url %}
+        <form method="post" action="/pos/settings/gsheets/backup" class="inline-row" data-busy="Backing up…">
+            <button type="submit" class="btn btn-primary">Back up now</button>
+        </form>
+        {% endif %}
+    </section>
+
+    <section class="panel" id="fees">
+        <h2>Fees (loading and GCash/Maya)</h2>
+        <form method="post" action="/pos/settings/fees" class="stack">
+            <div class="row2">
+                <label>For every full ₱ <input type="text" name="block" inputmode="numeric" value="{{ settings.fee_block_cents | pesos_input }}" required></label>
+                <label>Fee ₱ <input type="text" name="block_fee" inputmode="numeric" value="{{ settings.fee_block_fee_cents | pesos_input }}" required></label>
+            </div>
+            <span class="field-label">Plus a fee on the remainder</span>
+            <table class="list" id="bracketTable">
+                <thead><tr><th>From ₱</th><th>To ₱</th><th>Fee ₱</th></tr></thead>
+                <tbody>
+                    {% for b in brackets %}
+                    <tr>
+                        <td><input type="text" name="b_min" inputmode="numeric" value="{{ b.min_cents | pesos_input }}"></td>
+                        <td><input type="text" name="b_max" inputmode="numeric" value="{{ b.max_cents | pesos_input }}"></td>
+                        <td><input type="text" name="b_fee" inputmode="numeric" value="{{ b.fee_cents | pesos_input }}"></td>
+                    </tr>
+                    {% endfor %}
+                    <tr>
+                        <td><input type="text" name="b_min" inputmode="numeric" placeholder="new"></td>
+                        <td><input type="text" name="b_max" inputmode="numeric"></td>
+                        <td><input type="text" name="b_fee" inputmode="numeric"></td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="muted small">Clear a row to remove it. Brackets must run from ₱1 to one peso below the block, with no gaps.</p>
+            <div class="row2">
+                <label>Small load: up to ₱ <input type="text" name="small_max" inputmode="numeric" value="{{ settings.load_small_max_cents | pesos_input }}" required></label>
+                <label>Small load fee ₱ <input type="text" name="small_fee" inputmode="numeric" value="{{ settings.load_small_fee_cents | pesos_input }}" required></label>
+            </div>
+            <label>Promo price rounds up to the next ₱ <input type="text" name="promo_round" inputmode="numeric" value="{{ settings.promo_round_cents | pesos_input }}" required></label>
+            <button type="submit" class="btn btn-primary">Save fees</button>
+        </form>
+    </section>
+
+    {% for list_name, title, items in [("services", "Services (register buttons)", services), ("networks", "Load networks", networks)] %}
+    <section class="panel" id="{{ list_name }}">
+        <h2>{{ title }}</h2>
+        <ul class="chips">
+            {% for item in items %}
+            <li class="{{ 'off' if not item.is_active }}">
+                {{ item.name }}
+                <form method="post" action="/pos/settings/{{ list_name }}/{{ item.id }}/rename" class="inline" data-rename="{{ item.name }}">
+                    <input type="hidden" name="name">
+                    <button type="submit" class="btn btn-ghost btn-small">Rename</button>
+                </form>
+                <form method="post" action="/pos/settings/{{ list_name }}/{{ item.id }}/toggle" class="inline">
+                    <button type="submit" class="btn btn-ghost btn-small">{{ 'Show' if not item.is_active else 'Hide' }}</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        <form method="post" action="/pos/settings/{{ list_name }}" class="inline-row">
+            <input type="text" name="name" placeholder="Add new" required>
+            <button type="submit" class="btn btn-primary">Add</button>
+        </form>
+    </section>
+    {% endfor %}
+
+    <section class="panel" id="service-items">
+        <h2>Service items (pick list)</h2>
+        <p class="muted small">What the register suggests first when you type a description, with its usual price, so the same item is always written the same way (e.g. <strong>SHORT B &amp; W</strong>, not B&amp;W or B &amp;W). The price can still be changed on each sale. Hidden items stay on past sales.</p>
+        {% for s in services %}
+        <details {{ 'open' if not service_items.get(s.id) }}>
+            <summary><strong>{{ s.name }}</strong> <span class="muted small">{{ service_items.get(s.id, []) | length }} item{{ '' if service_items.get(s.id, []) | length == 1 else 's' }}</span></summary>
+            <table class="items-table">
+                <tbody>
+                {% for item in service_items.get(s.id, []) %}
+                <tr class="{{ 'off' if not item.is_active }}">
+                    <td>
+                        <form method="post" action="/pos/settings/service-items/{{ item.id }}/save" class="inline-row">
+                            <input type="text" name="name" value="{{ item.name }}" maxlength="120" required aria-label="Item">
+                            <input type="text" name="price" value="{{ item.price_cents | pesos_input }}" inputmode="decimal" size="7" aria-label="Price ₱">
+                            <button type="submit" class="btn btn-ghost btn-small">Save</button>
+                        </form>
+                    </td>
+                    <td>
+                        <form method="post" action="/pos/settings/service-items/{{ item.id }}/toggle" class="inline">
+                            <button type="submit" class="btn btn-ghost btn-small">{{ 'Show' if not item.is_active else 'Hide' }}</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <form method="post" action="/pos/settings/service-items/add" class="inline-row">
+                <input type="hidden" name="service_id" value="{{ s.id }}">
+                <input type="text" name="name" placeholder="New {{ s.name | lower }} item" maxlength="120" required>
+                <input type="text" name="price" placeholder="Price ₱" inputmode="decimal" size="7">
+                <button type="submit" class="btn btn-primary btn-small">Add</button>
+            </form>
+        </details>
+        {% endfor %}
+    </section>
+
+    <section class="panel" id="wallets">
+        <h2>GCash / Maya accounts</h2>
+        <ul class="chips">
+            {% for w in wallets %}
+            <li class="{{ 'off' if not w.is_active }}">
+                {{ w.name }} <span class="muted small">{{ w.provider }}</span>
+                <form method="post" action="/pos/settings/wallets/{{ w.id }}/toggle" class="inline">
+                    <button type="submit" class="btn btn-ghost btn-small">{{ 'Show' if not w.is_active else 'Hide' }}</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        <span class="field-label">Load discount <span class="muted">(what the app takes off a load, e.g. 2%: a ₱99 load costs ₱97.02)</span></span>
+        <form method="post" action="/pos/settings/wallets/discounts" class="stack">
+            <div class="row3">
+                {% for w in wallets %}
+                <label>{{ w.name }} % <input type="text" name="discount_{{ w.id }}" inputmode="decimal" value="{{ '%g' % (w.load_discount_bp / 100) }}"></label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-secondary">Save discounts</button>
+        </form>
+        <form method="post" action="/pos/settings/wallets" class="inline-row">
+            <input type="text" name="name" placeholder="Account name" required>
+            <select name="provider"><option value="GCASH">GCash</option><option value="MAYA">Maya</option></select>
+            <button type="submit" class="btn btn-primary">Add</button>
+        </form>
+    </section>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ '/pos/static/js/settings.js' | v }}"></script>
+{% endblock %}

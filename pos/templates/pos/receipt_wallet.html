@@ -1,0 +1,34 @@
+{% extends "pos/receipt_base.html" %}
+{% block title %}{{ txn.txn_no }}{% endblock %}
+{% block body %}
+{% if txn.status == 'voided' %}<div class="void">VOIDED</div>{% endif %}
+<div class="info">{{ txn.wallet_name }} {{ 'CASH-IN' if txn.kind == 'cash_in' else 'CASH-OUT' }}</div>
+<div class="info">{{ txn.txn_no }}</div>
+<div class="info">{{ txn.created_at.strftime("%m/%d/%Y %I:%M %p") }}</div>
+<div class="info">{{ txn.customer_mobile }}</div>
+{% if txn.customer_name %}<div class="info">{{ txn.customer_name }}</div>{% endif %}
+<div class="info">REF {{ txn.reference }}</div>
+{% if txn.sale_id %}<div class="info">SENT WITH SALE S-{{ '%06d' % txn.sale_id }}</div>{% endif %}
+{% if txn.personal %}<div class="info">PERSONAL{{ ' · FROM SHOP FUNDS' if txn.personal == 'shop' }}</div>{% endif %}
+<div class="rule"></div>
+<div class="line"><span>AMOUNT</span><span>{{ txn.amount_cents | fmt }}</span></div>
+{% if txn.kind == 'cash_in' %}
+<div class="line"><span>SERVICE FEE</span><span>{{ txn.fee_cents | fmt }}</span></div>
+<div class="line total"><span>TOTAL</span><span>{{ txn.collect_cents | fmt }}</span></div>
+{% if txn.collect_cents %}
+<div class="line"><span>CASH</span><span>{{ txn.tendered_cents | fmt }}</span></div>
+<div class="line"><span>CHANGE</span><span>{{ txn.change_cents | fmt }}</span></div>
+{% endif %}
+{% else %}
+{% if txn.fee_mode == 'none' %}
+{% elif txn.fee_mode == 'paid_in_cash' %}
+<div class="line"><span>FEE PAID IN CASH</span><span>{{ txn.fee_cents | fmt }}</span></div>
+{% elif txn.fee_mode == 'included' %}
+<div class="line"><span>FEE (INCLUDED)</span><span>-{{ txn.fee_cents | fmt }}</span></div>
+{% else %}
+<div class="line"><span>LESS FEE</span><span>-{{ txn.fee_cents | fmt }}</span></div>
+{% endif %}
+<div class="line total"><span>CASH GIVEN</span><span>{{ txn.give_cents | fmt }}</span></div>
+{% endif %}
+{% if cashier %}<div class="meta">CASHIER: {{ cashier }}</div>{% endif %}
+{% endblock %}

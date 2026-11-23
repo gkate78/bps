@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.database import init_db
+from pos import pos_enabled, register_pos
 from app.routes.auth_routes import router as auth_router
 from app.routes.bill_routes import router as bills_router
 
@@ -15,6 +16,10 @@ from app.routes.bill_routes import router as bills_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    if pos_enabled():
+        from pos.database import init_db as init_pos_db
+
+        await init_pos_db()
     yield
 
 
@@ -38,6 +43,9 @@ app.add_middleware(SessionMiddleware, **session_kwargs)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(auth_router)
 app.include_router(bills_router)
+# Shop register (pos/): on for the shop computer (run_local.sh sets POS_ENABLED=1), off online.
+if pos_enabled():
+    register_pos(app)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

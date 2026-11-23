@@ -1,7 +1,7 @@
 import csv
 import io
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import quote_plus
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
@@ -12,6 +12,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.static_version import add_version_filter
 from app.auth import (
     get_current_user_optional,
     hash_pin,
@@ -29,6 +30,7 @@ from app.controllers.bill_controller import (
     get_biller_account_digits,
     create_record,
     datatable_query,
+    records_for_print,
     delete_record,
     find_latest_by_account,
     get_biller_charges,
@@ -48,7 +50,6 @@ from app.controllers.bill_controller import (
     normalize_cp_number,
     ImportFormatError,
     NoActiveBillerRulesError,
-    batch_mark_cash_and_export,
     reconciliation_report_summary,
     reconciliation_by_user_summary,
     reconciliation_summary,
@@ -57,11 +58,15 @@ from app.controllers.bill_controller import (
     upsert_customer_from_record,
 )
 from app.database import get_db
-from app.models import BillerRule, BusinessProfile, RecordAuditLog, UserAccount
+from app.models import BillerRule, BillRecord, BusinessProfile, RecordAuditLog, UserAccount
+from app.biller_categories import CATEGORIES as BILLER_CATEGORIES, guess_category, normalize_category
+from app.controllers import smwd_controller as smwd
+from app.controllers.bill_controller import _stamp_settled as stamp_settled
 from app.services import get_confirmation_service
 
 router = APIRouter(tags=["bills"])
 templates = Jinja2Templates(directory="app/templates")
+add_version_filter(templates)
 CUSTOMER_PAYMENT_METHODS = {"CASH", "GCASH", "MAYA", "BDO", "BPI"}
 PROCESSING_PAYMENT_METHODS = {"CASH", "GCASH", "MAYA", "BAYAD", "BPI_CC", "BPI"}
 
@@ -184,6 +189,10 @@ class RecordCreate(BaseModel):
     payment_reference: Optional[str] = None
     payment_method: Optional[str] = None
     payment_channel: Optional[str] = None
+    # Admin only: own bill without a service charge; "shop" = paid from shop funds.
+    personal: Optional[Literal["paid", "shop"]] = None
+    # The late charge printed on an overdue bill, typed by the cashier; replaces the biller rule's.
+    late_charge_typed: Optional[float] = Field(default=None, ge=0)
 
 
 class RecordUpdate(BaseModel):
@@ -371,6 +380,267 @@ async def admin_records_page(
     )
 
 
+SORT_LABELS = {
+    "txn_datetime": "txn date/time", "txn_date": "txn date", "account": "account", "biller": "biller",
+    "customer_name": "name", "bill_amt": "bill amount", "due_date": "due date", "reference": "BPS reference",
+    "payment_reference": "payment reference", "id": "ID",
+}
+
+
+def _sort_label(sort: Optional[str], sort_dir: Optional[str]) -> str:
+    if sort not in SORT_LABELS:
+        return ""
+    if sort == "due_date":
+        return "Sorted by due date, " + ("latest first" if sort_dir == "desc" else "soonest first")
+    if sort in ("txn_datetime", "txn_date", "id"):
+        return f"Sorted by {SORT_LABELS[sort]}, " + ("newest first" if sort_dir == "desc" else "oldest first")
+    return f"Sorted by {SORT_LABELS[sort]}" + (" (Z–A / high to low)" if sort_dir == "desc" else "")
+
+
+@router.get("/admin/records/print", response_class=HTMLResponse, include_in_schema=False)
+async def admin_records_print(
+    request: Request,
+    search: str = Query(default=""),
+    biller: Optional[str] = Query(default=None),
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    status: Optional[Literal["pending", "processed"]] = Query(default=None),
+    sort: Optional[str] = Query(default=None),
+    sort_dir: Optional[Literal["asc", "desc"]] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
+    """A printable list of the bills the Bills records table shows with these filters, with the totals."""
+    if not current_user:
+        return RedirectResponse(url="/auth/signin", status_code=303)
+    if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
+        return RedirectResponse(url="/customer/dashboard", status_code=303)
+    rows, totals = await records_for_print(
+        db, search=search.strip(), biller=biller or None, from_date=from_date, to_date=to_date,
+        due_status=due_status or None, due_from=due_from, due_to=due_to, status=status, sort=sort, sort_dir=sort_dir,
+    )
+    due_labels = {"overdue": "Overdue", "due_today": "Due today", "upcoming": "Upcoming",
+                  "urgent": "Urgent (overdue + 3 days)", "no_due_date": "No due date"}
+    scope = [
+        f"Biller {biller}" if biller else "",
+        f"Txn date {from_date or '…'} to {to_date or '…'}" if from_date or to_date else "",
+        f"Due status: {due_labels.get(due_status, due_status)}" if due_status else "",
+        f"Due date {due_from or '…'} to {due_to or '…'}" if due_from or due_to else "",
+        f"Status: {status.capitalize()}" if status else "",
+        f'Search "{search.strip()}"' if search.strip() else "",
+        _sort_label(sort, sort_dir),
+    ]
+    return templates.TemplateResponse(
+        "records_print.html",
+        {
+            "request": request,
+            "rows": rows,
+            "totals": totals,
+            "scope": [part for part in scope if part] or ["All records"],
+            "truncated": totals["count"] > len(rows),
+            "printed_at": datetime.now(),
+            "printed_by": " ".join(filter(None, [current_user.first_name, current_user.last_name])),
+        },
+    )
+
+
+def _sheet_account(account: str) -> str:
+    """Water district account numbers as printed on their bills: 20190593594 → 201905-93594."""
+    value = str(account or "").strip()
+    return f"{value[:6]}-{value[6:]}" if len(value) == 11 and value.isdigit() else value
+
+
+def _sheet_phone(phone: str) -> str:
+    digits = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    return f"{digits[:4]}-{digits[4:7]}-{digits[7:]}" if len(digits) == 11 else str(phone or "")
+
+
+@router.get("/admin/records/payment-sheet", response_class=HTMLResponse, include_in_schema=False)
+async def admin_records_payment_sheet(
+    request: Request,
+    search: str = Query(default=""),
+    biller: Optional[str] = Query(default=None),
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    status: Optional[Literal["pending", "processed"]] = Query(default=None),
+    sort: Optional[str] = Query(default=None),
+    sort_dir: Optional[Literal["asc", "desc"]] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Optional[UserAccount] = Depends(get_current_user_optional),
+):
+    """
+    The sheet taken to the biller to pay bills there in cash: one biller, each bill's original amount
+    (no late charge or service charge), a blank O.R. no. to write in, and the balance left from the cash
+    brought (the total rounded up to the next peso).
+    """
+    if not current_user:
+        return RedirectResponse(url="/auth/signin", status_code=303)
+    if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
+        return RedirectResponse(url="/customer/dashboard", status_code=303)
+    if not biller:
+        return HTMLResponse("<p>Choose a biller in the filters first: a payment sheet is for one biller.</p>", status_code=400)
+    rows, _ = await records_for_print(
+        db, search=search.strip(), biller=biller, from_date=from_date, to_date=to_date,
+        due_status=due_status or None, due_from=due_from, due_to=due_to, status=status, sort=sort, sort_dir=sort_dir,
+    )
+    amounts = [round(float(r.bill_amt or 0), 2) for r in rows]  # the bill's own amount, as the owner's sheet
+    total_cents = sum(int(round(a * 100)) for a in amounts)
+    cash_cents = -(-total_cents // 100) * 100  # rounded up to the next peso
+    balance = cash_cents
+    lines = []
+    for record, amount in zip(rows, amounts):
+        balance -= int(round(amount * 100))
+        lines.append({"account": _sheet_account(record.account), "name": record.customer_name, "amount": amount,
+                      "balance": balance / 100})
+    profile = (await db.execute(select(BusinessProfile).order_by(BusinessProfile.id).limit(1))).scalar_one_or_none()
+    return templates.TemplateResponse(
+        "records_payment_sheet.html",
+        {
+            "request": request,
+            "business": (profile.business_name if profile else "") or "",
+            "phone": _sheet_phone(profile.business_phone if profile else ""),
+            "biller": biller,
+            "day": date.today(),
+            "lines": lines,
+            "total": total_cents / 100,
+            "cash": cash_cents / 100,
+            "change": (cash_cents - total_cents) / 100,
+        },
+    )
+
+
+class SmwdApplyItem(BaseModel):
+    id: int
+    reference: str
+
+
+class SmwdApplyIn(BaseModel):
+    items: list[SmwdApplyItem] = Field(default_factory=list)
+    channel: Optional[Literal["CASH", "GCASH", "MAYA", "BAYAD", "BPI_CC", "BPI"]] = "CASH"
+
+
+@router.post("/api/records/smwd/preview")
+async def smwd_preview(
+    search: str = Query(default=""),
+    biller: Optional[str] = Query(default=None),
+    from_date: Optional[date] = Query(default=None),
+    to_date: Optional[date] = Query(default=None),
+    due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_owner_or_admin),
+):
+    """The pending water bills matching the filters, each with SMWD's latest payment. Nothing is saved."""
+    if not smwd.is_smwd_biller(biller):
+        raise HTTPException(status_code=400, detail=f"Choose the biller {smwd.BILLERS[0]} in the filters first.")
+    bills, totals = await records_for_print(
+        db, search=search.strip(), biller=biller, from_date=from_date, to_date=to_date,
+        due_status=due_status or None, due_from=due_from, due_to=due_to, status="pending",
+    )
+    items = await smwd.preview(db, bills)
+    return {"items": items, "pending": totals["count"], "checked": len(items), "limit": smwd.MAX_BILLS}
+
+
+@router.post("/api/records/smwd/apply")
+async def smwd_apply(
+    payload: SmwdApplyIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_owner_or_admin),
+):
+    """Put SMWD's references on the chosen bills that are still pending (others are left as they are)."""
+    applied, skipped = [], []
+    for item in payload.items:
+        record = (await db.execute(select(BillRecord).where(BillRecord.id == item.id))).scalar_one_or_none()
+        try:
+            reference = smwd.checked_reference(item.reference)
+        except smwd.SmwdError:
+            skipped.append(item.id)
+            continue
+        if not record or not smwd.is_smwd_biller(record.biller) or str(record.payment_reference or "").strip():
+            skipped.append(item.id)  # gone, not a water bill, or already has a reference
+            continue
+        record.payment_reference = reference
+        record.payment_channel = payload.channel
+        stamp_settled(record, had_payment_reference=False)
+        record.updated_at = datetime.utcnow()
+        db.add(record)
+        applied.append(record.reference)
+        await _log_record_audit(
+            db, action="smwd_reference", status="success", current_user=current_user, channel="web",
+            record_id=record.id, detail=f"reference={record.reference}, payment_reference={reference}, channel={payload.channel or '-'}",
+        )
+    await db.commit()
+    return {"applied": len(applied), "skipped": len(skipped)}
+
+
+class SheetRefItem(BaseModel):
+    row: int
+    bps_reference: str
+    payment_reference: str = ""
+    channel: str = ""
+
+
+class SheetRefRow(BaseModel):
+    row: int
+    bps_reference: str
+
+
+class SheetRefApplyIn(BaseModel):
+    items: list[SheetRefItem] = Field(default_factory=list)
+    done_rows: list[SheetRefRow] = Field(default_factory=list)
+    channel: Literal["CASH", "GCASH", "MAYA", "BAYAD", "BPI_CC", "BPI"] = "CASH"
+
+
+def _sheet_refs():
+    """The Google Sheet link lives in the shop register's settings, so this needs the register on."""
+    if not templates.env.globals.get("pos_enabled"):
+        raise HTTPException(status_code=404, detail="The Google Sheet backup is part of the shop register.")
+    from pos.controllers import gsheets_controller as gsheets
+    from pos.controllers import sheet_refs_controller as sheet_refs
+    return gsheets, sheet_refs
+
+
+@router.post("/api/records/sheet-references/preview")
+async def sheet_references_preview(
+    db: AsyncSession = Depends(get_db),
+    _: UserAccount = Depends(require_owner_or_admin),
+):
+    """The rows typed in the Google Sheet's PAYMENT REFERENCES tab, each checked against its bill. Nothing is saved."""
+    gsheets, sheet_refs = _sheet_refs()
+    try:
+        rows = await sheet_refs.read_rows(db)
+    except gsheets.BackupError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"items": await sheet_refs.preview(db, rows), "limit": sheet_refs.MAX_ROWS}
+
+
+@router.post("/api/records/sheet-references/apply")
+async def sheet_references_apply(
+    payload: SheetRefApplyIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_owner_or_admin),
+):
+    """Put the chosen rows' references on their bills that are still pending, then mark the rows in the sheet."""
+    _, sheet_refs = _sheet_refs()
+
+    async def log(record, reference, channel):
+        await _log_record_audit(
+            db, action="sheet_reference", status="success", current_user=current_user, channel="web",
+            record_id=record.id, detail=f"reference={record.reference}, payment_reference={reference}, channel={channel or '-'}",
+        )
+
+    return await sheet_refs.apply(
+        db, [i.model_dump() for i in payload.items], payload.channel, [d.model_dump() for d in payload.done_rows], log,
+    )
+
+
 @router.get("/admin/processing", include_in_schema=False)
 async def admin_processing_redirect(
     db: AsyncSession = Depends(get_db),
@@ -471,6 +741,15 @@ async def admin_database_page(
     query_sql = text(f"SELECT * FROM {selected_table}{order_sql} LIMIT :limit")
     data_rows = (await db.execute(query_sql, {"limit": limit})).fetchall()
     rows = [dict(row._mapping) for row in data_rows]
+    # Shop register amounts are whole centavos (`total_cents`); show them in pesos (`total`).
+    cents_columns = [name for name in display_columns if name.endswith("_cents")]
+    if cents_columns:
+        for row in rows:
+            for name in cents_columns:
+                value = row.get(name)
+                row[name[: -len("_cents")]] = value / 100 if value is not None else None
+        display_columns = [name[: -len("_cents")] if name in cents_columns else name for name in display_columns]
+        amount_columns = amount_columns + [name[: -len("_cents")] for name in cents_columns]
     if selected_table == "bill_records":
         for row in rows:
             if "amt2" in row:
@@ -594,6 +873,9 @@ async def get_records_kpis(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    status: Optional[Literal["pending", "processed"]] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
 ):
@@ -603,7 +885,18 @@ async def get_records_kpis(
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
     )
+
+
+def _usual_bayad_charge(rules) -> float:
+    """The Bayad system charge most active rules use: the default for a new rule (0 when there are none)."""
+    from collections import Counter
+
+    counts = Counter(round(float(r.system_charge_bayad or 0), 2) for r in rules if getattr(r, "is_active", False))
+    return counts.most_common(1)[0][0] if counts else 0.0
 
 
 @router.get("/admin/settings", response_class=HTMLResponse, include_in_schema=False)
@@ -622,6 +915,7 @@ async def admin_settings_page(
             "request": request,
             "current_user": current_user,
             "business_profile": profile,
+            "default_bayad_charge": _usual_bayad_charge(biller_rules),
             "receipt_show_headings": bool(profile.receipt_show_headings) if profile else True,
             "receipt_show_business_name": bool(profile.receipt_show_business_name) if profile else True,
             "receipt_show_business_address": bool(profile.receipt_show_business_address) if profile else True,
@@ -630,6 +924,7 @@ async def admin_settings_page(
             "receipt_show_business_tin": bool(profile.receipt_show_business_tin) if profile else False,
             "receipt_show_footer": bool(profile.receipt_show_footer) if profile else True,
             "biller_rules": biller_rules,
+            "biller_categories": BILLER_CATEGORIES,
             "error": request.query_params.get("error", "").strip(),
             "success": request.query_params.get("success", "").strip(),
             "show_welcome_guide": show_welcome_guide,
@@ -769,13 +1064,16 @@ async def upsert_biller_rule(
     system_charge_bpi_cc: float = Form(0),
     system_charge_bpi: float = Form(0),
     late_charge: float = Form(0),
+    late_charge_rate: float = Form(0),
     account_digits: Optional[int] = Form(None),
     account_format: str = Form("NUMERIC"),
+    category: str = Form(""),
     is_active: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
 ):
     cleaned_biller = biller.strip().upper()
+    category = normalize_category(category) or guess_category(cleaned_biller)
     account_format = normalize_account_format(account_format)
     if not cleaned_biller:
         return RedirectResponse(url="/admin/settings?error=Biller+name+is+required", status_code=303)
@@ -788,8 +1086,9 @@ async def upsert_biller_rule(
         or system_charge_bpi_cc < 0
         or system_charge_bpi < 0
         or late_charge < 0
+        or not 0 <= late_charge_rate <= 100
     ):
-        return RedirectResponse(url="/admin/settings?error=Charges+must+not+be+negative", status_code=303)
+        return RedirectResponse(url="/admin/settings?error=Charges+must+not+be+negative+(late+charge+%+up+to+100)", status_code=303)
     if account_digits is not None and account_digits <= 0:
         return RedirectResponse(url="/admin/settings?error=Account+digits+must+be+greater+than+zero", status_code=303)
     existing = await db.execute(select(BillerRule).where(BillerRule.biller == cleaned_biller))
@@ -805,8 +1104,10 @@ async def upsert_biller_rule(
             system_charge_bpi_cc=round(float(system_charge_bpi_cc), 2),
             system_charge_bpi=round(float(system_charge_bpi), 2),
             late_charge=round(float(late_charge), 2),
+            late_charge_rate=round(float(late_charge_rate), 4),
             account_digits=int(account_digits) if account_digits else None,
             account_format=account_format,
+            category=category,
             is_active=is_active is not None,
         )
     else:
@@ -818,8 +1119,10 @@ async def upsert_biller_rule(
         rule.system_charge_bpi_cc = round(float(system_charge_bpi_cc), 2)
         rule.system_charge_bpi = round(float(system_charge_bpi), 2)
         rule.late_charge = round(float(late_charge), 2)
+        rule.late_charge_rate = round(float(late_charge_rate), 4)
         rule.account_digits = int(account_digits) if account_digits else None
         rule.account_format = account_format
+        rule.category = category
         rule.is_active = is_active is not None
         rule.updated_at = datetime.utcnow()
 
@@ -851,10 +1154,11 @@ async def quick_add_biller_rule(
         biller=cleaned_biller,
         service_charge=round(float(payload.service_charge), 2),
         late_charge=round(float(payload.late_charge), 2),
-        # Same default as the Settings form; other system charges can be set later in Settings.
-        system_charge_bayad=0,
+        # Same default as the Settings form (what most rules use); other system charges can be set later in Settings.
+        system_charge_bayad=_usual_bayad_charge(await _list_biller_rules(db)),
         account_digits=payload.account_digits,
         account_format=normalize_account_format(payload.account_format),
+        category=guess_category(cleaned_biller),
         is_active=True,
     )
     db.add(rule)
@@ -875,6 +1179,7 @@ async def quick_add_biller_rule(
         "biller": rule.biller,
         "service_charge": rule.service_charge,
         "late_charge": rule.late_charge,
+        "late_charge_rate": rule.late_charge_rate or 0,
         "account_digits": rule.account_digits,
         "account_format": rule.account_format,
     }
@@ -927,6 +1232,12 @@ async def import_biller_rules_csv(
         system_charge_bpi_cc = _parse_float(row.get("BPI CREDIT CARD") or row.get("BPI_CC"))
         system_charge_bpi = _parse_float(row.get("BPI"))
         late_charge = _parse_float(row.get("LATE_CHARGE"))
+        # Optional column; when absent, existing rules keep their percent.
+        raw_rate = str(row.get("LATE_CHARGE_RATE") or "").strip()
+        late_charge_rate = _parse_float(raw_rate) if raw_rate else None
+        if raw_rate and (late_charge_rate is None or not 0 <= late_charge_rate <= 100):
+            skipped += 1
+            continue
         if (
             service_charge is None
             or system_charge_cash is None
@@ -959,6 +1270,8 @@ async def import_biller_rules_csv(
         is_active = _parse_active(row.get("IS_ACTIVE"))
         # Optional column; when absent, existing rules keep their account format.
         raw_format = str(row.get("ACCOUNT_FORMAT") or "").strip()
+        # Optional column; when absent or not a known category, new rules get a guess and existing ones keep theirs.
+        csv_category = normalize_category(row.get("CATEGORY"))
 
         existing = await db.execute(select(BillerRule).where(BillerRule.biller == biller))
         rule = existing.scalar_one_or_none()
@@ -973,8 +1286,10 @@ async def import_biller_rules_csv(
                 system_charge_bpi_cc=system_charge_bpi_cc,
                 system_charge_bpi=system_charge_bpi,
                 late_charge=late_charge,
+                late_charge_rate=late_charge_rate or 0,
                 account_digits=account_digits,
                 account_format=normalize_account_format(raw_format),
+                category=csv_category or guess_category(biller),
                 is_active=is_active,
             )
             created += 1
@@ -987,9 +1302,13 @@ async def import_biller_rules_csv(
             rule.system_charge_bpi_cc = system_charge_bpi_cc
             rule.system_charge_bpi = system_charge_bpi
             rule.late_charge = late_charge
+            if late_charge_rate is not None:
+                rule.late_charge_rate = late_charge_rate
             rule.account_digits = account_digits
             if raw_format:
                 rule.account_format = normalize_account_format(raw_format)
+            if csv_category:
+                rule.category = csv_category
             rule.is_active = is_active
             rule.updated_at = datetime.utcnow()
             updated += 1
@@ -1046,6 +1365,9 @@ async def entry_form_page(
         return RedirectResponse(url="/auth/signin", status_code=303)
     if current_user.role not in {"admin", "encoder"}:
         return RedirectResponse(url="/customer/dashboard", status_code=303)
+    if templates.env.globals.get("pos_enabled"):
+        # In the shop, bills are entered in the register's Bills tab (several bills, one payment).
+        return RedirectResponse(url="/pos?tab=bills", status_code=303)
 
     billers = await get_distinct_billers(db)
     show_admin_records_link = current_user.role == "admin" or await is_business_owner(
@@ -1074,6 +1396,9 @@ async def records_datatable(
     from_date: Optional[date] = Query(default=None),
     to_date: Optional[date] = Query(default=None),
     due_status: Optional[str] = Query(default=None),
+    due_from: Optional[date] = Query(default=None),
+    due_to: Optional[date] = Query(default=None),
+    status: Optional[Literal["pending", "processed"]] = Query(default=None),
     db: AsyncSession = Depends(get_db),
     _: UserAccount = Depends(require_owner_or_admin),
 ):
@@ -1104,6 +1429,9 @@ async def records_datatable(
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
     )
 
 
@@ -1312,46 +1640,6 @@ async def lookup_by_account(
     }
 
 
-@router.post("/api/records/batch/mark-cash-export")
-async def batch_mark_cash_export_endpoint(
-    biller: Optional[str] = Query(default=None),
-    from_date: Optional[date] = Query(default=None),
-    to_date: Optional[date] = Query(default=None),
-    due_status: Optional[str] = Query(default=None),
-    db: AsyncSession = Depends(get_db),
-    current_user: UserAccount = Depends(require_owner_or_admin),
-):
-    result = await batch_mark_cash_and_export(
-        db,
-        biller=biller,
-        from_date=from_date,
-        to_date=to_date,
-        due_status=due_status,
-    )
-    await _log_record_audit(
-        db,
-        action="batch_mark_cash_export",
-        status="success",
-        current_user=current_user,
-        channel="web",
-        detail=(
-            f"rows={result['row_count']}, updated={result['updated_count']}, "
-            f"biller={biller or '-'}, from={from_date or '-'}, to={to_date or '-'}, due_status={due_status or '-'}"
-        ),
-    )
-    today_tag = date.today().strftime("%Y%m%d")
-    filename = f"batch_cash_export_{today_tag}.csv"
-    return Response(
-        content=result["csv_bytes"],
-        media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
-            "X-Updated-Count": str(result["updated_count"]),
-            "X-Row-Count": str(result["row_count"]),
-        },
-    )
-
-
 @router.get("/api/records/mine")
 async def get_my_transactions(
     from_date: Optional[date] = Query(default=None),
@@ -1384,25 +1672,61 @@ async def receipt_page(
     current_user: UserAccount = Depends(require_data_entry_access),
 ):
     record = await get_record(db, record_id)
+    return await _receipts_response(request, db, current_user, [record])
+
+
+@router.get("/api/receipts/bills", response_class=HTMLResponse)
+async def bills_receipt_page(
+    request: Request,
+    ids: str = Query(..., description="Bill record ids, comma-separated"),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_data_entry_access),
+):
+    """Several bills paid together (shop register): one receipt per bill, printed as one job."""
+    try:
+        record_ids = [int(part) for part in ids.split(",") if part.strip()]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Bill ids must be numbers")
+    if not record_ids or len(record_ids) > 50:
+        raise HTTPException(status_code=400, detail="Give 1 to 50 bill ids")
+    records = [await get_record(db, record_id) for record_id in record_ids]
+    return await _receipts_response(request, db, current_user, records)
+
+
+async def _receipts_response(
+    request: Request, db: AsyncSession, current_user: UserAccount, records: list, payment: Optional[dict] = None
+):
     business_profile = await _get_receipt_business_profile(db, current_user)
+    try:
+        copies = int(request.query_params.get("copies") or 2)
+    except ValueError:
+        copies = 2
     return templates.TemplateResponse(
         "receipt.html",
         {
             "request": request,
-            "record": record,
+            "records": records,
+            "copies": min(max(copies, 1), 3),
             "business_profile": business_profile,
             "receipt_settings": _build_receipt_settings(business_profile),
+            "payment": payment,
         },
     )
 
 
-@router.post("/api/records", response_model=RecordResponse, status_code=201)
-async def create_record_endpoint(
-    payload: RecordCreate,
-    db: AsyncSession = Depends(get_db),
-    current_user: UserAccount = Depends(require_data_entry_access),
-):
+async def prepare_new_record(db: AsyncSession, payload: RecordCreate, current_user: UserAccount) -> dict:
+    """Check a new bill as entered by current_user and return the payload for build_record/create_record."""
     payload.payment_method = _validate_payment_method(payload.payment_method, CUSTOMER_PAYMENT_METHODS)
+    if payload.personal:
+        if current_user.role != "admin" and not await is_business_owner(db, current_user.id):
+            raise HTTPException(status_code=403, detail="Only an admin can enter a personal bill.")
+        if payload.personal == "shop":
+            # Nothing is received from anyone.
+            payload.payment_method = None
+            payload.confirmation_reference = None
+    if payload.personal != "shop" and payload.payment_method is None:
+        # Money was received, so how it was paid is needed (End of day counts bills by it).
+        raise HTTPException(status_code=400, detail="Select the mode of payment.")
 
     if payload.txn_datetime is None:
         payload.txn_datetime = datetime.now()
@@ -1427,7 +1751,11 @@ async def create_record_endpoint(
     initial_payload.pop("amt2", None)
     initial_payload["processed_by_user_id"] = current_user.id
     initial_payload["created_by_user_id"] = current_user.id
-    record = await create_record(db, initial_payload)
+    return initial_payload
+
+
+async def finish_new_record(db: AsyncSession, record, current_user: UserAccount, channel: str = "web") -> None:
+    """After a new bill is saved: remember the customer, log it, and text the customer a confirmation."""
     await upsert_customer_from_record(
         db,
         account=record.account,
@@ -1441,7 +1769,7 @@ async def create_record_endpoint(
         action="create",
         status="success",
         current_user=current_user,
-        channel="web",
+        channel=channel,
         record_id=record.id,
         detail=(
             f"reference={record.reference or '-'}, "
@@ -1496,6 +1824,16 @@ async def create_record_endpoint(
             record_id=record.id,
             detail="cp_number_missing_or_invalid",
         )
+
+
+@router.post("/api/records", response_model=RecordResponse, status_code=201)
+async def create_record_endpoint(
+    payload: RecordCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: UserAccount = Depends(require_data_entry_access),
+):
+    record = await create_record(db, await prepare_new_record(db, payload, current_user))
+    await finish_new_record(db, record, current_user)
     return record
 
 

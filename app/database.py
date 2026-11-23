@@ -113,6 +113,12 @@ async def init_db() -> None:
             )
         if "amount_review" not in col_names:
             await conn.execute(text("ALTER TABLE bill_records ADD COLUMN amount_review TEXT"))
+        if "settled_at" not in col_names:
+            # Left empty for existing records: only settlements from now on count in End of day.
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN settled_at DATETIME"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bill_records_settled_at ON bill_records(settled_at)"))
+        if "personal" not in col_names:
+            await conn.execute(text("ALTER TABLE bill_records ADD COLUMN personal VARCHAR(8)"))
         if "late_charge" not in col_names:
             await conn.execute(text("ALTER TABLE bill_records ADD COLUMN late_charge FLOAT NOT NULL DEFAULT 0"))
             if "amt2" in col_names:
@@ -124,6 +130,14 @@ async def init_db() -> None:
         # Lightweight migration: add per-method system charges for biller rules.
         biller_columns = (await conn.execute(text("PRAGMA table_info(biller_rules)"))).fetchall()
         biller_col_names = {row[1] for row in biller_columns}
+        if "late_charge_rate" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN late_charge_rate FLOAT NOT NULL DEFAULT 0"))
+        if "category" not in biller_col_names:
+            await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN category VARCHAR(30) NOT NULL DEFAULT ''"))
+        # Billers without a category get a best guess from their name (changed in Admin Settings).
+        from app.biller_categories import guess_category
+        for rule_id, rule_biller in (await conn.execute(text("SELECT id, biller FROM biller_rules WHERE COALESCE(category, '') = ''"))).fetchall():
+            await conn.execute(text("UPDATE biller_rules SET category = :c WHERE id = :id"), {"c": guess_category(rule_biller), "id": rule_id})
         if "system_charge_cash" not in biller_col_names:
             await conn.execute(text("ALTER TABLE biller_rules ADD COLUMN system_charge_cash FLOAT NOT NULL DEFAULT 0"))
         if "system_charge_gcash" not in biller_col_names:

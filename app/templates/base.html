@@ -10,7 +10,7 @@
     <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 
     <link rel="stylesheet" href="/static/vendor/dataTables-2.0.8.min.css">
-    <link rel="stylesheet" href="/static/css/app.css">
+    <link rel="stylesheet" href="{{ '/static/css/app.css' | v }}">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -20,6 +20,9 @@
             <p>{% block topbar_subtitle %}Manage imported billing rows with fast table tools.{% endblock %}</p>
         </div>
         <div class="topbar-actions">
+            {% if pos_enabled and request.session.get("role") in ("admin", "encoder") %}
+            <a href="/pos" class="btn btn-secondary">Shop register →</a>
+            {% endif %}
             {% block topbar_actions %}{% endblock %}
         </div>
     </header>
@@ -53,7 +56,7 @@
 
     <script src="/static/vendor/jquery-3.7.1.min.js"></script>
     <script src="/static/vendor/dataTables-2.0.8.min.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script src="{{ '/static/js/app.js' | v }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

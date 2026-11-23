@@ -1,0 +1,106 @@
+from datetime import datetime
+from typing import Optional
+
+from sqlmodel import Field, SQLModel
+
+DEFAULT_RECEIPT_FOOTER = "THIS IS NOT AN OFFICIAL RECEIPT"
+
+
+class PosSettings(SQLModel, table=True):
+    """
+    Single row (id=1): register settings and fee rules. The business_* columns are from the
+    standalone register; receipts now use the BPS business profile.
+    """
+
+    __tablename__ = "pos_settings"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    business_name: str = Field(default="DITTO DIGITAL PRINTSHOP", max_length=160)
+    business_address: str = Field(default="", max_length=255)
+    business_phone: Optional[str] = Field(default=None, max_length=40)
+    tin_number: Optional[str] = Field(default=None, max_length=64)
+    receipt_footer: str = Field(default=DEFAULT_RECEIPT_FOOTER, max_length=255)
+
+    fee_block_cents: int = Field(default=100_000, nullable=False)
+    fee_block_fee_cents: int = Field(default=2_500, nullable=False)
+    load_small_max_cents: int = Field(default=5_000, nullable=False)
+    load_small_fee_cents: int = Field(default=300, nullable=False)
+    promo_round_cents: int = Field(default=1_000, nullable=False)
+    # End of day: the usual cash the drawer starts with (filled in, can be changed per day).
+    default_starting_cash_cents: int = Field(default=0, nullable=False)
+    # Google Sheets backup (pos/controllers/gsheets_controller.py): the Apps Script link and its password.
+    gsheets_url: Optional[str] = Field(default=None, max_length=500)
+    gsheets_password: Optional[str] = Field(default=None, max_length=64)
+    gsheets_after_eod: bool = Field(default=True, nullable=False)
+    gsheets_last_at: Optional[datetime] = Field(default=None)
+    gsheets_last_result: Optional[str] = Field(default=None, max_length=500)
+    # Tarpaulin (DEC-079), set in Settings; 0 = not used. What the printer charges a sq ft (the cost of a new
+    # TARPAULIN (SENT OUT) material), and small tarps: below this many sq ft, this price and this cost.
+    tarp_cost_sqft_cents: int = Field(default=0, nullable=False)
+    tarp_small_below_sqft: float = Field(default=0, nullable=False)
+    tarp_small_price_cents: int = Field(default=0, nullable=False)
+    tarp_small_cost_cents: int = Field(default=0, nullable=False)
+
+    updated_at: datetime = Field(default_factory=datetime.now, nullable=False)
+
+
+class PosFeeBracket(SQLModel, table=True):
+    """Fee on the remainder after full blocks, e.g. ₱1-₱499 -> ₱15."""
+
+    __tablename__ = "pos_fee_brackets"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    min_cents: int = Field(nullable=False)
+    max_cents: int = Field(nullable=False)
+    fee_cents: int = Field(nullable=False)
+
+
+class PosService(SQLModel, table=True):
+    """Shop service buttons on the register (Printing, Xerox, ID Picture, ...)."""
+
+    __tablename__ = "pos_services"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=60, unique=True)
+    sort_order: int = Field(default=0, nullable=False)
+    is_active: bool = Field(default=True, nullable=False)
+
+
+class PosServiceItem(SQLModel, table=True):
+    """
+    Pick list under a service (e.g. XEROX → SHORT, LONG BACK TO BACK) with its usual price, so the same item is
+    always written the same way (DEC-075). Shown first in the register's description suggestions.
+    """
+
+    __tablename__ = "pos_service_items"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    service_id: int = Field(foreign_key="pos_services.id", index=True, nullable=False)
+    name: str = Field(max_length=120, nullable=False)
+    price_cents: int = Field(default=0, nullable=False)
+    sort_order: int = Field(default=0, nullable=False)
+    is_active: bool = Field(default=True, nullable=False)
+
+
+class PosNetwork(SQLModel, table=True):
+    """Mobile networks for loading. Kept for the record; load is sent from a wallet."""
+
+    __tablename__ = "pos_networks"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=40, unique=True)
+    sort_order: int = Field(default=0, nullable=False)
+    is_active: bool = Field(default=True, nullable=False)
+
+
+class PosWallet(SQLModel, table=True):
+    """The shop's GCash / Maya accounts. Loading and cash-in/cash-out go through these."""
+
+    __tablename__ = "pos_wallets"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(max_length=60, unique=True)
+    provider: str = Field(max_length=20)  # GCASH | MAYA
+    is_active: bool = Field(default=True, nullable=False)
+    # Discount the app gives on loads, in basis points (200 = 2%: a ₱99 load costs ₱97.02).
+    load_discount_bp: int = Field(default=0, nullable=False)

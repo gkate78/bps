@@ -10,7 +10,7 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import and_, asc, desc, func, or_
+from sqlalchemy import and_, asc, desc, func, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
@@ -143,6 +143,19 @@ def _normalize_text_fields(payload: dict) -> dict:
     return payload
 
 
+def _has_text(value) -> bool:
+    return value is not None and str(value).strip() != ""
+
+
+def _stamp_settled(record: BillRecord, had_payment_reference: bool) -> None:
+    """Record when a bill is first paid to the biller; clear it if the payment reference is removed."""
+    has_reference = _has_text(record.payment_reference)
+    if has_reference and not had_payment_reference:
+        record.settled_at = datetime.now()
+    elif not has_reference:
+        record.settled_at = None
+
+
 def _sanitize_payment_fields(payload: dict) -> dict:
     method = str(payload.get("payment_method") or "").strip().upper()
     if method == "CASH":
@@ -154,7 +167,8 @@ def _normalized_biller_key(value: str) -> str:
     return str(value or "").strip().upper()
 
 
-async def _get_biller_rule_maps(db: AsyncSession) -> tuple[dict[str, float], dict[str, float]]:
+async def _get_biller_rule_maps(db: AsyncSession) -> tuple[dict[str, float], dict[str, tuple[float, float]]]:
+    """Service charge, and late charge as (fixed pesos, percent of the bill), for each active biller."""
     result = await db.execute(select(BillerRule).where(BillerRule.is_active == True))  # noqa: E712
     rules = result.scalars().all()
 
@@ -164,7 +178,7 @@ async def _get_biller_rule_maps(db: AsyncSession) -> tuple[dict[str, float], dic
         if str(item.biller or "").strip()
     }
     late_map = {
-        str(item.biller or "").strip().upper(): round(float(item.late_charge or 0), 2)
+        str(item.biller or "").strip().upper(): (round(float(item.late_charge or 0), 2), float(item.late_charge_rate or 0))
         for item in rules
         if str(item.biller or "").strip()
     }
@@ -213,7 +227,7 @@ async def get_biller_charges(db: AsyncSession) -> dict[str, float]:
     return charge_map
 
 
-async def get_biller_late_charges(db: AsyncSession) -> dict[str, float]:
+async def get_biller_late_charges(db: AsyncSession) -> dict[str, tuple[float, float]]:
     _, late_map = await _get_biller_rule_maps(db)
     return late_map
 
@@ -329,31 +343,60 @@ def _compute_charge(biller: str, bill_amount: float, charge_map: dict[str, float
     return round(float(computed), 2)
 
 
+def late_charge_for(rule: tuple[float, float], bill_amt: float) -> float:
+    """The rule's late charge for an overdue bill: fixed pesos plus a percent of the bill (to the centavo)."""
+    fixed, rate = rule
+    return round(float(fixed or 0) + float(bill_amt or 0) * float(rate or 0) / 100 + 1e-9, 2)
+
+
 def _compute_late_charge(
     biller: str,
     due_date: Optional[date],
-    late_map: dict[str, float],
+    late_map: dict[str, tuple[float, float]],
     ref_date: Optional[date] = None,
+    bill_amt: float = 0,
+    typed: Optional[float] = None,
 ) -> float:
+    """Zero unless overdue; then the amount the cashier typed from the bill, else the biller rule's."""
     if due_date is None:
         return 0.0
     basis_date = ref_date or date.today()
     if due_date >= basis_date:
         return 0.0
-    return round(float(late_map.get(biller.strip().upper(), 0.0)), 2)
+    if typed is not None:
+        return round(max(float(typed), 0.0), 2)
+    return late_charge_for(late_map.get(biller.strip().upper(), (0.0, 0.0)), bill_amt)
 
 
-def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: dict[str, float]) -> dict:
+def cash_to_collect(total: float, payment_method: Optional[str] = None) -> float:
+    """Cash is collected to the whole peso: under 50 centavos rounds down, 50 and up rounds up
+    (₱1,025.45 → ₱1,025, ₱1,025.50 → ₱1,026). GCash, Maya and bank payments stay exact."""
+    if str(payment_method or "").strip().upper() not in ("", "CASH"):
+        return round(float(total or 0), 2)
+    cents = int(round(float(total or 0) * 100))
+    return float((cents + 50) // 100)
+
+
+def _apply_computations(payload: dict, charge_map: dict[str, float], late_map: dict) -> dict:
     bill_amt = round(float(payload.get("bill_amt", 0) or 0), 2)
     due_date = payload.get("due_date")
     txn_date = payload.get("txn_date")
-    late_charge = _compute_late_charge(str(payload.get("biller", "") or ""), due_date, late_map, txn_date)
+    # A late charge typed from the printed bill (e.g. a water district's penalty) replaces the rule's.
+    typed = payload.pop("late_charge_typed", None)
+    late_charge = _compute_late_charge(
+        str(payload.get("biller", "") or ""), due_date, late_map, txn_date, bill_amt=bill_amt, typed=typed
+    )
     cash = round(float(payload.get("cash", 0) or 0), 2)
     biller = str(payload.get("biller", "") or "").strip()
 
-    charge = _compute_charge(biller, bill_amt, charge_map)
+    # The admin's own bill has no service charge; the late charge still goes to the biller.
+    charge = 0.0 if payload.get("personal") else _compute_charge(biller, bill_amt, charge_map)
     total = round(bill_amt + late_charge + charge, 2)
-    change_amt = round(cash - total, 2)
+    if payload.get("personal") == "shop":
+        cash = 0.0  # paid from shop funds: nothing received
+        change_amt = 0.0
+    else:
+        change_amt = round(cash - cash_to_collect(total, payload.get("payment_method")), 2)
 
     payload["bill_amt"] = bill_amt
     payload["amt2"] = late_charge
@@ -376,7 +419,7 @@ def _apply_file_amounts(
     payload: dict,
     file_amounts: dict[str, Optional[float]],
     charge_map: dict[str, float],
-    late_map: dict[str, float],
+    late_map: dict,
 ) -> tuple[dict, Optional[dict]]:
     """Keep the amounts recorded in an import file (what was actually collected), filling blanks from the
     biller rules. Returns the payload and an amount review note when the file disagrees with the rules
@@ -388,7 +431,7 @@ def _apply_file_amounts(
     parts_total = round(bill_amt + late_charge + charge, 2)
     total = file_amounts["total"] if file_amounts.get("total") is not None else parts_total
     cash = round(float(payload.get("cash", 0) or 0), 2)
-    change_amt = file_amounts["change_amt"] if file_amounts.get("change_amt") is not None else round(cash - total, 2)
+    change_amt = file_amounts["change_amt"] if file_amounts.get("change_amt") is not None else round(cash - cash_to_collect(total, payload.get("payment_method")), 2)
 
     issues = []
     if abs(parts_total - total) >= 0.01:
@@ -462,7 +505,72 @@ async def _generate_reference(db: AsyncSession, txn_date: date) -> str:
     return f"REF-{date_part}-{secrets.token_hex(6).upper()}"
 
 
+async def quote_bill(
+    db: AsyncSession, *, biller: str, bill_amt: float, due_date: Optional[date], personal: Optional[str] = None,
+    late_charge_typed: Optional[float] = None,
+) -> dict:
+    """Late charge, service charge and total for a new bill today, from the active biller rules
+    (or the late charge typed from the bill)."""
+    charge_map, late_map = await _get_biller_rule_maps(db)
+    amounts = _apply_computations(
+        {"biller": biller, "bill_amt": bill_amt, "due_date": due_date, "txn_date": date.today(), "personal": personal,
+         "late_charge_typed": late_charge_typed},
+        charge_map,
+        late_map,
+    )
+    return {key: amounts[key] for key in ("bill_amt", "late_charge", "charge", "total")}
+
+
+def _month_range(day: date) -> tuple[date, date]:
+    start = day.replace(day=1)
+    end = (start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1))
+    return start, end
+
+
+async def find_monthly_duplicate(
+    db: AsyncSession, *, account: str, bill_amt: float, txn_date: Optional[date] = None
+) -> Optional[BillRecord]:
+    """
+    A bill already entered in the same calendar month for the same account and amount (any biller):
+    a new bill like that is a duplicate (DEC-053). Matches the earlier bill's amount or its total.
+    """
+    account_key = str(account or "").strip().upper()
+    amount = round(float(bill_amt or 0), 2)
+    if not account_key or amount <= 0:
+        return None
+    start, end = _month_range(txn_date or date.today())
+    stmt = (
+        select(BillRecord)
+        .where(
+            BillRecord.account == account_key,
+            BillRecord.txn_date >= start,
+            BillRecord.txn_date < end,
+            or_(func.round(BillRecord.bill_amt, 2) == amount, func.round(BillRecord.total, 2) == amount),
+        )
+        .order_by(BillRecord.txn_datetime, BillRecord.id)
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+def monthly_duplicate_message(account: str, bill_amt: float, existing: BillRecord) -> str:
+    when = existing.txn_date.strftime("%m/%d/%Y") if existing.txn_date else "this month"
+    return (
+        f"Duplicate: account {str(account).strip().upper()} already has a bill of ₱{float(bill_amt):,.2f} this month "
+        f"({existing.biller}, {when}, {existing.reference or 'no reference'})"
+    )
+
+
 async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
+    record = await build_record(db, payload)
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+    return record
+
+
+async def build_record(db: AsyncSession, payload: dict) -> BillRecord:
+    """The new bill with its charges and reference, not added to the session yet. Raises 409 for a duplicate."""
     txn_datetime = payload.get("txn_datetime") or datetime.now()
     txn_date = payload.get("txn_date") or txn_datetime.date()
     payload["txn_datetime"] = txn_datetime
@@ -473,18 +581,12 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
     charge_map, late_map = await _get_biller_rule_maps(db)
     payload = _apply_computations(payload, charge_map, late_map)
 
+    # New bills: the same account and amount only once a month (DEC-053). Edits and CSV imports
+    # keep the same-day check.
     amount = _normalized_amount(payload)
-    if await _is_duplicate_record(
-        db,
-        txn_date=txn_date,
-        account=payload["account"],
-        biller=payload["biller"],
-        amount=amount,
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="Duplicate detected: same date, account, biller, and amount already exists",
-        )
+    existing = await find_monthly_duplicate(db, account=payload["account"], bill_amt=amount, txn_date=txn_date)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=monthly_duplicate_message(payload["account"], amount, existing))
 
     reference = payload.get("reference")
     if not reference:
@@ -513,11 +615,9 @@ async def create_record(db: AsyncSession, payload: dict) -> BillRecord:
         payment_channel=payload.get("payment_channel"),
         processed_by_user_id=payload.get("processed_by_user_id"),
         created_by_user_id=payload.get("created_by_user_id"),
+        personal=payload.get("personal"),
     )
-
-    db.add(record)
-    await db.commit()
-    await db.refresh(record)
+    _stamp_settled(record, had_payment_reference=False)
     return record
 
 
@@ -602,7 +702,12 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
             "processed_by_user_id": updates.get("processed_by_user_id", record.processed_by_user_id),
         }
     )
+    # Set only at entry; kept so recomputed amounts stay without a service charge.
+    updates["personal"] = record.personal
     if _amount_inputs_changed(record, updates):
+        # A late charge changed by hand (to the one printed on the bill) is kept; otherwise the rule's applies.
+        if abs(float(updates.get("late_charge") or 0) - float(record.late_charge or 0)) >= 0.005:
+            updates["late_charge_typed"] = updates["late_charge"]
         updates = _apply_computations(updates, charge_map, late_map)
         # Amounts now follow the biller rules, so any import review note no longer applies.
         updates["amount_review"] = None
@@ -613,8 +718,10 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
         updates["amt2"] = record.late_charge
     updates = _sanitize_payment_fields(updates)
 
+    had_payment_reference = _has_text(record.payment_reference)
     for key, value in updates.items():
         setattr(record, key, value)
+    _stamp_settled(record, had_payment_reference)
 
     if not record.reference:
         record.reference = await _generate_reference(db, record.txn_date)
@@ -629,8 +736,53 @@ async def update_record(db: AsyncSession, record_id: int, updates: dict) -> Bill
 
 async def delete_record(db: AsyncSession, record_id: int) -> None:
     record = await get_record(db, record_id)
+    # The register's link from a sale to this bill goes too. SQLite can give the next new bill the same id
+    # (when the newest one is deleted), and a link left behind would then point the old sale at that bill.
+    has_links = (
+        await db.execute(text("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'pos_sale_bills'"))
+    ).first()
+    if has_links:
+        await db.execute(text("DELETE FROM pos_sale_bills WHERE bill_record_id = :id"), {"id": record_id})
     await db.delete(record)
     await db.commit()
+
+
+async def double_payment_reminders(db: AsyncSession, *, account: str = "", phone: str = "") -> list[dict]:
+    """
+    Bills noted as paid twice to the biller ("DOUBLE PAYMENT ..." in the notes) for this account or CP number,
+    so the cashier collects it back from the customer. The register leaves out the ones already paid back.
+    """
+    account = str(account or "").strip().upper()
+    phone = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    who = []
+    if account:
+        who.append(BillRecord.account == account)
+    if len(phone) == 11:
+        who.append(BillRecord.cp_number == phone)
+    if not who:
+        return []
+    flagged = (
+        await db.execute(
+            select(BillRecord)
+            .where(or_(*who), func.upper(BillRecord.notes).like("%DOUBLE%"))
+            .order_by(BillRecord.txn_datetime.desc())
+            .limit(10)
+        )
+    ).scalars().all()
+    reminders = []
+    for bill in flagged:
+        reminders.append({
+            "reference": bill.reference,
+            "biller": bill.biller,
+            "account": bill.account,
+            "customer_name": bill.customer_name,
+            "cp_number": bill.cp_number,
+            "txn_date": bill.txn_date.isoformat() if bill.txn_date else None,
+            "bill_amt": round(float(bill.bill_amt or 0), 2),
+            "payment_reference": bill.payment_reference,
+            "notes": bill.notes,
+        })
+    return reminders
 
 
 async def get_distinct_billers(db: AsyncSession) -> list[str]:
@@ -717,7 +869,10 @@ async def upsert_customer_from_record(
                 select(BillRecord.id).where(BillRecord.account == account, BillRecord.txn_date > txn_date).limit(1)
             )
             is_older = newer.scalar_one_or_none() is not None
-        existing_phone = "" if _is_placeholder(existing.phone) else (existing.phone or "")
+        # A saved number that isn't a full mobile number (09 + 9 digits) counts as missing, so a fixed one replaces it.
+        existing_phone = existing.phone or ""
+        if _is_placeholder(existing_phone) or not re.fullmatch(r"09\d{9}", existing_phone):
+            existing_phone = ""
         if is_older:
             existing.biller = existing.biller or biller
             existing.customer_name = existing.customer_name or customer_name
@@ -1018,7 +1173,7 @@ async def my_transactions(db: AsyncSession, *, user_id: int, from_date: date, to
             "total": r.total,
             "cash": r.cash,
             "change_amt": r.change_amt,
-            "payment_method": r.payment_method,
+            "payment_method": "SHOP FUNDS" if r.personal == "shop" else r.payment_method,
             "reference": r.reference,
         }
         for r in records[:MY_TRANSACTIONS_LIMIT]
@@ -1026,7 +1181,8 @@ async def my_transactions(db: AsyncSession, *, user_id: int, from_date: date, to
     return {
         "range": {"from": from_date.isoformat(), "to": to_date.isoformat()},
         "count": len(records),
-        "total": round(sum(float(r.total or 0) for r in records), 2),
+        # Personal bills paid from shop funds weren't collected from anyone.
+        "total": round(sum(float(r.total or 0) for r in records if r.personal != "shop"), 2),
         "cash": round(sum(float(r.cash or 0) for r in records), 2),
         "service_charges": round(sum(float(r.charge or 0) for r in records), 2),
         "items": items,
@@ -1184,6 +1340,28 @@ async def insights_summary(
             item["with_due"] += 1
             if r.txn_date > r.due_date:
                 item["late"] += 1
+    # By category (Electricity, Water, ...), from each biller's rule; billers without a rule count as OTHER.
+    from app.biller_categories import guess_category
+
+    rule_categories = {
+        str(name or "").strip().upper(): category
+        for name, category in (await db.execute(select(BillerRule.biller, BillerRule.category))).all()
+    }
+    by_category: dict[str, dict] = {}
+    for item in by_biller.values():
+        category = rule_categories.get(item["biller"]) or guess_category(item["biller"])
+        bucket = by_category.setdefault(
+            category, {"category": category, "transactions": 0, "bill_total": 0.0, "service_income": 0.0, "billers": []}
+        )
+        for key in ("transactions", "bill_total", "service_income"):
+            bucket[key] += item[key]
+        bucket["billers"].append(item["biller"])
+    categories = sorted(by_category.values(), key=lambda x: x["transactions"], reverse=True)
+    for item in categories:
+        item["bill_total"] = round(item["bill_total"], 2)
+        item["service_income"] = round(item["service_income"], 2)
+        item["billers"].sort()
+
     billers = sorted(by_biller.values(), key=lambda x: x["transactions"], reverse=True)
     if len(billers) > INSIGHTS_TOP_BILLERS:
         rest = billers[INSIGHTS_TOP_BILLERS - 1 :]
@@ -1281,6 +1459,7 @@ async def insights_summary(
         "granularity": granularity,
         "trend": list(trend.values()),
         "billers": billers,
+        "categories": categories,
         "heatmap": heatmap,
         "has_times": timed > 0,
         "day_of_month": day_of_month,
@@ -1302,12 +1481,15 @@ def _build_record_filters(
     from_date: Optional[date],
     to_date: Optional[date],
     due_status: Optional[str],
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    status: Optional[str] = None,
     apply_default_month_when_empty: bool = False,
 ) -> list:
     filters = []
     today = date.today()
 
-    if apply_default_month_when_empty and not any([biller, from_date, to_date, due_status]):
+    if apply_default_month_when_empty and not any([biller, from_date, to_date, due_status, due_from, due_to, status]):
         month_start = today.replace(day=1)
         filters.append(func.date(BillRecord.txn_datetime) >= month_start)
         filters.append(func.date(BillRecord.txn_datetime) <= today)
@@ -1334,6 +1516,18 @@ def _build_record_filters(
     elif due_status == "no_due_date":
         filters.append(BillRecord.due_date.is_(None))
 
+    if due_from:
+        filters.append(BillRecord.due_date >= due_from)
+    if due_to:
+        filters.append(BillRecord.due_date <= due_to)
+
+    # Pending: not paid to the biller yet (no payment reference); processed: it has one.
+    has_reference = and_(BillRecord.payment_reference.is_not(None), func.trim(BillRecord.payment_reference) != "")
+    if status == "pending":
+        filters.append(~has_reference)
+    elif status == "processed":
+        filters.append(has_reference)
+
     return filters
 
 
@@ -1344,12 +1538,18 @@ async def records_kpi_summary(
     from_date: Optional[date],
     to_date: Optional[date],
     due_status: Optional[str],
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    status: Optional[str] = None,
 ) -> dict:
     filters = _build_record_filters(
         biller=biller,
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
         apply_default_month_when_empty=True,
     )
     stmt = select(BillRecord.id, BillRecord.payment_reference, BillRecord.due_date)
@@ -1376,71 +1576,41 @@ async def records_kpi_summary(
         "processed_records": processed,
         "pending_records": pending,
         "urgent_records": urgent,
-        "default_scope": not any([biller, from_date, to_date, due_status]),
+        "default_scope": not any([biller, from_date, to_date, due_status, due_from, due_to, status]),
     }
 
 
-async def batch_mark_cash_and_export(
-    db: AsyncSession,
-    *,
-    biller: Optional[str],
-    from_date: Optional[date],
-    to_date: Optional[date],
-    due_status: Optional[str],
-) -> dict:
-    filters = _build_record_filters(
-        biller=biller,
-        from_date=from_date,
-        to_date=to_date,
-        due_status=due_status,
-        apply_default_month_when_empty=False,
-    )
-    if not filters:
-        raise HTTPException(
-            status_code=400,
-            detail="Please apply at least one filter before batch cash processing.",
-        )
+# Columns the Bills records table (and its Print and Payment Sheet) can be sorted by.
+RECORD_SORT_COLUMNS = {
+    "txn_datetime": BillRecord.txn_datetime,
+    "txn_date": BillRecord.txn_date,
+    "account": BillRecord.account,
+    "biller": BillRecord.biller,
+    "customer_name": BillRecord.customer_name,
+    "cp_number": BillRecord.cp_number,
+    "bill_amt": BillRecord.bill_amt,
+    "charge": BillRecord.charge,
+    "total": BillRecord.total,
+    "cash": BillRecord.cash,
+    "change_amt": BillRecord.change_amt,
+    "due_date": BillRecord.due_date,
+    "reference": BillRecord.reference,
+    "confirmation_reference": BillRecord.confirmation_reference,
+    "payment_reference": BillRecord.payment_reference,
+    "payment_method": BillRecord.payment_method,
+    "payment_channel": BillRecord.payment_channel,
+    "processed_by_user_id": BillRecord.processed_by_user_id,
+    "id": BillRecord.id,
+}
 
-    stmt = select(BillRecord).where(*filters).order_by(BillRecord.txn_date.asc(), BillRecord.id.asc())
-    rows = (await db.execute(stmt)).scalars().all()
 
-    updated = 0
-    now = datetime.utcnow()
-    out = io.StringIO()
-    writer = csv.writer(out)
-    writer.writerow(["ACCOUNT", "NAME", "BILL AMT"])
-    for row in rows:
-        row_changed = False
-        if str(row.payment_method or "").strip().upper() != "CASH":
-            row.payment_method = "CASH"
-            row_changed = True
-        if str(row.payment_channel or "").strip().upper() != "BRANCH_MANUAL":
-            row.payment_channel = "BRANCH_MANUAL"
-            row_changed = True
-        if row.payment_reference is None or str(row.payment_reference).strip() == "":
-            row.payment_reference = row.reference or None
-            row_changed = True
-        if row_changed:
-            row.updated_at = now
-            db.add(row)
-            updated += 1
-
-        writer.writerow(
-            [
-                row.account or "",
-                row.customer_name or "",
-                f"{float(row.bill_amt or 0):.2f}",
-            ]
-        )
-
-    if updated > 0:
-        await db.commit()
-
-    return {
-        "csv_bytes": out.getvalue().encode("utf-8"),
-        "row_count": len(rows),
-        "updated_count": updated,
-    }
+def _record_order(order_column: Optional[str], order_dir: Optional[str]) -> list:
+    """ORDER BY for a table column; bills without a due date go last when sorting by due date."""
+    column = RECORD_SORT_COLUMNS.get(order_column or "", BillRecord.txn_datetime)
+    direction = desc if order_dir == "desc" else asc
+    if column is BillRecord.due_date:
+        return [BillRecord.due_date.is_(None), direction(column)]
+    return [direction(column)]
 
 
 async def datatable_query(
@@ -1456,12 +1626,18 @@ async def datatable_query(
     from_date: Optional[date],
     to_date: Optional[date],
     due_status: Optional[str],
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    status: Optional[str] = None,
 ) -> dict:
     base_filters = _build_record_filters(
         biller=biller,
         from_date=from_date,
         to_date=to_date,
         due_status=due_status,
+        due_from=due_from,
+        due_to=due_to,
+        status=status,
         apply_default_month_when_empty=False,
     )
 
@@ -1470,51 +1646,18 @@ async def datatable_query(
 
     filtered_filters = list(base_filters)
     if search:
-        like = f"%{search}%"
-        filtered_filters.append(
-            or_(
-                BillRecord.account.ilike(like),
-                BillRecord.biller.ilike(like),
-                BillRecord.customer_name.ilike(like),
-                BillRecord.cp_number.ilike(like),
-                BillRecord.reference.ilike(like),
-            )
-        )
+        filtered_filters.append(_records_search(search))
 
-    filtered_stmt = select(func.count()).select_from(BillRecord)
-    if filtered_filters:
-        filtered_stmt = filtered_stmt.where(*filtered_filters)
-    filtered_count = (await db.execute(filtered_stmt)).scalar_one()
+    totals = await _records_totals(db, filtered_filters)
+    filtered_count = totals["count"]
 
-    order_map = {
-        "txn_datetime": BillRecord.txn_datetime,
-        "txn_date": BillRecord.txn_date,
-        "account": BillRecord.account,
-        "biller": BillRecord.biller,
-        "customer_name": BillRecord.customer_name,
-        "cp_number": BillRecord.cp_number,
-        "bill_amt": BillRecord.bill_amt,
-        "charge": BillRecord.charge,
-        "total": BillRecord.total,
-        "cash": BillRecord.cash,
-        "change_amt": BillRecord.change_amt,
-        "due_date": BillRecord.due_date,
-        "reference": BillRecord.reference,
-        "confirmation_reference": BillRecord.confirmation_reference,
-        "payment_reference": BillRecord.payment_reference,
-        "payment_method": BillRecord.payment_method,
-        "payment_channel": BillRecord.payment_channel,
-        "processed_by_user_id": BillRecord.processed_by_user_id,
-        "id": BillRecord.id,
-    }
-    sort_col = order_map.get(order_column, BillRecord.txn_datetime)
-    sort = desc(sort_col) if order_dir == "desc" else asc(sort_col)
+    sort = _record_order(order_column, order_dir)
 
     data_stmt = select(BillRecord)
     if filtered_filters:
         data_stmt = data_stmt.where(*filtered_filters)
 
-    data_stmt = data_stmt.order_by(sort, BillRecord.id.desc()).offset(start).limit(length)
+    data_stmt = data_stmt.order_by(*sort, BillRecord.id.desc()).offset(start).limit(length)
     rows = (await db.execute(data_stmt)).scalars().all()
 
     data = [
@@ -1556,7 +1699,77 @@ async def datatable_query(
         "recordsTotal": total_count,
         "recordsFiltered": filtered_count,
         "data": data,
+        "totals": totals,
     }
+
+
+def _records_search(search: str):
+    like = f"%{search}%"
+    return or_(
+        BillRecord.account.ilike(like),
+        BillRecord.biller.ilike(like),
+        BillRecord.customer_name.ilike(like),
+        BillRecord.cp_number.ilike(like),
+        BillRecord.reference.ilike(like),
+    )
+
+
+async def _records_totals(db: AsyncSession, filters: list) -> dict:
+    """Count and amounts of all the records matching the filters (every page, not just the one shown)."""
+    stmt = select(
+        func.count(),
+        func.coalesce(func.sum(BillRecord.bill_amt), 0),
+        func.coalesce(func.sum(BillRecord.late_charge), 0),
+        func.coalesce(func.sum(BillRecord.charge), 0),
+        func.coalesce(func.sum(BillRecord.total), 0),
+    ).select_from(BillRecord)
+    if filters:
+        stmt = stmt.where(*filters)
+    count, bill_amt, late, charge, total = (await db.execute(stmt)).one()
+    return {
+        "count": int(count or 0),
+        "bill_amt": round(float(bill_amt), 2),
+        "late_charge": round(float(late), 2),
+        "charge": round(float(charge), 2),
+        "total": round(float(total), 2),
+    }
+
+
+PRINT_LIMIT = 3000
+
+
+async def records_for_print(
+    db: AsyncSession,
+    *,
+    search: str = "",
+    biller: Optional[str] = None,
+    from_date: Optional[date] = None,
+    to_date: Optional[date] = None,
+    due_status: Optional[str] = None,
+    due_from: Optional[date] = None,
+    due_to: Optional[date] = None,
+    status: Optional[str] = None,
+    sort: Optional[str] = None,
+    sort_dir: Optional[str] = None,
+) -> tuple[list[BillRecord], dict]:
+    """
+    The records the Bills records table shows with these filters and search, with totals: in the table's sort
+    when given (`sort` is a column name, `sort_dir` asc or desc), otherwise oldest first.
+    """
+    filters = _build_record_filters(
+        biller=biller, from_date=from_date, to_date=to_date, due_status=due_status,
+        due_from=due_from, due_to=due_to, status=status,
+    )
+    if search:
+        filters.append(_records_search(search))
+    totals = await _records_totals(db, filters)
+    stmt = select(BillRecord)
+    if filters:
+        stmt = stmt.where(*filters)
+    order = _record_order(sort, sort_dir) if sort in RECORD_SORT_COLUMNS else [BillRecord.txn_datetime.asc()]
+    stmt = stmt.order_by(*order, BillRecord.id.asc()).limit(PRINT_LIMIT)
+    rows = list((await db.execute(stmt)).scalars().all())
+    return rows, totals
 
 
 IMPORT_SKIP_DETAIL_LIMIT = 50

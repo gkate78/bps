@@ -31,7 +31,7 @@
     <ol class="setup-steps">
         <li>Confirm your <strong>business profile</strong> below and click <strong>Save Business Details</strong> (used on receipts).</li>
         <li>Add <strong>biller rules</strong>: use <strong>Import Biller Rules CSV</strong> (repo file <code>sample_biller_rules.csv</code> is a starter) or fill the form and <strong>Add / Update Rule</strong> for each biller.</li>
-        <li>Open <a href="/entry/form">Payment Entry</a> to encode new payments, or <a href="/admin/records">Records</a> to search, edit, and import historical bill CSVs.</li>
+        <li>Open <a href="{{ '/pos?tab=bills' if pos_enabled else '/entry/form' }}">Payment Entry</a> to encode new payments, or <a href="/admin/records">Records</a> to search, edit, and import historical bill CSVs.</li>
     </ol>
     {% if show_welcome_guide %}
     <p class="panel-onboarding-foot"><a href="/admin/settings">Hide welcome message</a> (setup tips stay visible until you have at least one active biller rule).</p>
@@ -101,7 +101,7 @@
         <input type="file" name="file" accept=".csv" required>
         <button type="submit" class="btn btn-secondary">Import Biller Rules CSV</button>
         <button type="button" class="btn btn-primary" id="openBillerRuleFormBtn">Add Rule</button>
-        <span class="status-text">Headers: BILLER, SERVICE_CHARGE, CASH, GCASH, MAYA, BAYAD, BPI CREDIT CARD, BPI, LATE_CHARGE, ACCOUNT_DIGITS, IS_ACTIVE</span>
+        <span class="status-text">Headers: BILLER, SERVICE_CHARGE, CASH, GCASH, MAYA, BAYAD, BPI CREDIT CARD, BPI, LATE_CHARGE, ACCOUNT_DIGITS, IS_ACTIVE (optional: LATE_CHARGE_RATE, % of the bill; CATEGORY, e.g. WATER)</span>
     </form>
 
     <div id="billerRulesTableWrap" class="is-hidden">
@@ -110,6 +110,7 @@
                 <thead>
                     <tr>
                         <th>Biller</th>
+                        <th>Category</th>
                         <th class="amount-cell">Service Charge</th>
                         <th class="amount-cell">Cash</th>
                         <th class="amount-cell">GCash</th>
@@ -127,6 +128,7 @@
                     {% for rule in biller_rules %}
                     <tr>
                         <td>{{ rule.biller }}</td>
+                        <td>{{ (rule.category or "OTHER") | title }}</td>
                         <td class="amount-cell">{{ "{:,.2f}".format(rule.service_charge) }}</td>
                         <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_cash) }}</td>
                         <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_gcash) }}</td>
@@ -134,7 +136,7 @@
                         <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bayad) }}</td>
                         <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi_cc) }}</td>
                         <td class="amount-cell">{{ "{:,.2f}".format(rule.system_charge_bpi) }}</td>
-                        <td class="amount-cell">{{ "{:,.2f}".format(rule.late_charge) }}</td>
+                        <td class="amount-cell">{{ "{:,.2f}".format(rule.late_charge) }}{% if rule.late_charge_rate %}{{ " + " if rule.late_charge else "" }}{{ "{:g}".format(rule.late_charge_rate) }}% of bill{% endif %}</td>
                         <td>{{ "Letters + numbers" if rule.account_format == "ALPHANUMERIC" else "Numbers only" }}{% if rule.account_digits %}, {{ rule.account_digits }}{% endif %}</td>
                         <td>{{ "YES" if rule.is_active else "NO" }}</td>
                         <td>
@@ -150,8 +152,10 @@
                                 data-system-charge-bpi-cc="{{ "{:.2f}".format(rule.system_charge_bpi_cc) }}"
                                 data-system-charge-bpi="{{ "{:.2f}".format(rule.system_charge_bpi) }}"
                                 data-late-charge="{{ "{:.2f}".format(rule.late_charge) }}"
+                                data-late-charge-rate="{{ "{:g}".format(rule.late_charge_rate or 0) }}"
                                 data-account-digits="{{ rule.account_digits if rule.account_digits else '' }}"
                                 data-account-format="{{ rule.account_format or 'NUMERIC' }}"
+                                data-category="{{ rule.category or 'OTHER' }}"
                                 data-is-active="{{ '1' if rule.is_active else '0' }}"
                             >Update</button>
                             <form method="post" action="/admin/settings/biller-rules/{{ rule.id }}/delete" class="inline-action">
@@ -175,6 +179,12 @@
         <label>Biller
             <input type="text" name="biller" id="ruleBillerInput" required maxlength="120" placeholder="e.g., MERALCO">
         </label>
+        <label>Category (for reports)
+            <select name="category" id="ruleCategoryInput">
+                <option value="">Guess from the name</option>
+                {% for category in biller_categories %}<option value="{{ category }}">{{ category | title }}</option>{% endfor %}
+            </select>
+        </label>
         <label>Service Charge
             <input type="number" name="service_charge" id="ruleServiceChargeInput" min="0" step="0.01" value="0">
         </label>
@@ -188,7 +198,7 @@
             <input type="number" name="system_charge_maya" id="ruleSystemChargeMayaInput" min="0" step="0.01" value="0">
         </label>
         <label>System Charge - Bayad
-            <input type="number" name="system_charge_bayad" id="ruleSystemChargeBayadInput" min="0" step="0.01" value="0">
+            <input type="number" name="system_charge_bayad" id="ruleSystemChargeBayadInput" min="0" step="0.01" value="{{ '%g' % default_bayad_charge }}">
         </label>
         <label>System Charge - BPI Credit Card
             <input type="number" name="system_charge_bpi_cc" id="ruleSystemChargeBpiCcInput" min="0" step="0.01" value="0">
@@ -198,6 +208,9 @@
         </label>
         <label>Late Charge
             <input type="number" name="late_charge" id="ruleLateChargeInput" min="0" step="0.01" value="0">
+        </label>
+        <label>Late Charge - % of Bill Amount (e.g., 10 for a water district)
+            <input type="number" name="late_charge_rate" id="ruleLateChargeRateInput" min="0" max="100" step="0.01" value="0">
         </label>
         <label>Account Type
             <select name="account_format" id="ruleAccountFormatInput">
@@ -243,9 +256,11 @@
     const systemChargeBpiCcInput = document.getElementById("ruleSystemChargeBpiCcInput");
     const systemChargeBpiInput = document.getElementById("ruleSystemChargeBpiInput");
     const lateChargeInput = document.getElementById("ruleLateChargeInput");
+    const lateChargeRateInput = document.getElementById("ruleLateChargeRateInput");
     const accountDigitsInput = document.getElementById("ruleAccountDigitsInput");
     const accountFormatInput = document.getElementById("ruleAccountFormatInput");
     const isActiveInput = document.getElementById("ruleIsActiveInput");
+    const categoryInput = document.getElementById("ruleCategoryInput");
 
     if (!openBtn || !dialog || !closeDialogBtn || !form || !title || !saveBtn || !cancelBtn) {
         return;
@@ -272,12 +287,14 @@
         systemChargeCashInput.value = "0";
         systemChargeGcashInput.value = "0";
         systemChargeMayaInput.value = "0";
-        systemChargeBayadInput.value = "0";
+        systemChargeBayadInput.value = "{{ '%g' % default_bayad_charge }}";
         systemChargeBpiCcInput.value = "0";
         systemChargeBpiInput.value = "0";
         lateChargeInput.value = "0";
+        lateChargeRateInput.value = "0";
         accountDigitsInput.value = "";
         accountFormatInput.value = "NUMERIC";
+        categoryInput.value = "";
         isActiveInput.checked = true;
         billerInput.readOnly = false;
     }
@@ -310,8 +327,10 @@
             systemChargeBpiCcInput.value = data.systemChargeBpiCc || "0";
             systemChargeBpiInput.value = data.systemChargeBpi || "0";
             lateChargeInput.value = data.lateCharge || "0";
+            lateChargeRateInput.value = data.lateChargeRate || "0";
             accountDigitsInput.value = data.accountDigits || "";
             accountFormatInput.value = data.accountFormat || "NUMERIC";
+            categoryInput.value = data.category || "";
             isActiveInput.checked = data.isActive === "1";
             dialog.showModal();
             serviceChargeInput.focus();

@@ -70,6 +70,12 @@
     </section>
 
     <section class="panel">
+        <div class="panel-head"><h2 id="categoryTitle">By category</h2></div>
+        <div class="chart-box" id="categoryChart"></div>
+        <details class="chart-data"><summary>View data</summary><div id="categoryTable"></div></details>
+    </section>
+
+    <section class="panel">
         <div class="panel-head"><h2>Paid after due date</h2></div>
         <p class="chart-note" id="lateNote"></p>
         <div class="chart-box" id="lateChart"></div>
@@ -109,5 +115,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/insights.js"></script>
+<script src="{{ '/static/js/insights.js' | v }}"></script>
 {% endblock %}

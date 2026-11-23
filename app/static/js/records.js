@@ -39,6 +39,22 @@ function round2(value) {
     return Math.round((parseNum(value) + Number.EPSILON) * 100) / 100;
 }
 
+/** Cash is collected to the whole peso: under 50 centavos rounds down, 50 and up rounds up
+ * (₱1,025.45 → ₱1,025, ₱1,025.50 → ₱1,026). GCash, Maya and bank payments stay exact. */
+function cashToCollect(total, paymentMethod) {
+    const method = String(paymentMethod || "").trim().toUpperCase();
+    if (method && method !== "CASH") return round2(total);
+    return Math.floor((Math.round(round2(total) * 100) + 50) / 100);
+}
+
+// Cash is collected to the whole peso (₱328.90 → ₱329). Bills saved before that rule (2026-11-08) hold the
+// exact total as cash; editing one (e.g. adding the payment reference) keeps the exact total, with no change.
+function cashExpected(total, cash, paymentMethod) {
+    const wholePeso = cashToCollect(total, paymentMethod);
+    const exact = round2(total);
+    return dom.recordId.value && cash < wholePeso && cash >= exact ? exact : wholePeso;
+}
+
 function formatStatusPill(value) {
     const status = String(value || "").toLowerCase();
     const cls = status === "success" ? "status-success" : "status-failed";
@@ -176,8 +192,12 @@ const filters = {
     fromDate: document.getElementById("fromDateFilter"),
     toDate: document.getElementById("toDateFilter"),
     dueStatus: document.getElementById("dueStatusFilter"),
+    dueFrom: document.getElementById("dueFromFilter"),
+    dueTo: document.getElementById("dueToFilter"),
+    status: document.getElementById("statusFilter"),
 };
-const batchCashExportBtn = document.getElementById("batchCashExportBtn");
+// Filter inputs sent as query parameters (the same for the table, the KPIs, Print, Payment Sheet and SMWD references).
+const EXTRA_FILTER_PARAMS = { dueFrom: "due_from", dueTo: "due_to", status: "status" };
 
 const kpis = {
     visible: document.getElementById("kpiVisibleRecords"),
@@ -215,7 +235,7 @@ function recomputeFinancials() {
     const charge = computeCharge(dom.biller.value, billAmt);
     const total = round2(billAmt + lateCharge + charge);
     const cash = round2(dom.cash.value);
-    const change = round2(cash - total);
+    const change = round2(cash - cashExpected(total, cash, dom.paymentMethod?.value));
 
     dom.charge.value = charge.toFixed(2);
     dom.total.value = total.toFixed(2);
@@ -276,6 +296,10 @@ const table = new DataTable("#recordsTable", {
             } else {
                 delete d.due_status;
             }
+            Object.entries(EXTRA_FILTER_PARAMS).forEach(([key, param]) => {
+                if (filters[key]?.value) d[param] = filters[key].value;
+                else delete d[param];
+            });
         },
     },
     columns: [
@@ -308,6 +332,252 @@ const table = new DataTable("#recordsTable", {
     order: [[1, "desc"]],
 });
 
+// Sort: the same as clicking a column header (the two stay in step); Print and Payment Sheet follow it.
+const sortSelect = document.getElementById("sortOrder");
+function tableSort() {
+    // DataTables gives [[column, dir], ...], or [column, dir] right after table.order([column, dir]).
+    const order = table.order();
+    const [column, dir] = (Array.isArray(order[0]) ? order[0] : order.length ? order : null) || [1, "desc"];
+    return { sort: table.column(column).dataSrc(), dir };
+}
+function addSortParams(params) {
+    const { sort, dir } = tableSort();
+    if (typeof sort === "string") {
+        params.set("sort", sort);
+        params.set("sort_dir", dir === "desc" ? "desc" : "asc");
+    }
+    return params;
+}
+function syncSortSelect() {
+    if (!sortSelect) return;
+    const { sort, dir } = tableSort();
+    const value = `${sort}:${dir}`;
+    const known = Array.from(sortSelect.options).some((o) => o.value === value);
+    const custom = sortSelect.querySelector('option[value="custom"]');
+    custom.hidden = known;
+    sortSelect.value = known ? value : "custom";
+}
+sortSelect?.addEventListener("change", () => {
+    const [sort, dir] = sortSelect.value.split(":");
+    const column = table.columns().dataSrc().toArray().indexOf(sort);
+    if (column >= 0) table.order([column, dir]).draw();
+});
+table.on("order", syncSortSelect);
+syncSortSelect();
+
+// Totals of everything matching the filters and search (all pages), sent with each page of the table.
+const recordsTotals = document.getElementById("recordsTotals");
+table.on("xhr", (event, settings, json) => {
+    const t = json?.totals;
+    if (!recordsTotals || !t) return;
+    recordsTotals.innerHTML =
+        `<strong>Total of ${t.count.toLocaleString()} filtered bill${t.count === 1 ? "" : "s"}:</strong> ` +
+        `bill amount ₱${currency(t.bill_amt)} · late charges ₱${currency(t.late_charge)} · ` +
+        `service charges ₱${currency(t.charge)} · <strong>total ₱${currency(t.total)}</strong>`;
+});
+
+// SMWD references: look up the pending STA MARIA WATER bills on SMWD's Billing Inquiry, preview, then apply.
+const smwd = {
+    dialog: document.getElementById("smwdDialog"),
+    body: document.getElementById("smwdBody"),
+    status: document.getElementById("smwdStatus"),
+    apply: document.getElementById("smwdApplyBtn"),
+    channel: document.getElementById("smwdChannel"),
+    items: [],
+};
+const escapeText = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+function renderSmwd() {
+    smwd.body.innerHTML = smwd.items
+        .map((item, i) => `<tr>
+            <td>${item.smwd_reference ? `<input type="checkbox" data-smwd="${i}" ${item.matched ? "checked" : ""} aria-label="Apply ${escapeText(item.smwd_reference)}">` : ""}</td>
+            <td>${escapeText(item.id_number)}</td>
+            <td>${escapeText(item.customer_name)}<div class="status-text">${escapeText(item.reference)} · ${escapeText(item.txn_date)}</div></td>
+            <td class="align-right">${currency(item.bill_amt)}</td>
+            <td>${escapeText(item.smwd_reference || "")}</td>
+            <td class="align-right">${item.amount_paid == null ? "" : currency(item.amount_paid)}</td>
+            <td>${escapeText((item.date_paid || "").replace("T", " "))}</td>
+            <td>${item.matched ? "<strong>✓ Matched</strong>" : escapeText(item.reason)}</td>
+        </tr>`)
+        .join("") || '<tr><td colspan="8">No pending STA MARIA WATER bills match the filters.</td></tr>';
+    updateSmwdApply();
+}
+function smwdChecked() {
+    return Array.from(smwd.body.querySelectorAll("[data-smwd]:checked")).map((el) => smwd.items[Number(el.dataset.smwd)]);
+}
+function updateSmwdApply() {
+    const count = smwdChecked().length;
+    smwd.apply.disabled = !count;
+    smwd.apply.textContent = count ? `Apply ${count} reference${count === 1 ? "" : "s"}` : "Apply checked references";
+}
+smwd.body?.addEventListener("change", updateSmwdApply);
+document.getElementById("smwdCloseBtn")?.addEventListener("click", () => smwd.dialog.close());
+document.getElementById("smwdRefsBtn")?.addEventListener("click", async () => {
+    if (!/STA MARIA WATER/i.test(filters.biller?.value || "")) {
+        await showMessage("Choose the biller STA MARIA WATER in the filters first. Only its pending bills are looked up.", "SMWD References");
+        return;
+    }
+    const params = buildFilterParams();
+    params.delete("status"); // always the pending ones
+    const search = table.search();
+    if (search) params.set("search", search);
+    smwd.items = [];
+    smwd.body.innerHTML = "";
+    smwd.apply.disabled = true;
+    smwd.apply.textContent = "Checking SMWD…";
+    smwd.status.textContent = "Checking each pending bill on SMWD's Billing Inquiry… this can take a minute or two.";
+    smwd.dialog.showModal();
+    try {
+        const response = await fetch(`/api/records/smwd/preview?${params}`, { method: "POST" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Couldn't check SMWD");
+        smwd.items = data.items || [];
+        const matched = smwd.items.filter((i) => i.matched).length;
+        smwd.status.textContent =
+            `${matched} of ${smwd.items.length} pending bill${smwd.items.length === 1 ? "" : "s"} matched a payment at SMWD.` +
+            (data.pending > data.checked ? ` Only the first ${data.checked} of ${data.pending} were checked; run it again after applying.` : "") +
+            " Matched ones are checked; nothing is saved until you apply.";
+        renderSmwd();
+    } catch (err) {
+        smwd.status.textContent = err.message;
+        updateSmwdApply();
+    }
+});
+smwd.apply?.addEventListener("click", async () => {
+    const items = smwdChecked().map((item) => ({ id: item.id, reference: item.smwd_reference }));
+    if (!items.length) return;
+    smwd.apply.disabled = true;
+    try {
+        const response = await fetch("/api/records/smwd/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items, channel: smwd.channel.value }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Couldn't save the references");
+        smwd.dialog.close();
+        table.ajax.reload(null, false);
+        await showMessage(
+            `${data.applied} bill${data.applied === 1 ? "" : "s"} now processed with SMWD's reference.` +
+                (data.skipped ? ` ${data.skipped} skipped (no longer pending).` : ""),
+            "SMWD References",
+        );
+    } catch (err) {
+        smwd.status.textContent = err.message;
+        updateSmwdApply();
+    }
+});
+
+// Sheet references: rows typed in the Google Sheet's PAYMENT REFERENCES tab (the backup never replaces it).
+const sheetRefs = {
+    dialog: document.getElementById("sheetRefsDialog"),
+    body: document.getElementById("sheetRefsBody"),
+    status: document.getElementById("sheetRefsStatus"),
+    apply: document.getElementById("sheetRefsApplyBtn"),
+    channel: document.getElementById("sheetRefsChannel"),
+    items: [],
+};
+const SHEET_CHANNEL_NAMES = { CASH: "Cash", GCASH: "GCash", MAYA: "Maya", BAYAD: "Bayad", BPI_CC: "BPICC", BPI: "BPI" };
+function renderSheetRefs() {
+    sheetRefs.body.innerHTML = sheetRefs.items
+        .map((item, i) => {
+            const canApply = item.state === "ready" || item.state === "warn";
+            const result = item.state === "ready" ? "<strong>✓ Ready</strong>" : escapeText(item.reason);
+            const bill = item.id ? `${escapeText(item.customer_name)}<div class="status-text">${escapeText(item.biller)} · ${escapeText(item.account)} · ${escapeText(item.txn_date)}</div>` : "";
+            return `<tr>
+                <td>${canApply ? `<input type="checkbox" data-sheet-ref="${i}" ${item.state === "ready" ? "checked" : ""} aria-label="Apply row ${item.row}">` : ""}</td>
+                <td>${item.row}</td>
+                <td>${escapeText(item.bps_reference)}</td>
+                <td>${bill}</td>
+                <td class="align-right">${item.bill_amt == null ? "" : currency(item.bill_amt)}</td>
+                <td>${escapeText(item.payment_reference)}</td>
+                <td>${item.channel ? escapeText(SHEET_CHANNEL_NAMES[item.channel] || item.channel) : escapeText(item.channel_typed) || '<span class="status-text">(chosen below)</span>'}</td>
+                <td>${result}</td>
+            </tr>`;
+        })
+        .join("") || '<tr><td colspan="8">No new rows in the PAYMENT REFERENCES tab.</td></tr>';
+    updateSheetRefsApply();
+}
+function sheetRefsChecked() {
+    return Array.from(sheetRefs.body.querySelectorAll("[data-sheet-ref]:checked")).map((el) => sheetRefs.items[Number(el.dataset.sheetRef)]);
+}
+function updateSheetRefsApply() {
+    const count = sheetRefsChecked().length;
+    const done = sheetRefs.items.filter((i) => i.state === "done").length;
+    sheetRefs.apply.disabled = !count && !done;
+    sheetRefs.apply.textContent = count ? `Apply ${count} reference${count === 1 ? "" : "s"}` : done ? "Mark done rows in the sheet" : "Apply checked references";
+}
+sheetRefs.body?.addEventListener("change", updateSheetRefsApply);
+document.getElementById("sheetRefsCloseBtn")?.addEventListener("click", () => sheetRefs.dialog.close());
+document.getElementById("sheetRefsBtn")?.addEventListener("click", async () => {
+    sheetRefs.items = [];
+    sheetRefs.body.innerHTML = "";
+    sheetRefs.apply.disabled = true;
+    sheetRefs.apply.textContent = "Reading the sheet…";
+    sheetRefs.status.textContent = "Reading the PAYMENT REFERENCES tab of your Google Sheet…";
+    sheetRefs.dialog.showModal();
+    try {
+        const response = await fetch("/api/records/sheet-references/preview", { method: "POST" });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Couldn't read the Google Sheet");
+        sheetRefs.items = data.items || [];
+        const ready = sheetRefs.items.filter((i) => i.state === "ready").length;
+        sheetRefs.status.textContent = sheetRefs.items.length
+            ? `${ready} of ${sheetRefs.items.length} new row${sheetRefs.items.length === 1 ? "" : "s"} ready. Ready ones are checked; nothing is saved until you apply. Applied rows are marked DONE in the sheet.`
+            : "No new references. In the Google Sheet's PAYMENT REFERENCES tab (it lists the pending bills after each backup), type the payment reference and channel beside each bill; rows marked DONE are skipped.";
+        renderSheetRefs();
+    } catch (err) {
+        sheetRefs.status.textContent = err.message;
+        updateSheetRefsApply();
+    }
+});
+sheetRefs.apply?.addEventListener("click", async () => {
+    const items = sheetRefsChecked().map(({ row, bps_reference, payment_reference, channel }) => ({ row, bps_reference, payment_reference, channel }));
+    const done_rows = sheetRefs.items.filter((i) => i.state === "done").map(({ row, bps_reference }) => ({ row, bps_reference }));
+    if (!items.length && !done_rows.length) return;
+    sheetRefs.apply.disabled = true;
+    sheetRefs.status.textContent = "Saving…";
+    try {
+        const response = await fetch("/api/records/sheet-references/apply", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items, done_rows, channel: sheetRefs.channel.value }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.detail || "Couldn't save the references");
+        sheetRefs.dialog.close();
+        table.ajax.reload(null, false);
+        await showMessage(
+            `${data.applied} bill${data.applied === 1 ? "" : "s"} now processed with the sheet's reference.` +
+                (data.skipped ? ` ${data.skipped} skipped (no longer pending).` : "") +
+                (data.sheet_error ? ` The rows couldn't be marked DONE in the sheet (${data.sheet_error}); mark them by hand.` : ""),
+            "Sheet References",
+        );
+    } catch (err) {
+        sheetRefs.status.textContent = err.message;
+        updateSheetRefsApply();
+    }
+});
+
+// Payment sheet: the bills of one biller to pay at the biller in cash (choose the biller, usually Status: Pending).
+document.getElementById("paymentSheetBtn")?.addEventListener("click", async () => {
+    if (!filters.biller?.value) {
+        await showMessage("Choose a biller first: a payment sheet is for one biller (e.g. STA MARIA WATER, Status: Pending).", "Payment Sheet");
+        return;
+    }
+    const params = addSortParams(buildFilterParams());
+    const search = table.search();
+    if (search) params.set("search", search);
+    window.open(`/admin/records/payment-sheet?${params}`, "_blank");
+});
+
+// Print: every bill matching the filters and search (not just this page), in the table's sort, with the totals.
+document.getElementById("printRecordsBtn")?.addEventListener("click", () => {
+    const params = addSortParams(buildFilterParams());
+    const search = table.search();
+    if (search) params.set("search", search);
+    window.open(`/admin/records/print?${params}`, "_blank");
+});
+
 async function updateRecordsKpis() {
     if (kpiAbortController) {
         kpiAbortController.abort();
@@ -318,6 +588,7 @@ async function updateRecordsKpis() {
     if (filters.fromDate?.value) params.set("from_date", filters.fromDate.value);
     if (filters.toDate?.value) params.set("to_date", filters.toDate.value);
     if (filters.dueStatus?.value) params.set("due_status", filters.dueStatus.value);
+    Object.entries(EXTRA_FILTER_PARAMS).forEach(([key, param]) => filters[key]?.value && params.set(param, filters[key].value));
     const url = `/api/admin/records/kpis${params.toString() ? `?${params.toString()}` : ""}`;
 
     try {
@@ -635,8 +906,9 @@ function validatePayload(payload) {
         return false;
     }
 
-    if (payload.cash < payload.total) {
-        showMessage("Cash must be greater than or equal to Total.", "Validation");
+    const toCollect = cashExpected(payload.total, payload.cash, payload.payment_method);
+    if (payload.cash < toCollect) {
+        showMessage(`Cash must be at least ${toCollect.toFixed(2)}.`, "Validation");
         return false;
     }
 
@@ -767,71 +1039,8 @@ function buildFilterParams() {
     if (filters.fromDate?.value) params.set("from_date", filters.fromDate.value);
     if (filters.toDate?.value) params.set("to_date", filters.toDate.value);
     if (filters.dueStatus?.value) params.set("due_status", filters.dueStatus.value);
+    Object.entries(EXTRA_FILTER_PARAMS).forEach(([key, param]) => filters[key]?.value && params.set(param, filters[key].value));
     return params;
-}
-
-function extractFilename(contentDisposition) {
-    const raw = String(contentDisposition || "");
-    const match = raw.match(/filename=\"?([^\";]+)\"?/i);
-    return match ? match[1] : "batch_cash_export.csv";
-}
-
-async function batchMarkCashAndDownload() {
-    const params = buildFilterParams();
-    const hasAnyFilter = Array.from(params.keys()).length > 0;
-    if (!hasAnyFilter) {
-        await showMessage("Please apply at least one filter before batch cash processing.", "Batch Processing");
-        return;
-    }
-    const confirmed = await showConfirm(
-        "Mark all currently filtered rows as paid in CASH and download CSV copy?",
-        "Batch Cash Processing"
-    );
-    if (!confirmed) {
-        return;
-    }
-
-    const originalLabel = batchCashExportBtn ? batchCashExportBtn.textContent : "";
-    if (batchCashExportBtn) {
-        batchCashExportBtn.disabled = true;
-        batchCashExportBtn.textContent = "Processing...";
-    }
-    try {
-        const response = await fetch(`/api/records/batch/mark-cash-export?${params.toString()}`, {
-            method: "POST",
-        });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            await showMessage(err.detail || "Batch processing failed.", "Batch Processing");
-            return;
-        }
-
-        const blob = await response.blob();
-        const filename = extractFilename(response.headers.get("Content-Disposition"));
-        const updatedCount = Number(response.headers.get("X-Updated-Count") || 0);
-        const rowCount = Number(response.headers.get("X-Row-Count") || 0);
-
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-
-        await showMessage(
-            `Batch complete. Updated ${updatedCount} of ${rowCount} filtered rows and downloaded CSV.`,
-            "Batch Processing"
-        );
-        table.ajax.reload(null, false);
-        updateRecordsKpis();
-    } finally {
-        if (batchCashExportBtn) {
-            batchCashExportBtn.disabled = false;
-            batchCashExportBtn.textContent = originalLabel || "Mark Cash + Download";
-        }
-    }
 }
 
 const openCreateBtn = document.getElementById("openCreateBtn");
@@ -850,11 +1059,10 @@ document.getElementById("clearFiltersBtn").addEventListener("click", () => {
     filters.fromDate.value = "";
     filters.toDate.value = "";
     filters.dueStatus.value = "";
+    Object.keys(EXTRA_FILTER_PARAMS).forEach((key) => filters[key] && (filters[key].value = ""));
+    table.order([1, "desc"]);
     table.search("").draw();
 });
-if (batchCashExportBtn) {
-    batchCashExportBtn.addEventListener("click", batchMarkCashAndDownload);
-}
 
 Object.values(filters).forEach((el) => {
     el.addEventListener("change", () => table.ajax.reload());
@@ -866,6 +1074,7 @@ Object.values(filters).forEach((el) => {
 });
 if (dom.paymentMethod) {
     dom.paymentMethod.addEventListener("input", syncConfirmationReferenceState);
+    dom.paymentMethod.addEventListener("change", recomputeFinancials);
     dom.paymentMethod.addEventListener("change", syncConfirmationReferenceState);
 }
 

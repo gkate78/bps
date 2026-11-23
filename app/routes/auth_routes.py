@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
+from app.static_version import add_version_filter
 from app.auth import (
     get_current_user_optional,
     hash_pin,
@@ -25,6 +26,7 @@ from app.services import get_otp_service
 
 router = APIRouter(tags=["auth"])
 templates = Jinja2Templates(directory="app/templates")
+add_version_filter(templates)
 OTP_MAX_ATTEMPTS = 5
 PIN_MAX_FAILED_ATTEMPTS = int(os.getenv("PIN_MAX_FAILED_ATTEMPTS", "5"))
 PIN_LOCKOUT_MINUTES = int(os.getenv("PIN_LOCKOUT_MINUTES", "15"))
@@ -406,6 +408,7 @@ async def signup_verify_submit(
 
     request.session.pop("pending_signup", None)
     request.session["user_id"] = user.id
+    request.session["role"] = user.role  # lets pages show staff-only links without a lookup
     return RedirectResponse(url="/dashboard", status_code=303)
 
 
@@ -808,6 +811,7 @@ async def admin_signup_submit(
     await db.refresh(user)
 
     request.session["user_id"] = user.id
+    request.session["role"] = user.role  # lets pages show staff-only links without a lookup
     return RedirectResponse(url="/admin/settings?welcome=1", status_code=303)
 
 
@@ -927,6 +931,7 @@ async def signin_submit(
     await _link_customer_accounts_to_user(db, user)
 
     request.session["user_id"] = user.id
+    request.session["role"] = user.role  # lets pages show staff-only links without a lookup
     return RedirectResponse(url="/dashboard", status_code=303)
 
 

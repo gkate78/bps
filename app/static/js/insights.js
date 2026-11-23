@@ -336,6 +336,33 @@ function renderBillers() {
     );
 }
 
+// Categories come from each biller's rule (Admin Settings → Biller Rules).
+function renderCategories() {
+    const box = document.getElementById("categoryChart");
+    if (!box) return;
+    const info = MEASURES[measure];
+    document.getElementById("categoryTitle").textContent = `${info.label} by category`;
+    const titleCase = (s) => s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+    const items = [...(data.categories || [])].sort((a, b) => b[measure] - a[measure]);
+    const total = items.reduce((s, c) => s + c[measure], 0) || 1;
+    renderHBars(
+        box,
+        items,
+        (c) => c[measure],
+        (c) => titleCase(c.category),
+        (c) => `${compact(c[measure], info.money)} · ${Math.round((c[measure] / total) * 100)}%`,
+        (c) => [titleCase(c.category), `Billers: ${c.billers.join(", ")}`, `Transactions: ${intFmt.format(c.transactions)}`,
+                `Service income: ${money(c.service_income)}`, `Bills paid: ${money(c.bill_total)}`],
+        `${info.label} by category`,
+    );
+    renderTable(
+        document.getElementById("categoryTable"),
+        ["Category", "Billers", "Transactions", "Service income", "Bills paid"],
+        items.map((c) => [titleCase(c.category), c.billers.join(", "), intFmt.format(c.transactions), money(c.service_income), money(c.bill_total)]),
+        [2, 3, 4],
+    );
+}
+
 function renderLate() {
     const items = sortBillers(data.billers.filter((b) => b.with_due > 0), (b) => b.late_rate);
     document.getElementById("lateNote").textContent = data.totals.transactions
@@ -580,6 +607,7 @@ function renderAll() {
     renderKpis();
     renderTrend();
     renderBillers();
+    renderCategories();
     renderLate();
     renderHeatmap();
     renderDayOfMonth();
@@ -629,6 +657,7 @@ document.querySelectorAll(".seg-btn[data-measure]").forEach((btn) => {
         document.querySelectorAll(".seg-btn[data-measure]").forEach((b) => b.classList.toggle("is-active", b === btn));
         renderTrend();
         renderBillers();
+        renderCategories();
     });
 });
 

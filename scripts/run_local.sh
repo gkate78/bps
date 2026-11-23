@@ -35,6 +35,8 @@ set -a
 source "$DATA_DIR/.env"
 set +a
 export DATABASE_DIR="$DATA_DIR"
+# Shop register (/pos) runs on the shop computer; set POS_ENABLED=0 in $DATA_DIR/.env to turn it off.
+export POS_ENABLED="${POS_ENABLED:-1}"
 
 "$PYTHON" scripts/backup_db.py --db "$DATA_DIR/bills_admin.db" --keep "${BPS_BACKUP_KEEP:-30}"
 
