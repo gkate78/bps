@@ -5,6 +5,7 @@ Build a demo database with synthetic data for presentations and videos. No real 
     venv/bin/python scripts/make_demo_data.py                 # creates ~/bps-demo
     venv/bin/python scripts/make_demo_data.py --dir ~/bps-demo --days 120 --force
     PORT=8002 BPS_DATA_DIR=~/bps-demo ./scripts/run_local.sh  # run BPS on the demo data: http://localhost:8002
+    python scripts/make_demo_data.py --dir /data --force --random-pins   # inside an online container (see README)
 
 It writes:
   <dir>/bills_admin.db           users, biller rules, ~N days of bill payments, two weeks of register sales
@@ -67,6 +68,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--days", type=int, default=120, help="days of bill history before today (default 120)")
     p.add_argument("--seed", type=int, default=2026, help="random seed, for the same data every time")
     p.add_argument("--force", action="store_true", help="replace an existing demo database in --dir")
+    p.add_argument(
+        "--random-pins",
+        action="store_true",
+        help="give the demo accounts new random PINs (printed once) instead of the ones in this file; use it online",
+    )
     return p.parse_args()
 
 
@@ -269,9 +275,21 @@ def write_env(target: Path) -> None:
         env.chmod(0o600)
 
 
+def random_pin() -> str:
+    """A 4-digit PIN with at least three different digits and no run like 1234 or 9876."""
+    while True:
+        pin = f"{secrets.randbelow(10_000):04d}"
+        steps = {int(b) - int(a) for a, b in zip(pin, pin[1:])}
+        if len(set(pin)) >= 3 and steps not in ({1}, {-1}):
+            return pin
+
+
 def main() -> None:
     args = parse_args()
     target = safe_target(args.dir, args.force)
+    if args.random_pins:
+        # The PINs above are in a public repo, so an online demo must not use them.
+        DEMO_USERS[:] = [(first, last, ph, random_pin(), role) for first, last, ph, _pin, role in DEMO_USERS]
     rng = random.Random(args.seed)
     counts = asyncio.run(build(target, args.days, rng))
     csv_path = write_messy_csv(target)
@@ -280,7 +298,7 @@ def main() -> None:
     for label, n in counts.items():
         print(f"  {n:>6,} {label}")
     print(f"  messy import file: {csv_path}")
-    print("Sign in (synthetic accounts):")
+    print("Sign in (synthetic accounts)" + (": write these PINs down, they are not shown again" if args.random_pins else ":"))
     for first, last, ph, pin, role in DEMO_USERS:
         print(f"  {role:<8} {first} {last}: phone {ph}, PIN {pin}")
     print(f"Run it with: PORT=8002 BPS_DATA_DIR={target} ./scripts/run_local.sh")

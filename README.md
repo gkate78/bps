@@ -105,7 +105,7 @@ Run from the project root with `venv/bin/python`. Data-changing scripts are dry 
 | `scripts/clean_phone_numbers.py --db <path>` | Normalize stored phone numbers (blank `NA`, restore dropped leading 0) and fill customers' missing phones |
 | `scripts/apply_file_amounts.py --db <path>` | Put the import file's own amounts back on records imported before file amounts were kept, flagging differences for review |
 | `scripts/db_view.py` | Read-only database preview |
-| `scripts/make_demo_data.py [--dir ~/bps-demo] [--days 120] [--force]` | Build a separate demo database with synthetic bills, register sales, demo accounts and a messy CSV for the import demo; run it with `PORT=8002 BPS_DATA_DIR=~/bps-demo ./scripts/run_local.sh` and open `http://localhost:8002`. Refuses `~/bps-data` and the project folder |
+| `scripts/make_demo_data.py [--dir ~/bps-demo] [--days 120] [--force] [--random-pins]` | Build a separate demo database with synthetic bills, register sales, demo accounts and a messy CSV for the import demo; run it with `PORT=8002 BPS_DATA_DIR=~/bps-demo ./scripts/run_local.sh` and open `http://localhost:8002`. Refuses `~/bps-data` and the project folder. For an online demo, run it in the app's container with `--dir` set to `DATABASE_DIR`, `--force --random-pins` (the PINs in the script are public), then restart the app |
 | `scripts/import_cashreg.py --from <cashreg.db> --db <path>` | One-time move of the standalone shop register's data into BPS (users matched by phone; backs up first; refuses if BPS already has register sales) |
 
 ### Windows (PowerShell) quickstart
