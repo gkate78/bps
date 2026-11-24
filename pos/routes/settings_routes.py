@@ -126,7 +126,7 @@ async def save_tarpaulin(
               {"cost_sqft_cents": cost, "small_below_sqft": below, "small_price_cents": price, "small_cost_cents": small,
                "designer_user_id": designer_id})
     await db.commit()
-    note = f"; {handed} unassigned tarp job{'' if handed == 1 else 's'} given to the designer" if handed else ""
+    note = f"; {handed} unassigned design job{'' if handed == 1 else 's'} given to the designer" if handed else ""
     return _back(request, message=f"Tarpaulin saved{note}", anchor="tarpaulin")
 
 

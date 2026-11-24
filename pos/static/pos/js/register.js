@@ -612,7 +612,8 @@
         return cart.reduce((sum, line) => sum + lineTotal(line), 0);
     }
 
-    const hasTarp = () => cart.some((line) => line.kind === "service" && (line.name || "").toUpperCase() === "TARPAULIN");
+    const DESIGN_SERVICES = ["TARPAULIN", "ID PICTURE"];  // these go to the designer (Design jobs)
+    const hasTarp = () => cart.some((line) => line.kind === "service" && DESIGN_SERVICES.includes((line.name || "").toUpperCase()));
 
     function renderCart() {
         const body = $("cartBody");
@@ -649,7 +650,7 @@
         window.dispatchEvent(new Event("pos:cart-changed"));
         renderCashInRefs();
         updateJob();
-        // A tarpaulin in the cart: ask what the customer wants, for the designer (Tarp jobs).
+        // A tarpaulin or ID picture in the cart: ask what the customer wants, for the designer (Design jobs).
         $("tarpField").hidden = !hasTarp();
         updateChange();
         updatePayment();

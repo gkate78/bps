@@ -43,11 +43,11 @@ def test_tarp_sales_become_jobs_for_the_designer(shop):
     assert (second.sale_id, second.status) == (sale["id"], "layout")
 
     page = shop.client.get("/pos/tarp-jobs").text  # the admin sees both, with a designer column
-    assert "2 tarp jobs" in page and "JUAN DELA CRUZ" in page and "Not assigned" in page
+    assert "2 design jobs" in page and "JUAN DELA CRUZ" in page and "Not assigned" in page
 
     shop.sign_in(DESIGNER_PHONE, DESIGNER_PIN)
     page = shop.client.get("/pos/tarp-jobs").text
-    assert "1 tarp job" in page and "3X4" in page and "2X3" not in page
+    assert "1 design job" in page and "3X4" in page and "2X3" not in page
     r = shop.client.post(f"/pos/tarp-jobs/{second.id}/status", data={"status": "approved"})
     assert "Marked approved by customer" in r.text
     shop.client.post(f"/pos/tarp-jobs/{second.id}/notes", data={"notes": "  blue   background "})
@@ -55,12 +55,12 @@ def test_tarp_sales_become_jobs_for_the_designer(shop):
     job = jobs(shop)[1]
     assert (job.status, job.notes.upper()) == ("claimed", "BLUE BACKGROUND")
     assert job.claimed_at is not None
-    assert "0 tarp jobs" in shop.client.get("/pos/tarp-jobs").text  # claimed ones leave the open list
-    assert "1 tarp job" in shop.client.get("/pos/tarp-jobs?show=claimed").text
+    assert "0 design jobs" in shop.client.get("/pos/tarp-jobs").text  # claimed ones leave the open list
+    assert "1 design job" in shop.client.get("/pos/tarp-jobs?show=claimed").text
 
     # Another cashier sees none and can't change the designer's job.
     shop.sign_in(ENCODER_PHONE, ENCODER_PIN)
-    assert "0 tarp jobs" in shop.client.get("/pos/tarp-jobs?show=all").text
+    assert "0 design jobs" in shop.client.get("/pos/tarp-jobs?show=all").text
     r = shop.client.post(f"/pos/tarp-jobs/{second.id}/status", data={"status": "layout"})
     assert "assigned to someone else" in r.text
     assert "Only an admin" in shop.client.post(f"/pos/tarp-jobs/{first.id}/assign", data={"designer": str(designer.id)}).text
@@ -111,7 +111,7 @@ def test_setting_the_designer_gives_them_the_unassigned_open_jobs(shop):
     shop.client.post(f"/pos/tarp-jobs/{c.id}/status", data={"status": "claimed"})      # claimed: left alone
     shop.client.post(f"/pos/api/sales/{d.sale_id}/void", json={"reason": "WRONG SIZE", "admin_pin": ADMIN_PIN})  # voided: left alone
     r = shop.client.post("/pos/settings/tarpaulin", data={"designer": str(designer.id)})
-    assert "1 unassigned tarp job given to the designer" in r.text
+    assert "1 unassigned design job given to the designer" in r.text
     assert [j.designer_user_id for j in jobs(shop)] == [designer.id, other.id, None, None]
     assert "Tarpaulin saved<" in shop.client.post("/pos/settings/tarpaulin", data={"designer": str(designer.id)}).text  # nothing left
 
@@ -119,7 +119,29 @@ def test_setting_the_designer_gives_them_the_unassigned_open_jobs(shop):
 def test_voided_sale_leaves_the_list(shop):
     tarp_sale(shop)
     (job,) = jobs(shop)
-    assert "1 tarp job" in shop.client.get("/pos/tarp-jobs").text
+    assert "1 design job" in shop.client.get("/pos/tarp-jobs").text
     r = shop.client.post(f"/pos/api/sales/{job.sale_id}/void", json={"reason": "WRONG SIZE", "admin_pin": ADMIN_PIN})
     assert r.status_code == 200, r.text
-    assert "0 tarp jobs" in shop.client.get("/pos/tarp-jobs?show=all").text
+    assert "0 design jobs" in shop.client.get("/pos/tarp-jobs?show=all").text
+
+
+def test_id_pictures_are_design_jobs_too(shop):
+    designer = shop.add_user(DESIGNER_PHONE, DESIGNER_PIN, "encoder", "DINO")
+    set_designer(shop, designer.id)
+    r = shop.client.post("/pos/api/sales", json={
+        "lines": [{"kind": "service", "service_id": ids()["ID PICTURE"], "description": "2X2 (4 PCS)", "qty": 1, "unit_price": "60"},
+                  {"kind": "service", "service_id": ids()["PRINTING"], "qty": 2, "unit_price": "3"}],
+        "cash": "100", "customer_name": "PEDRO REYES", "tarp_specs": "white background\nname tag: PEDRO M. REYES\nchange to polo"})
+    assert r.status_code in (200, 201), r.text
+    (job,) = jobs(shop)
+    assert job.designer_user_id == designer.id and job.specs.startswith("white background")
+
+    shop.sign_in(DESIGNER_PHONE, DESIGNER_PIN)
+    page = shop.client.get("/pos/tarp-jobs").text
+    assert "1 design job" in page and "ID PICTURE 2X2 (4 PCS)" in page and "name tag: PEDRO M. REYES" in page
+    assert "With: PRINTING" in page
+    assert 'value="sent"' not in page  # printed here: no "sent to print shop" step
+    r = shop.client.post(f"/pos/tarp-jobs/{job.id}/status", data={"status": "sent"})
+    assert "not sent to the print shop" in r.text
+    r = shop.client.post(f"/pos/tarp-jobs/{job.id}/status", data={"status": "ready"})
+    assert "Marked ready for pickup" in r.text

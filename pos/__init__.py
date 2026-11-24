@@ -21,7 +21,7 @@ DATABASE_VIEW_TABLES = {
     "pos_sales": "Shop Sales",
     "pos_sale_lines": "Shop Sale Lines",
     "pos_sale_payments": "Shop Job Order Payments",
-    "pos_tarp_jobs": "Tarpaulin Jobs",
+    "pos_tarp_jobs": "Design Jobs (tarpaulin, ID picture)",
     "pos_wallet_txns": "Shop GCash/Maya Cash-in/out",
     "pos_parked_txns": "Shop Parked (unpaid)",
     "pos_drafts": "Shop Unsaved (being rung up)",

@@ -10,7 +10,7 @@ Build a demo database with synthetic data for presentations and videos. No real 
 It writes:
   <dir>/bills_admin.db           users, biller rules, ~N days of bill payments, and two weeks of register data:
                                  a pick list, materials stock (restocks, counts), sales with bills, split and
-                                 GCash/Maya payments and tarpaulins (with tarp jobs for BEN), rejects, and each
+                                 GCash/Maya payments, tarpaulins and ID pictures (design jobs for BEN), rejects, and each
                                  day closed at End of day
   <dir>/demo-import-messy.csv    a small CSV with the messy patterns of real spreadsheets, for the import demo
   <dir>/.env                     a session secret, so run_local.sh can start straight away
@@ -82,6 +82,13 @@ TARP_SPECS = [
     "FOR RENT - 0917 000 0000\nBig red letters, white background",
     "Welcome Home, Tatay!\nFamily photo on Messenger; add the date at the bottom",
     "Sari-sari store sign: ALING NENA'S STORE\nGreen, with a basket drawing",
+]
+# What customers asked for on their ID pictures (made up).
+ID_SPECS = [
+    "White background\nName tag: JUAN M. DELA CRUZ",
+    "Blue background, for school ID\nFix the hair a little",
+    "Change to polo with collar\nWhite background, no name tag",
+    "For passport: white background, no glasses, ears showing",
 ]
 # Opening stock bought two weeks ago: material -> (quantity, made-up total cost in pesos, low-stock level).
 # 4R paper is bought short so it shows as low; 5R paper isn't bought (out of stock, never counted).
@@ -434,18 +441,25 @@ async def build_register(db, today: date, customers: list, rules: dict, admin, a
         await db.commit()
         counts["days closed"] += 1
 
-    # Tarp jobs: older ones claimed, the last few days' still moving through the steps.
-    tarp_jobs = (await db.execute(select(PosTarpJob).order_by(PosTarpJob.created_at))).scalars().all()
-    for job in tarp_jobs:
+    # Design jobs (tarpaulins and ID pictures): older ones claimed, the last few days' still moving through the steps.
+    from pos.controllers.tarp_controller import TARP_SERVICE, steps_for
+    from pos.models import PosSaleLine
+
+    design_jobs = (await db.execute(select(PosTarpJob).order_by(PosTarpJob.created_at))).scalars().all()
+    for job in design_jobs:
+        lines = list((await db.execute(select(PosSaleLine).where(PosSaleLine.sale_id == job.sale_id))).scalars().all())
+        is_tarp = any((l.service_name or "").upper() == TARP_SERVICE for l in lines)
+        if not is_tarp and not job.specs:
+            job.specs = rng.choice(ID_SPECS)
         age = (today - job.created_at.date()).days
-        job.status = "claimed" if age > 4 else rng.choice(["layout", "approved", "sent", "ready"])
+        job.status = "claimed" if age > 4 else rng.choice([s for s in steps_for(lines) if s != "claimed"])
         job.updated_at = job.created_at + timedelta(days=min(age, 2), hours=2)
         job.claimed_at = job.updated_at if job.status == "claimed" else None
-        if job.status in ("approved", "sent"):
+        if is_tarp and job.status in ("approved", "sent"):
             job.notes = rng.choice(["CUSTOMER OK'D THE LAYOUT ON MESSENGER", "BLUE BACKGROUND, BIG NAME", "PICKUP AFTER 3 PM"])
         db.add(job)
     await db.commit()
-    counts["tarp jobs"] = len(tarp_jobs)
+    counts["design jobs"] = len(design_jobs)
     return counts
 
 

@@ -1,6 +1,7 @@
 """
-Tarpaulin jobs: every sale with a TARPAULIN line becomes a job for the designer set in Settings → Tarpaulin.
-The designer sees their own jobs and moves them through the steps; admins see all and can reassign them.
+Design jobs: every sale with a TARPAULIN or ID PICTURE line becomes a job for the designer set in Settings → Tarpaulin,
+with the customer's specs typed at the register. The designer sees their own jobs and moves them through the steps;
+admins see all and can reassign them. (The table is still pos_tarp_jobs; tarpaulins came first.)
 """
 from datetime import date, datetime
 from typing import Optional
@@ -14,13 +15,31 @@ from pos.models import PosSale, PosSaleLine
 from pos.models.tarp_job import PosTarpJob
 
 TARP_SERVICE = "TARPAULIN"
+ID_SERVICE = "ID PICTURE"
+DESIGN_SERVICES = (TARP_SERVICE, ID_SERVICE)
 STEPS = {
-    "layout": "For layout",
+    "layout": "For layout / editing",
     "approved": "Approved by customer",
     "sent": "Sent to print shop",
     "ready": "Ready for pickup",
     "claimed": "Claimed",
 }
+PRINT_SHOP_STEP = "sent"  # only tarpaulins are sent out to print
+
+
+def _service(line: PosSaleLine) -> str:
+    return (line.service_name or "").upper() if line.kind == "service" else ""
+
+
+def is_design(line: PosSaleLine) -> bool:
+    return _service(line) in DESIGN_SERVICES
+
+
+def steps_for(lines: list[PosSaleLine]) -> dict[str, str]:
+    """The steps a job can be in: an ID picture is printed here, so it skips "Sent to print shop"."""
+    if any(_service(line) == TARP_SERVICE for line in lines):
+        return STEPS
+    return {k: v for k, v in STEPS.items() if k != PRINT_SHOP_STEP}
 
 
 class TarpError(ValueError):
@@ -35,11 +54,12 @@ def clean_specs(value: Optional[str]) -> Optional[str]:
 
 
 def has_tarp(lines: list[PosSaleLine]) -> bool:
-    return any(line.kind == "service" and (line.service_name or "").upper() == TARP_SERVICE for line in lines)
+    """A sale the designer works on: a tarpaulin or an ID picture."""
+    return any(is_design(line) for line in lines)
 
 
 async def add_for_sale(db: AsyncSession, sale: PosSale, lines: list[PosSaleLine], specs: Optional[str] = None) -> Optional[PosTarpJob]:
-    """Called when a sale is saved (before its commit): a sale with a tarpaulin gets a job for the designer."""
+    """Called when a sale is saved (before its commit): a sale with a tarpaulin or ID picture gets a job for the designer."""
     if not has_tarp(lines):
         return None
     settings = await get_settings(db)
@@ -83,12 +103,13 @@ async def list_jobs(db: AsyncSession, user: User, show: str = "open", designer_i
     rows = []
     for job, sale in pairs:
         sale_lines = lines.get(sale.id, [])
-        tarps = [l for l in sale_lines if (l.service_name or "").upper() == TARP_SERVICE]
+        design = [l for l in sale_lines if is_design(l)]
         rows.append({
             "job": job,
             "sale": sale,
-            "tarps": ", ".join(f"{l.description or 'TARPAULIN'}{f' × {l.qty}' if l.qty > 1 else ''}" for l in tarps),
-            "others": ", ".join(f"{l.service_name} {l.description or ''}".strip() for l in sale_lines if l not in tarps),
+            "steps": steps_for(sale_lines),
+            "tarps": ", ".join(f"{l.service_name} {l.description or ''}".strip() + (f" × {l.qty}" if l.qty > 1 else "") for l in design),
+            "others": ", ".join(f"{l.service_name} {l.description or ''}".strip() for l in sale_lines if l not in design),
             "designer": names.get(job.designer_user_id, "") if job.designer_user_id else "",
             "late": bool(sale.promised_date and sale.promised_date < date.today() and job.status not in ("ready", "claimed")),
         })
@@ -103,7 +124,7 @@ async def _job_for(db: AsyncSession, job_id: int, user: User) -> tuple[PosTarpJo
         await db.execute(select(PosTarpJob, PosSale).join(PosSale, PosSale.id == PosTarpJob.sale_id).where(PosTarpJob.id == job_id))
     ).first()
     if not row:
-        raise TarpError("Tarpaulin job not found")
+        raise TarpError("Design job not found")
     job, sale = row
     if user.role != "admin" and job.designer_user_id != user.id:
         raise TarpError("This job is assigned to someone else")
@@ -116,6 +137,9 @@ async def set_status(db: AsyncSession, job_id: int, status: str, user: User) -> 
     if status not in STEPS:
         raise TarpError("Choose a step")
     job, sale = await _job_for(db, job_id, user)
+    lines = (await db.execute(select(PosSaleLine).where(PosSaleLine.sale_id == sale.id))).scalars().all()
+    if status not in steps_for(list(lines)):
+        raise TarpError("An ID picture is printed here, not sent to the print shop")
     if status == "claimed" and sale.balance_cents > 0:
         raise TarpError(f"{sale.sale_no} still has a balance of ₱{sale.balance_cents / 100:,.2f}. Collect it in Job orders first.")
     before = job.status

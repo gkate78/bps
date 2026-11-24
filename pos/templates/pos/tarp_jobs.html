@@ -1,5 +1,5 @@
 {% extends "pos/base.html" %}
-{% block title %}Tarp jobs{% endblock %}
+{% block title %}Design jobs{% endblock %}
 {% block content %}
 {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
 {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
@@ -25,19 +25,19 @@
         <button type="submit" class="btn btn-primary">Show</button>
     </form>
     <p class="muted small">
-        {% if user.role == 'admin' %}Every sale with a tarpaulin is a job, given to the designer set in <a href="/pos/settings#tarpaulin">Settings → Tarpaulin</a>. You can reassign each job.
-        {% else %}The tarpaulins assigned to you.{% endif %}
-        The customer's specs are typed at the register when the tarpaulin is rung up, and can be added or corrected here.
-        Steps: {{ steps.values() | join(' → ') }}. A job with a balance is claimed after the balance is collected in <a href="/pos/jobs">Job orders</a>.
+        {% if user.role == 'admin' %}Every sale with a tarpaulin or ID picture is a job, given to the designer set in <a href="/pos/settings#tarpaulin">Settings → Tarpaulin</a>. You can reassign each job.
+        {% else %}The tarpaulins and ID pictures assigned to you.{% endif %}
+        The customer's specs are typed at the register when the order is rung up, and can be added or corrected here.
+        Steps: {{ steps.values() | join(' → ') }} (ID pictures skip sent to print shop). A job with a balance is claimed after the balance is collected in <a href="/pos/jobs">Job orders</a>.
     </p>
 </section>
 
 <section class="panel">
-    <h2>{{ rows | length }} tarp job{{ '' if rows | length == 1 else 's' }}</h2>
+    <h2>{{ rows | length }} design job{{ '' if rows | length == 1 else 's' }}</h2>
     <div class="table-wrap">
         <table class="list">
             <thead>
-                <tr><th>No.</th><th>Customer</th><th>Tarpaulin</th><th>Ready by</th><th>Payment</th>
+                <tr><th>No.</th><th>Customer</th><th>Order</th><th>Ready by</th><th>Payment</th>
                     {% if user.role == 'admin' %}<th>Designer</th>{% endif %}<th>Step</th><th>Customer specs</th><th>Notes</th></tr>
             </thead>
             <tbody>
@@ -65,7 +65,7 @@
                         <form method="post" action="/pos/tarp-jobs/{{ j.id }}/status" class="inline-row">
                             <input type="hidden" name="back" value="{{ back }}">
                             <select name="status" aria-label="Step">
-                                {% for key, label in steps.items() %}<option value="{{ key }}" {{ 'selected' if j.status == key }}>{{ label }}</option>{% endfor %}
+                                {% for key, label in r.steps.items() %}<option value="{{ key }}" {{ 'selected' if j.status == key }}>{{ label }}</option>{% endfor %}
                             </select>
                             <button type="submit" class="btn btn-secondary btn-small">Save</button>
                         </form>
@@ -90,7 +90,7 @@
                     </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="9" class="muted">No tarpaulin jobs here.</td></tr>
+                <tr><td colspan="9" class="muted">No design jobs here.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
